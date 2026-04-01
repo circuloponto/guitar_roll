@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, playClickAtTime, getAudioContext } from './utils/audio';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import './App.css';
 
@@ -19,6 +19,7 @@ function App() {
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
+  const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(NUM_BARS * SUBDIVISIONS);
@@ -38,6 +39,17 @@ function App() {
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
   notesRef.current = notes;
+
+  // Build synesthesia lookup: note letter (without octave) -> color
+  const synesthesiaMap = {};
+  synesthesia.forEach(s => { if (s.note) synesthesiaMap[s.note] = s.color; });
+
+  const getNoteColor = useCallback((stringIndex, fret) => {
+    const name = getNoteName(stringIndex, fret);
+    const letter = name.replace(/[0-9]/g, '');
+    if (synesthesiaMap[letter]) return synesthesiaMap[letter];
+    return stringColors[stringIndex];
+  }, [stringColors, synesthesia]);
 
   const totalBeats = NUM_BARS * SUBDIVISIONS;
   const handlePlayRef = useRef(null);
@@ -325,6 +337,7 @@ function App() {
           zoom={fretboardZoom}
           zoomNotes={fretboardZoom ? notes.filter(n => n.beat >= loopStart && n.beat < loopEnd) : []}
           stringColors={stringColors}
+          getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
         />
@@ -345,6 +358,7 @@ function App() {
           selectedNotes={selectedNotes}
           setSelectedNotes={setSelectedNotes}
           stringColors={stringColors}
+          getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
         />
@@ -370,6 +384,51 @@ function App() {
                 <span className="color-picker-hex">{stringColors[i]}</span>
               </div>
             ))}
+            <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '14px 0' }} />
+            <h3 style={{ margin: '0 0 10px', fontSize: 16 }}>Synesthesia</h3>
+            <p style={{ fontSize: 11, color: '#888', margin: '0 0 10px' }}>Map note names to colors (overrides string colors)</p>
+            {synesthesia.map((s, i) => (
+              <div key={i} className="color-picker-row">
+                <select
+                  value={s.note}
+                  onChange={(e) => setSynesthesia(prev => {
+                    const next = [...prev];
+                    next[i] = { ...next[i], note: e.target.value };
+                    return next;
+                  })}
+                  className="synesthesia-select"
+                >
+                  <option value="">--</option>
+                  {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                <input
+                  type="color"
+                  value={s.color}
+                  onChange={(e) => setSynesthesia(prev => {
+                    const next = [...prev];
+                    next[i] = { ...next[i], color: e.target.value };
+                    return next;
+                  })}
+                />
+                <span className="color-picker-hex">{s.color}</span>
+                <button
+                  className="synesthesia-remove"
+                  onClick={() => setSynesthesia(prev => prev.filter((_, j) => j !== i))}
+                  title="Remove"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+            <button
+              className="tool-btn"
+              style={{ marginTop: 6, width: '100%', fontSize: 18, padding: '4px' }}
+              onClick={() => setSynesthesia(prev => [...prev, { note: '', color: '#ffffff' }])}
+            >
+              +
+            </button>
             <button className="tool-btn" style={{ marginTop: 12, width: '100%' }} onClick={() => setShowColorPicker(false)}>
               Done
             </button>

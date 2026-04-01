@@ -23,7 +23,7 @@ function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
   return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -346,8 +346,8 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
               width: 28,
               height: 10,
               borderRadius: 5,
-              background: stringColors[note.stringIndex],
-              boxShadow: isPlaying ? `0 0 10px 3px ${stringColors[note.stringIndex]}` : 'none',
+              background: getNoteColor(note.stringIndex, note.fret),
+              boxShadow: isPlaying ? `0 0 10px 3px ${getNoteColor(note.stringIndex, note.fret)}` : 'none',
               transform: 'translate(-50%, -50%) rotate(-35deg)',
               pointerEvents: 'none',
               zIndex: 5,
@@ -359,7 +359,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
         {durationDrag && (() => {
           const leftPercent = PADDING_LEFT + (durationDrag.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
           const topPercent = cellCenterPercent(durationDrag.fret, viewStart, viewCells);
-          const color = stringColors[durationDrag.stringIndex];
+          const color = getNoteColor(durationDrag.stringIndex, durationDrag.fret);
           const durationLabels = { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
           const label = durationLabels[durationDrag.duration] || `${durationDrag.duration}`;
           // Fill percentage: 1 beat = ~6%, 16 beats = 100%
@@ -516,7 +516,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             width: 50,
             height: 50,
             borderRadius: '50%',
-            background: `radial-gradient(circle, ${stringColors[note.stringIndex]}66 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${getNoteColor(note.stringIndex, note.fret)}66 0%, transparent 70%)`,
             transform: 'translate(-50%, -50%)',
             pointerEvents: 'none',
             zIndex: 3,
@@ -534,8 +534,8 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
               width: 28,
               height: 10,
               borderRadius: 5,
-              background: stringColors[note.stringIndex],
-              boxShadow: `0 0 10px 3px ${stringColors[note.stringIndex]}`,
+              background: getNoteColor(note.stringIndex, note.fret),
+              boxShadow: `0 0 10px 3px ${getNoteColor(note.stringIndex, note.fret)}`,
               opacity: 0.7,
               transform: 'translate(-50%, -50%) rotate(-35deg)',
               pointerEvents: 'none',
@@ -552,7 +552,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             width: 28,
             height: 10,
             borderRadius: 5,
-            background: stringColors[dragNote.stringIndex],
+            background: getNoteColor(dragNote.stringIndex, dragNote.fret),
             opacity: 0.8,
             transform: 'translate(-50%, -50%) rotate(-35deg)',
             pointerEvents: 'none',
@@ -585,7 +585,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             width: 28,
             height: 10,
             borderRadius: 5,
-            background: stringColors[hoveredNote.stringIndex],
+            background: getNoteColor(hoveredNote.stringIndex, hoveredNote.fret),
             opacity: 0.6,
             transform: 'translate(-50%, -50%) rotate(-35deg)',
             pointerEvents: 'none',

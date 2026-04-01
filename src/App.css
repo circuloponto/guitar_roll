@@ -490,3 +490,29 @@
   color: #888;
   font-family: monospace;
 }
+
+.synesthesia-select {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  width: 54px;
+}
+
+.synesthesia-remove {
+  background: none;
+  border: 1px solid #555;
+  color: #888;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.synesthesia-remove:hover {
+  color: #e74c3c;
+  border-color: #e74c3c;
+}

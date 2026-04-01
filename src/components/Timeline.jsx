@@ -24,7 +24,7 @@ export default function Timeline({
   notes, setNotes, currentBeat, selectedBeat, setSelectedBeat,
   playing, eraser, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
-  selectedNotes, setSelectedNotes, stringColors,
+  selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
 }) {
   const bodyRef = useRef(null);
@@ -400,8 +400,8 @@ export default function Timeline({
                   width: noteWidth,
                   height: `${heightPercent}%`,
                   minHeight: 4,
-                  backgroundColor: stringColors[note.stringIndex],
-                  boxShadow: isPlaying ? `0 0 12px 4px ${stringColors[note.stringIndex]}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
+                  backgroundColor: getNoteColor(note.stringIndex, note.fret),
+                  boxShadow: isPlaying ? `0 0 12px 4px ${getNoteColor(note.stringIndex, note.fret)}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
                 }}
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}
@@ -431,7 +431,7 @@ export default function Timeline({
                 className="timeline-note"
                 style={{
                   left: dragPreview.beat * CELL_WIDTH + 1,
-                  backgroundColor: stringColors[dragPreview.stringIndex],
+                  backgroundColor: getNoteColor(dragPreview.stringIndex, dragPreview.fret),
                   top: `${topPercent}%`,
                   width: noteWidth,
                   height: `${heightPercent}%`,
