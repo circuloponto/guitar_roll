@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, STRING_COLORS, CELL_WIDTH, NUM_BARS, SUBDIVISIONS } from '../utils/constants';
+import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, NUM_BARS, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
 
 const MAX_DURATION = NUM_BARS * SUBDIVISIONS;
@@ -23,7 +23,7 @@ function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
   return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [] }) {
+export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -80,6 +80,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
   const handleMouseMove = useCallback((e) => {
     const pos = getStringAndFret(e);
     setHover(pos);
+    setHoveredNote(pos);
 
     // Skip note-move drag in modifier modes
     if (durationMode || moveMode) return;
@@ -249,7 +250,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
-        onMouseLeave={() => { setHover(null); if (!durationDragRef.current && !moveDragRef.current) { dragStartRef.current = null; didDragRef.current = false; setDragNote(null); } }}
+        onMouseLeave={() => { setHover(null); setHoveredNote(null); if (!durationDragRef.current && !moveDragRef.current) { dragStartRef.current = null; didDragRef.current = false; setDragNote(null); } }}
       >
         {/* Nut - horizontal line between fret 0 and fret 1 (only if visible) */}
         {viewStart < 1 && 1 < viewStart + viewCells && (
@@ -345,8 +346,8 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
               width: 28,
               height: 10,
               borderRadius: 5,
-              background: STRING_COLORS[note.stringIndex],
-              boxShadow: isPlaying ? `0 0 10px 3px ${STRING_COLORS[note.stringIndex]}` : 'none',
+              background: stringColors[note.stringIndex],
+              boxShadow: isPlaying ? `0 0 10px 3px ${stringColors[note.stringIndex]}` : 'none',
               transform: 'translate(-50%, -50%) rotate(-35deg)',
               pointerEvents: 'none',
               zIndex: 5,
@@ -358,7 +359,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
         {durationDrag && (() => {
           const leftPercent = PADDING_LEFT + (durationDrag.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
           const topPercent = cellCenterPercent(durationDrag.fret, viewStart, viewCells);
-          const color = STRING_COLORS[durationDrag.stringIndex];
+          const color = stringColors[durationDrag.stringIndex];
           const durationLabels = { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
           const label = durationLabels[durationDrag.duration] || `${durationDrag.duration}`;
           // Fill percentage: 1 beat = ~6%, 16 beats = 100%
@@ -515,7 +516,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             width: 50,
             height: 50,
             borderRadius: '50%',
-            background: `radial-gradient(circle, ${STRING_COLORS[note.stringIndex]}66 0%, transparent 70%)`,
+            background: `radial-gradient(circle, ${stringColors[note.stringIndex]}66 0%, transparent 70%)`,
             transform: 'translate(-50%, -50%)',
             pointerEvents: 'none',
             zIndex: 3,
@@ -533,8 +534,8 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
               width: 28,
               height: 10,
               borderRadius: 5,
-              background: STRING_COLORS[note.stringIndex],
-              boxShadow: `0 0 10px 3px ${STRING_COLORS[note.stringIndex]}`,
+              background: stringColors[note.stringIndex],
+              boxShadow: `0 0 10px 3px ${stringColors[note.stringIndex]}`,
               opacity: 0.7,
               transform: 'translate(-50%, -50%) rotate(-35deg)',
               pointerEvents: 'none',
@@ -551,7 +552,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             width: 28,
             height: 10,
             borderRadius: 5,
-            background: STRING_COLORS[dragNote.stringIndex],
+            background: stringColors[dragNote.stringIndex],
             opacity: 0.8,
             transform: 'translate(-50%, -50%) rotate(-35deg)',
             pointerEvents: 'none',
@@ -569,6 +570,23 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
             height: 10,
             borderRadius: 5,
             background: '#fff',
+            transform: 'translate(-50%, -50%) rotate(-35deg)',
+            pointerEvents: 'none',
+            zIndex: 10,
+          }} />
+        )}
+
+        {/* External hover highlight (from piano roll) */}
+        {!hover && hoveredNote && hoveredNote.fret >= viewStart && hoveredNote.fret < viewStart + viewCells && (
+          <div style={{
+            position: 'absolute',
+            left: `${PADDING_LEFT + (hoveredNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+            top: `${cellCenterPercent(hoveredNote.fret, viewStart, viewCells)}%`,
+            width: 28,
+            height: 10,
+            borderRadius: 5,
+            background: stringColors[hoveredNote.stringIndex],
+            opacity: 0.6,
             transform: 'translate(-50%, -50%) rotate(-35deg)',
             pointerEvents: 'none',
             zIndex: 10,

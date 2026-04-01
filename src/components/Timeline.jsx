@@ -1,9 +1,11 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
-  CELL_WIDTH, BAR_WIDTH, STRING_COLORS
+  CELL_WIDTH, BAR_WIDTH
 } from '../utils/constants';
 import { getNoteName } from '../utils/audio';
+
+const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 
 const totalCols = NUM_BARS * SUBDIVISIONS;
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -22,7 +24,8 @@ export default function Timeline({
   notes, setNotes, currentBeat, selectedBeat, setSelectedBeat,
   playing, eraser, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
-  selectedNotes, setSelectedNotes,
+  selectedNotes, setSelectedNotes, stringColors,
+  hoveredNote, setHoveredNote,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -244,32 +247,72 @@ export default function Timeline({
   const loopLeftPx = loopStart * CELL_WIDTH;
   const loopWidthPx = (loopEnd - loopStart) * CELL_WIDTH;
 
+  // Build piano roll rows (bottom-up: row 0 = bottom = string 0 fret 0)
+  const pianoRows = [];
+  for (let s = 0; s < NUM_STRINGS; s++) {
+    for (let f = 0; f < TOTAL_FRETS_PER_STRING; f++) {
+      const name = getNoteName(s, f);
+      const noteLetter = name.replace(/[0-9]/g, '');
+      const isBlack = BLACK_NOTES.has(noteLetter);
+      pianoRows.push({ stringIndex: s, fret: f, name, isBlack });
+    }
+  }
+  // Reverse so index 0 is bottom (low notes)
+  pianoRows.reverse();
+
   return (
     <div className={`timeline-container ${eraser ? 'eraser-mode' : ''}`}>
-      {/* Header with bar numbers + loop region */}
-      <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown}>
-        {/* Loop region highlight in header */}
-        <div
-          className="loop-region-header"
-          style={{ left: loopLeftPx, width: loopWidthPx }}
-        />
-        {Array.from({ length: NUM_BARS }, (_, i) => (
+      {/* Header row: piano spacer + bar numbers */}
+      <div style={{ display: 'flex' }}>
+        <div className="piano-spacer" />
+        <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
           <div
-            key={i}
-            className="bar-number"
-            style={{ left: i * BAR_WIDTH }}
-          >
-            {i + 1}
-          </div>
-        ))}
+            className="loop-region-header"
+            style={{ left: loopLeftPx, width: loopWidthPx }}
+          />
+          {Array.from({ length: NUM_BARS }, (_, i) => (
+            <div
+              key={i}
+              className="bar-number"
+              style={{ left: i * BAR_WIDTH }}
+            >
+              {i + 1}
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Grid body */}
-      <div
-        className="timeline-body"
-        ref={bodyRef}
-        onClick={handleClick}
-      >
+      {/* Body row: piano roll + grid */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        {/* Piano roll */}
+        <div className="piano-roll" onMouseLeave={() => setHoveredNote(null)}>
+          {pianoRows.map((row, i) => {
+            const isHovered = hoveredNote &&
+              hoveredNote.stringIndex === row.stringIndex &&
+              hoveredNote.fret === row.fret;
+            return (
+              <div
+                key={i}
+                className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
+                style={{
+                  height: `${100 / totalRows}%`,
+                  borderBottom: row.fret === 0 ? `1px solid ${stringColors[row.stringIndex]}` : undefined,
+                }}
+                onMouseEnter={() => setHoveredNote({ stringIndex: row.stringIndex, fret: row.fret })}
+              >
+                <span className="piano-key-label">{row.name}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Grid body */}
+        <div
+          className="timeline-body"
+          ref={bodyRef}
+          onClick={handleClick}
+          style={{ flex: 1 }}
+        >
         <div className="timeline-grid" style={{ width: gridWidth }}>
           {/* Loop region highlight in grid */}
           <div
@@ -305,25 +348,19 @@ export default function Timeline({
             />
           ))}
 
-          {/* String labels on the left edge */}
-          {Array.from({ length: NUM_STRINGS }, (_, i) => (
-            <div
-              key={`label-${i}`}
-              style={{
-                position: 'absolute',
-                left: 2,
-                bottom: `${((i + 0.5) / NUM_STRINGS) * 100}%`,
-                transform: 'translateY(50%)',
-                fontSize: '10px',
-                color: STRING_COLORS[i],
-                fontWeight: 'bold',
-                zIndex: 5,
-                pointerEvents: 'none',
-              }}
-            >
-              {['E', 'A', 'D', 'G', 'B', 'e'][i]}
-            </div>
-          ))}
+          {/* Hovered row highlight */}
+          {hoveredNote && (
+            <div style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              top: `${rowTopPercent(hoveredNote.stringIndex, hoveredNote.fret, totalRows)}%`,
+              height: `${rowHeightPercent(totalRows)}%`,
+              background: 'rgba(100, 160, 255, 0.15)',
+              pointerEvents: 'none',
+              zIndex: 1,
+            }} />
+          )}
 
           {/* Vertical bar lines */}
           {Array.from({ length: totalCols }, (_, i) => (
@@ -356,13 +393,15 @@ export default function Timeline({
             return (
               <div
                 key={i}
-                className={`timeline-note string-${note.stringIndex} ${eraser ? 'erasable' : ''} ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
+                className={`timeline-note ${eraser ? 'erasable' : ''} ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
                   left: note.beat * CELL_WIDTH + 1,
                   top: `${topPercent}%`,
                   width: noteWidth,
                   height: `${heightPercent}%`,
                   minHeight: 4,
+                  backgroundColor: stringColors[note.stringIndex],
+                  boxShadow: isPlaying ? `0 0 12px 4px ${stringColors[note.stringIndex]}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
                 }}
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}
@@ -389,9 +428,10 @@ export default function Timeline({
             const noteWidth = duration * CELL_WIDTH - 2;
             return (
               <div
-                className={`timeline-note string-${dragPreview.stringIndex}`}
+                className="timeline-note"
                 style={{
                   left: dragPreview.beat * CELL_WIDTH + 1,
+                  backgroundColor: stringColors[dragPreview.stringIndex],
                   top: `${topPercent}%`,
                   width: noteWidth,
                   height: `${heightPercent}%`,
@@ -411,6 +451,7 @@ export default function Timeline({
             <div className="playhead" style={{ left: currentBeat * CELL_WIDTH }} />
           )}
         </div>
+      </div>
       </div>
     </div>
   );

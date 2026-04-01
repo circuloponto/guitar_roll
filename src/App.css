@@ -334,13 +334,6 @@
   filter: brightness(2);
 }
 
-.timeline-note.string-0.playing { box-shadow: 0 0 12px 4px #e74c3c, inset 0 0 6px rgba(255,255,255,0.3); }
-.timeline-note.string-1.playing { box-shadow: 0 0 12px 4px #e67e22, inset 0 0 6px rgba(255,255,255,0.3); }
-.timeline-note.string-2.playing { box-shadow: 0 0 12px 4px #f1c40f, inset 0 0 6px rgba(255,255,255,0.3); }
-.timeline-note.string-3.playing { box-shadow: 0 0 12px 4px #2ecc71, inset 0 0 6px rgba(255,255,255,0.3); }
-.timeline-note.string-4.playing { box-shadow: 0 0 12px 4px #3498db, inset 0 0 6px rgba(255,255,255,0.3); }
-.timeline-note.string-5.playing { box-shadow: 0 0 12px 4px #9b59b6, inset 0 0 6px rgba(255,255,255,0.3); }
-
 .eraser-mode .timeline-body {
   cursor: crosshair;
 }
@@ -376,10 +369,124 @@
   z-index: 20;
 }
 
-/* String colors */
-.string-0 { background: #e74c3c; }
-.string-1 { background: #e67e22; }
-.string-2 { background: #f1c40f; }
-.string-3 { background: #2ecc71; }
-.string-4 { background: #3498db; }
-.string-5 { background: #9b59b6; }
+/* Piano Roll */
+.piano-spacer {
+  width: 64px;
+  min-width: 64px;
+  height: 30px;
+  background: #111;
+  border-bottom: 1px solid #333;
+  border-right: 1px solid #333;
+}
+
+.piano-roll {
+  width: 64px;
+  min-width: 64px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background: #e8e8e8;
+  border-right: 1px solid #333;
+}
+
+.piano-key {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.piano-key.white {
+  background: #e8e8e8;
+  justify-content: flex-end;
+  padding-right: 4px;
+}
+
+.piano-key.black {
+  background: #222;
+  width: 60%;
+  justify-content: flex-end;
+  padding-right: 3px;
+  z-index: 2;
+  border-radius: 0 2px 2px 0;
+  border-right: 1px solid #000;
+}
+
+.piano-key-label {
+  font-size: 9px;
+  font-weight: bold;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.piano-key.white .piano-key-label {
+  color: #333;
+}
+
+.piano-key.black .piano-key-label {
+  color: #aaa;
+}
+
+.piano-key.white.hovered {
+  background: #b0d4ff;
+}
+
+.piano-key.black.hovered {
+  background: #4488cc;
+}
+
+/* Color Picker */
+.color-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.color-picker-popup {
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 220px;
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.color-picker-label {
+  width: 20px;
+  font-weight: bold;
+  font-size: 14px;
+  color: #fff;
+}
+
+.color-picker-row input[type="color"] {
+  width: 36px;
+  height: 28px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-picker-hex {
+  font-size: 12px;
+  color: #888;
+  font-family: monospace;
+}

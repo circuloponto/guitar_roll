@@ -16,6 +16,9 @@ function App() {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
   const [fretboardZoom, setFretboardZoom] = useState(false);
+  const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(NUM_BARS * SUBDIVISIONS);
@@ -259,6 +262,13 @@ function App() {
         >
           Zoom
         </button>
+        <button
+          className="tool-btn"
+          onClick={() => setShowColorPicker(p => !p)}
+          title="Customize string colors"
+        >
+          Colors
+        </button>
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
         <input
@@ -314,6 +324,9 @@ function App() {
             : []}
           zoom={fretboardZoom}
           zoomNotes={fretboardZoom ? notes.filter(n => n.beat >= loopStart && n.beat < loopEnd) : []}
+          stringColors={stringColors}
+          hoveredNote={hoveredNote}
+          setHoveredNote={setHoveredNote}
         />
         <Timeline
           notes={notes}
@@ -331,8 +344,38 @@ function App() {
           loop={loop}
           selectedNotes={selectedNotes}
           setSelectedNotes={setSelectedNotes}
+          stringColors={stringColors}
+          hoveredNote={hoveredNote}
+          setHoveredNote={setHoveredNote}
         />
       </div>
+
+      {/* Color Picker Popup */}
+      {showColorPicker && (
+        <div className="color-picker-overlay" onClick={() => setShowColorPicker(false)}>
+          <div className="color-picker-popup" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>String Colors</h3>
+            {['E', 'A', 'D', 'G', 'B', 'e'].map((name, i) => (
+              <div key={i} className="color-picker-row">
+                <span className="color-picker-label">{name}</span>
+                <input
+                  type="color"
+                  value={stringColors[i]}
+                  onChange={(e) => setStringColors(prev => {
+                    const next = [...prev];
+                    next[i] = e.target.value;
+                    return next;
+                  })}
+                />
+                <span className="color-picker-hex">{stringColors[i]}</span>
+              </div>
+            ))}
+            <button className="tool-btn" style={{ marginTop: 12, width: '100%' }} onClick={() => setShowColorPicker(false)}>
+              Done
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
