@@ -60,6 +60,13 @@
   border-color: #3498db;
 }
 
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: #444;
+  margin: 0 6px;
+}
+
 .main-area {
   display: flex;
   flex: 1;
@@ -293,6 +300,22 @@
 .timeline-note.erasable:hover {
   filter: brightness(0.5);
   outline: 2px solid #e74c3c;
+}
+
+.timeline-note.selected {
+  outline: 2px solid #fff;
+  filter: brightness(1.3);
+  z-index: 15;
+}
+
+.timeline-note.playing {
+  filter: brightness(1.6);
+  box-shadow: 0 0 8px 2px currentColor;
+  z-index: 14;
+}
+
+.timeline-note.selected.playing {
+  filter: brightness(1.8);
 }
 
 .eraser-mode .timeline-body {

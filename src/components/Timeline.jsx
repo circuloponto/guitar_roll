@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
   CELL_WIDTH, BAR_WIDTH, STRING_COLORS
@@ -6,60 +6,100 @@ import {
 import { getNoteName } from '../utils/audio';
 
 const totalCols = NUM_BARS * SUBDIVISIONS;
+const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
+
+// Convert stringIndex + fret to a bottom-up row position (bass at bottom)
+function rowTopPercent(stringIndex, fret, totalRows) {
+  const row = stringIndex * TOTAL_FRETS_PER_STRING + fret;
+  return ((totalRows - 1 - row) / totalRows) * 100;
+}
+
+function rowHeightPercent(totalRows) {
+  return (1 / totalRows) * 100;
+}
 
 export default function Timeline({
   notes, setNotes, currentBeat, selectedBeat, setSelectedBeat,
   playing, eraser, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
+  selectedNotes, setSelectedNotes,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
-  const totalRows = NUM_STRINGS * (NUM_FRETS + 1);
+  const totalRows = NUM_STRINGS * TOTAL_FRETS_PER_STRING;
   const gridWidth = totalCols * CELL_WIDTH;
-  const draggingRef = useRef(null);
+  const draggingRef = useRef(null);   // resize drag
+  const noteDragRef = useRef(null);   // note move drag
+  const [dragPreview, setDragPreview] = useState(null); // { noteIndex, beat, stringIndex, fret }
   const loopDragRef = useRef(null);
 
   const handleClick = useCallback((e) => {
     if (playing) return;
     if (eraser && e.target.closest('.timeline-note')) return;
-    if (draggingRef.current) return;
+    if (draggingRef.current || noteDragRef.current) return;
+    if (!e.shiftKey) {
+      setSelectedNotes(new Set());
+    }
     const rect = bodyRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
     const col = Math.floor(x / CELL_WIDTH);
     if (col >= 0 && col < totalCols) {
       setSelectedBeat(col);
     }
-  }, [setSelectedBeat, playing, eraser]);
+  }, [setSelectedBeat, setSelectedNotes, playing, eraser]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
-    if (!eraser) return;
-    e.stopPropagation();
-    onDeleteNote(noteIndex);
-  }, [eraser, onDeleteNote]);
+    if (eraser) {
+      e.stopPropagation();
+      onDeleteNote(noteIndex);
+      return;
+    }
+    if (e.shiftKey) {
+      e.stopPropagation();
+      setSelectedNotes(prev => {
+        const next = new Set(prev);
+        if (next.has(noteIndex)) {
+          next.delete(noteIndex);
+        } else {
+          next.add(noteIndex);
+        }
+        return next;
+      });
+      return;
+    }
+  }, [eraser, onDeleteNote, setSelectedNotes]);
 
   const handleResizeStart = useCallback((e, noteIndex) => {
     e.stopPropagation();
     e.preventDefault();
     const note = notes[noteIndex];
+    const isSelected = selectedNotes.has(noteIndex);
+    const affectedIndices = isSelected ? [...selectedNotes] : [noteIndex];
+    const startDurations = new Map(
+      affectedIndices.map(i => [i, notes[i].duration || 1])
+    );
+
     draggingRef.current = {
       noteIndex,
       startX: e.clientX,
       startDuration: note.duration || 1,
+      affectedIndices,
+      startDurations,
     };
 
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
       const dx = moveE.clientX - draggingRef.current.startX;
       const dBeats = Math.round(dx / CELL_WIDTH);
-      const newDuration = Math.max(1, draggingRef.current.startDuration + dBeats);
-      const maxDuration = totalCols - note.beat;
-      const clampedDuration = Math.min(newDuration, maxDuration);
+      const { affectedIndices, startDurations } = draggingRef.current;
 
-      setNotes(prev => prev.map((n, i) =>
-        i === draggingRef.current.noteIndex
-          ? { ...n, duration: clampedDuration }
-          : n
-      ));
+      setNotes(prev => prev.map((n, i) => {
+        if (!affectedIndices.includes(i)) return n;
+        const baseDuration = startDurations.get(i);
+        const newDuration = Math.max(1, baseDuration + dBeats);
+        const maxDuration = totalCols - n.beat;
+        return { ...n, duration: Math.min(newDuration, maxDuration) };
+      }));
     };
 
     const handleMouseUp = () => {
@@ -70,7 +110,84 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes]);
+  }, [notes, setNotes, selectedNotes]);
+
+  const handleNoteDragStart = useCallback((e, noteIndex) => {
+    if (eraser || e.shiftKey) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const note = notes[noteIndex];
+    const rect = bodyRef.current.getBoundingClientRect();
+    const gridTop = rect.top;
+    const gridHeight = rect.height;
+
+    noteDragRef.current = {
+      noteIndex,
+      startX: e.clientX,
+      startY: e.clientY,
+      startBeat: note.beat,
+      startStringIndex: note.stringIndex,
+      startFret: note.fret,
+      gridTop,
+      gridHeight,
+      didMove: false,
+    };
+    setDragPreview({ noteIndex, beat: note.beat, stringIndex: note.stringIndex, fret: note.fret });
+
+    const handleMouseMove = (moveE) => {
+      if (!noteDragRef.current) return;
+      const d = noteDragRef.current;
+
+      const dx = moveE.clientX - d.startX;
+      const dy = moveE.clientY - d.startY;
+      if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+      d.didMove = true;
+
+      const dBeats = Math.round(dx / CELL_WIDTH);
+      const newBeat = Math.max(0, Math.min(totalCols - (notes[d.noteIndex].duration || 1), d.startBeat + dBeats));
+
+      const scrollTop = bodyRef.current.scrollTop;
+      const mouseY = moveE.clientY - d.gridTop + scrollTop;
+      const rowHeight = d.gridHeight * (1 / totalRows);
+      const rowFromTop = Math.floor(mouseY / rowHeight);
+      const row = totalRows - 1 - rowFromTop; // invert: bottom = low strings
+      const clampedRow = Math.max(0, Math.min(totalRows - 1, row));
+      const newStringIndex = Math.floor(clampedRow / TOTAL_FRETS_PER_STRING);
+      const newFret = clampedRow % TOTAL_FRETS_PER_STRING;
+
+      setDragPreview({ noteIndex: d.noteIndex, beat: newBeat, stringIndex: newStringIndex, fret: newFret });
+    };
+
+    const handleMouseUp = () => {
+      const d = noteDragRef.current;
+      if (d && d.didMove) {
+        setDragPreview(prev => {
+          if (prev) {
+            setNotes(old => {
+              // Remove any note at the destination position
+              const filtered = old.filter((n, i) =>
+                i === d.noteIndex || !(n.stringIndex === prev.stringIndex && n.fret === prev.fret && n.beat === prev.beat)
+              );
+              return filtered.map(n =>
+                n === old[d.noteIndex]
+                  ? { ...n, beat: prev.beat, stringIndex: prev.stringIndex, fret: prev.fret }
+                  : n
+              );
+            });
+          }
+          return null;
+        });
+      } else {
+        setDragPreview(null);
+      }
+      noteDragRef.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [notes, setNotes, eraser]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -180,7 +297,7 @@ export default function Timeline({
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                top: `${(i / NUM_STRINGS) * 100}%`,
+                bottom: `${(i / NUM_STRINGS) * 100}%`,
                 height: '1px',
                 background: '#333',
                 zIndex: 1,
@@ -195,8 +312,8 @@ export default function Timeline({
               style={{
                 position: 'absolute',
                 left: 2,
-                top: `${((i + 0.5) / NUM_STRINGS) * 100}%`,
-                transform: 'translateY(-50%)',
+                bottom: `${((i + 0.5) / NUM_STRINGS) * 100}%`,
+                transform: 'translateY(50%)',
                 fontSize: '10px',
                 color: STRING_COLORS[i],
                 fontWeight: 'bold',
@@ -227,16 +344,19 @@ export default function Timeline({
 
           {/* Notes */}
           {notes.map((note, i) => {
-            const row = note.stringIndex * (NUM_FRETS + 1) + note.fret;
-            const topPercent = (row / totalRows) * 100;
-            const heightPercent = (1 / totalRows) * 100;
+            const isDragging = dragPreview && dragPreview.noteIndex === i;
+            if (isDragging) return null;
+            const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
+            const heightPercent = rowHeightPercent(totalRows);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
+            const isPlaying = playing && currentBeat !== null &&
+              currentBeat >= note.beat && currentBeat < note.beat + duration;
 
             return (
               <div
                 key={i}
-                className={`timeline-note string-${note.stringIndex} ${eraser ? 'erasable' : ''}`}
+                className={`timeline-note string-${note.stringIndex} ${eraser ? 'erasable' : ''} ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
                   left: note.beat * CELL_WIDTH + 1,
                   top: `${topPercent}%`,
@@ -246,6 +366,7 @@ export default function Timeline({
                 }}
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}
+                onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
                 {getNoteName(note.stringIndex, note.fret)}
                 {!eraser && (
@@ -257,6 +378,33 @@ export default function Timeline({
               </div>
             );
           })}
+
+          {/* Drag preview note */}
+          {dragPreview && (() => {
+            const note = notes[dragPreview.noteIndex];
+            if (!note) return null;
+            const topPercent = rowTopPercent(dragPreview.stringIndex, dragPreview.fret, totalRows);
+            const heightPercent = rowHeightPercent(totalRows);
+            const duration = note.duration || 1;
+            const noteWidth = duration * CELL_WIDTH - 2;
+            return (
+              <div
+                className={`timeline-note string-${dragPreview.stringIndex}`}
+                style={{
+                  left: dragPreview.beat * CELL_WIDTH + 1,
+                  top: `${topPercent}%`,
+                  width: noteWidth,
+                  height: `${heightPercent}%`,
+                  minHeight: 4,
+                  opacity: 0.7,
+                  zIndex: 20,
+                  pointerEvents: 'none',
+                }}
+              >
+                {getNoteName(dragPreview.stringIndex, dragPreview.fret)}
+              </div>
+            );
+          })()}
 
           {/* Playhead */}
           {currentBeat !== null && playing && (

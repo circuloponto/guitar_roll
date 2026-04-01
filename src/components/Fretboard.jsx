@@ -19,9 +19,12 @@ function cellCenterPercent(cell) {
   return PADDING_TOP + ((cell + 0.5) / TOTAL_CELLS) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, activeNotes = [] }) {
+export default function Fretboard({ onNoteClick, onMoveNote, activeNotes = [], playingNotes = [] }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
+  const dragStartRef = useRef(null); // tracks mousedown position to distinguish click vs drag
+  const didDragRef = useRef(false);
 
   const getStringAndFret = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
@@ -50,16 +53,57 @@ export default function Fretboard({ onNoteClick, activeNotes = [] }) {
   }, []);
 
   const handleMouseMove = useCallback((e) => {
-    setHover(getStringAndFret(e));
+    const pos = getStringAndFret(e);
+    setHover(pos);
+
+    if (dragStartRef.current && pos) {
+      const start = dragStartRef.current;
+      if (pos.stringIndex !== start.stringIndex || pos.fret !== start.fret) {
+        didDragRef.current = true;
+        setDragNote(pos);
+      }
+    }
   }, [getStringAndFret]);
 
-  const handleClick = useCallback((e) => {
+  const handleMouseDown = useCallback((e) => {
+    const result = getStringAndFret(e);
+    if (!result) return;
+
+    const isActive = activeNotes.some(
+      n => n.stringIndex === result.stringIndex && n.fret === result.fret
+    );
+
+    if (isActive) {
+      dragStartRef.current = result;
+      didDragRef.current = false;
+      setDragNote(result);
+      e.preventDefault();
+    }
+  }, [getStringAndFret, activeNotes]);
+
+  const handleMouseUp = useCallback((e) => {
+    if (dragStartRef.current && didDragRef.current) {
+      const pos = getStringAndFret(e);
+      if (pos) {
+        playNote(pos.stringIndex, pos.fret);
+        onMoveNote(dragStartRef.current.stringIndex, dragStartRef.current.fret, pos.stringIndex, pos.fret);
+      }
+      dragStartRef.current = null;
+      didDragRef.current = false;
+      setDragNote(null);
+      return;
+    }
+
+    dragStartRef.current = null;
+    didDragRef.current = false;
+    setDragNote(null);
+
     const result = getStringAndFret(e);
     if (result) {
       playNote(result.stringIndex, result.fret);
       onNoteClick(result.stringIndex, result.fret);
     }
-  }, [getStringAndFret, onNoteClick]);
+  }, [getStringAndFret, onNoteClick, onMoveNote]);
 
   const noteName = hover ? getNoteName(hover.stringIndex, hover.fret) : null;
 
@@ -72,8 +116,9 @@ export default function Fretboard({ onNoteClick, activeNotes = [] }) {
         className="fretboard"
         ref={containerRef}
         onMouseMove={handleMouseMove}
-        onClick={handleClick}
-        onMouseLeave={() => setHover(null)}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => { setHover(null); dragStartRef.current = null; didDragRef.current = false; setDragNote(null); }}
       >
         {/* Nut - horizontal line between fret 0 and fret 1 */}
         <div style={{
@@ -145,20 +190,67 @@ export default function Fretboard({ onNoteClick, activeNotes = [] }) {
         ))}
 
         {/* Active notes at current beat */}
-        {activeNotes.map((note, i) => (
-          <div key={`active-${i}`} style={{
+        {activeNotes.map((note, i) => {
+          const isDragging = dragStartRef.current &&
+            note.stringIndex === dragStartRef.current.stringIndex &&
+            note.fret === dragStartRef.current.fret;
+          if (isDragging) return null;
+          const isPlaying = playingNotes.some(
+            p => p.stringIndex === note.stringIndex && p.fret === note.fret
+          );
+          return (
+            <div key={`active-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: `${cellCenterPercent(note.fret)}%`,
+              width: 28,
+              height: 10,
+              borderRadius: 5,
+              background: STRING_COLORS[note.stringIndex],
+              boxShadow: isPlaying ? `0 0 10px 3px ${STRING_COLORS[note.stringIndex]}` : 'none',
+              transform: 'translate(-50%, -50%) rotate(-35deg)',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }} />
+          );
+        })}
+
+        {/* Playing notes not on the selected beat */}
+        {playingNotes
+          .filter(p => !activeNotes.some(a => a.stringIndex === p.stringIndex && a.fret === p.fret))
+          .map((note, i) => (
+            <div key={`playing-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: `${cellCenterPercent(note.fret)}%`,
+              width: 28,
+              height: 10,
+              borderRadius: 5,
+              background: STRING_COLORS[note.stringIndex],
+              boxShadow: `0 0 10px 3px ${STRING_COLORS[note.stringIndex]}`,
+              opacity: 0.7,
+              transform: 'translate(-50%, -50%) rotate(-35deg)',
+              pointerEvents: 'none',
+              zIndex: 4,
+            }} />
+          ))}
+
+        {/* Drag preview note */}
+        {dragNote && dragStartRef.current && (
+          <div style={{
             position: 'absolute',
-            left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(note.fret)}%`,
+            left: `${PADDING_LEFT + (dragNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+            top: `${cellCenterPercent(dragNote.fret)}%`,
             width: 28,
             height: 10,
             borderRadius: 5,
-            background: STRING_COLORS[note.stringIndex],
+            background: STRING_COLORS[dragNote.stringIndex],
+            opacity: 0.8,
             transform: 'translate(-50%, -50%) rotate(-35deg)',
             pointerEvents: 'none',
-            zIndex: 5,
+            zIndex: 11,
           }} />
-        ))}
+        )}
 
         {/* Hover indicator - pill in center of cell */}
         {hover && (
