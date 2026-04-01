@@ -37,6 +37,7 @@ function App() {
   notesRef.current = notes;
 
   const totalBeats = NUM_BARS * SUBDIVISIONS;
+  const handlePlayRef = useRef(null);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
@@ -47,6 +48,10 @@ function App() {
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
+      }
+      if (e.key === ' ') {
+        e.preventDefault();
+        handlePlayRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -209,6 +214,7 @@ function App() {
 
     animFrameRef.current = requestAnimationFrame(animate);
   }, [playing, stopPlayback]);
+  handlePlayRef.current = handlePlay;
 
   const handleClear = useCallback(() => {
     setNotes([]);
