@@ -60,6 +60,22 @@
   border-color: #3498db;
 }
 
+.bpm-input {
+  width: 50px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 5px 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.bpm-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;
@@ -165,6 +181,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  user-select: none;
 }
 
 .timeline-header {
@@ -309,14 +326,20 @@
 }
 
 .timeline-note.playing {
-  filter: brightness(1.6);
-  box-shadow: 0 0 8px 2px currentColor;
+  filter: brightness(1.8);
   z-index: 14;
 }
 
 .timeline-note.selected.playing {
-  filter: brightness(1.8);
+  filter: brightness(2);
 }
+
+.timeline-note.string-0.playing { box-shadow: 0 0 12px 4px #e74c3c, inset 0 0 6px rgba(255,255,255,0.3); }
+.timeline-note.string-1.playing { box-shadow: 0 0 12px 4px #e67e22, inset 0 0 6px rgba(255,255,255,0.3); }
+.timeline-note.string-2.playing { box-shadow: 0 0 12px 4px #f1c40f, inset 0 0 6px rgba(255,255,255,0.3); }
+.timeline-note.string-3.playing { box-shadow: 0 0 12px 4px #2ecc71, inset 0 0 6px rgba(255,255,255,0.3); }
+.timeline-note.string-4.playing { box-shadow: 0 0 12px 4px #3498db, inset 0 0 6px rgba(255,255,255,0.3); }
+.timeline-note.string-5.playing { box-shadow: 0 0 12px 4px #9b59b6, inset 0 0 6px rgba(255,255,255,0.3); }
 
 .eraser-mode .timeline-body {
   cursor: crosshair;

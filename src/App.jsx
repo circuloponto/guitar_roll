@@ -1,8 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, getAudioContext } from './utils/audio';
-import { NUM_BARS, SUBDIVISIONS, BPM } from './utils/constants';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext } from './utils/audio';
+import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import './App.css';
 
 function App() {
@@ -13,10 +13,15 @@ function App() {
   const [eraser, setEraser] = useState(false);
   const [noteDuration, setNoteDuration] = useState(1);
   const [selectedNotes, setSelectedNotes] = useState(new Set());
+  const [bpm, setBpm] = useState(DEFAULT_BPM);
+  const [metronome, setMetronome] = useState(false);
+  const [fretboardZoom, setFretboardZoom] = useState(false);
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(NUM_BARS * SUBDIVISIONS);
   const playingRef = useRef(false);
+  const bpmRef = useRef(bpm);
+  const metronomeRef = useRef(metronome);
   const loopRef = useRef(false);
   const loopStartRef = useRef(0);
   const loopEndRef = useRef(NUM_BARS * SUBDIVISIONS);
@@ -24,10 +29,29 @@ function App() {
   const animFrameRef = useRef(null);
 
   // Keep refs in sync
+  bpmRef.current = bpm;
+  metronomeRef.current = metronome;
   loopRef.current = loop;
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
   notesRef.current = notes;
+
+  const totalBeats = NUM_BARS * SUBDIVISIONS;
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setSelectedBeat(b => Math.max(0, b - 1));
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [totalBeats]);
 
   const handleFretClick = useCallback((stringIndex, fret) => {
     setNotes(prev => {
@@ -69,6 +93,23 @@ function App() {
     }
   }, [selectedNotes]);
 
+  const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
+    setNotes(prev => prev.map(n =>
+      n.stringIndex === stringIndex && n.fret === fret && n.beat === selectedBeat
+        ? { ...n, duration: newDuration }
+        : n
+    ));
+  }, [selectedBeat]);
+
+  const handleBeatChange = useCallback((stringIndex, fret, fromBeat, toBeat) => {
+    setNotes(prev => prev.map(n =>
+      n.stringIndex === stringIndex && n.fret === fret && n.beat === fromBeat
+        ? { ...n, beat: toBeat }
+        : n
+    ));
+    setSelectedBeat(toBeat);
+  }, []);
+
   const handleDeleteNote = useCallback((noteIndex) => {
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
     setSelectedNotes(prev => {
@@ -99,7 +140,6 @@ function App() {
     if (notesRef.current.length === 0) return;
 
     const ctx = getAudioContext();
-    const secPerBeat = 60 / BPM / SUBDIVISIONS;
     const regionStart = loopStartRef.current;
     const regionEnd = loopEndRef.current;
     const regionDuration = regionEnd - regionStart;
@@ -110,63 +150,58 @@ function App() {
     setPlaying(true);
 
     const startTime = ctx.currentTime + 0.05;
-    const lookahead = 0.1; // schedule 100ms ahead
-    let scheduledUpTo = startTime; // audio-time frontier: everything before this is already scheduled
+    const lookahead = 0.1;
+    let nextBeatIndex = 0; // counts subdivisions from start, independent of tempo
+    let nextBeatTime = startTime; // when the next beat is scheduled to play
 
     const animate = () => {
       if (!playingRef.current) return;
 
       const now = ctx.currentTime;
+      const secPerBeat = 60 / bpmRef.current / SUBDIVISIONS;
       const rStart = loopStartRef.current;
       const rEnd = loopEndRef.current;
       const rDuration = rEnd - rStart;
-      const totalSec = rDuration * secPerBeat;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
-      // Update playhead position
-      const elapsed = now - startTime;
-      if (loopRef.current) {
-        setCurrentBeat(rStart + ((elapsed / secPerBeat) % rDuration));
-      } else {
-        if (elapsed / secPerBeat >= rDuration) {
-          stopPlayback();
-          return;
-        }
-        setCurrentBeat(rStart + elapsed / secPerBeat);
+      // Update playhead position based on next scheduled beat
+      const playheadTime = now;
+      const beatsSinceLastScheduled = (playheadTime - (nextBeatTime - secPerBeat)) / secPerBeat;
+      const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
+      const playheadBeat = rStart + (playheadBeatIndex % rDuration);
+
+      if (!loopRef.current && playheadBeatIndex >= rDuration) {
+        stopPlayback();
+        return;
       }
 
-      // Schedule beats between scheduledUpTo and now + lookahead
+      setCurrentBeat(playheadBeat);
+
+      // Schedule upcoming beats
       const scheduleEnd = now + lookahead;
       const currentNotes = notesRef.current;
 
-      while (scheduledUpTo < scheduleEnd) {
-        // What beat does scheduledUpTo correspond to?
-        const offsetSec = scheduledUpTo - startTime;
+      while (nextBeatTime <= scheduleEnd) {
+        if (!loopRef.current && nextBeatIndex >= rDuration) break;
 
-        if (!loopRef.current && offsetSec >= totalSec) break;
-
-        const offsetInLoop = loopRef.current
-          ? ((offsetSec % totalSec) + totalSec) % totalSec
-          : offsetSec;
-        const beatInRegion = Math.floor(offsetInLoop / secPerBeat);
+        const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
 
-        // Snap to exact beat time to stay aligned
-        const beatTimeFrac = offsetInLoop - beatInRegion * secPerBeat;
-        const beatTime = scheduledUpTo - beatTimeFrac;
+        currentNotes.forEach(note => {
+          if (note.beat === beat) {
+            const noteDur = (note.duration || 1) * secPerBeat;
+            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime, noteDur);
+          }
+        });
 
-        if (beat >= rStart && beat < rEnd && beatTimeFrac < 0.001) {
-          currentNotes.forEach(note => {
-            if (note.beat === beat) {
-              const noteDuration = (note.duration || 1) * secPerBeat;
-              playNoteAtTime(note.stringIndex, note.fret, beatTime, noteDuration);
-            }
-          });
+        if (metronomeRef.current && beat % SUBDIVISIONS === 0) {
+          const isDownbeat = beat % (SUBDIVISIONS * 4) === 0;
+          playClickAtTime(nextBeatTime, isDownbeat);
         }
 
-        // Advance to next beat
-        scheduledUpTo = beatTime + secPerBeat;
+        nextBeatIndex++;
+        nextBeatTime += secPerBeat;
       }
 
       animFrameRef.current = requestAnimationFrame(animate);
@@ -204,6 +239,37 @@ function App() {
         >
           ✕ Eraser
         </button>
+        <button
+          className={`tool-btn ${metronome ? 'active' : ''}`}
+          onClick={() => setMetronome(m => !m)}
+          title="Metronome"
+        >
+          Metronome
+        </button>
+        <button
+          className={`tool-btn ${fretboardZoom ? 'active' : ''}`}
+          onClick={() => setFretboardZoom(z => !z)}
+          title="Zoom fretboard to follow played notes"
+        >
+          Zoom
+        </button>
+        <span className="toolbar-separator" />
+        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
+        <input
+          type="number"
+          className="bpm-input"
+          defaultValue={bpm}
+          min={30}
+          max={300}
+          key="bpm-input"
+          onBlur={(e) => setBpm(Math.max(30, Math.min(300, Number(e.target.value) || 120)))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.target.blur();
+            }
+          }}
+        />
+        <span className="toolbar-separator" />
         <button className="play-btn" onClick={handleClear}>
           Clear
         </button>
@@ -234,10 +300,14 @@ function App() {
         <Fretboard
           onNoteClick={handleFretClick}
           onMoveNote={handleMoveNote}
+          onDurationChange={handleNoteDurationChange}
+          onBeatChange={handleBeatChange}
           activeNotes={playing ? [] : notes.filter(n => n.beat === selectedBeat)}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
             : []}
+          zoom={fretboardZoom}
+          zoomNotes={fretboardZoom ? notes.filter(n => n.beat >= loopStart && n.beat < loopEnd) : []}
         />
         <Timeline
           notes={notes}

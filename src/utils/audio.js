@@ -112,4 +112,24 @@ export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3) {
   osc2.stop(startTime + duration + 0.01);
 }
 
+export function playClickAtTime(time, accent = false) {
+  const ctx = getAudioContext();
+  const osc = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(accent ? 1200 : 800, time);
+
+  const volume = accent ? 0.3 : 0.15;
+  const dur = 0.03;
+  gainNode.gain.setValueAtTime(0.001, time);
+  gainNode.gain.linearRampToValueAtTime(volume, time + 0.002);
+  gainNode.gain.exponentialRampToValueAtTime(0.001, time + dur);
+
+  osc.connect(gainNode);
+  gainNode.connect(ctx.destination);
+  osc.start(time);
+  osc.stop(time + dur + 0.01);
+}
+
 export { getAudioContext };
