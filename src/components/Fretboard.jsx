@@ -402,8 +402,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         {/* Duration drag indicator - circular gauge */}
         {durationDrag && (() => {
-          const leftPercent = PADDING_LEFT + (durationDrag.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
-          const topPercent = cellCenterPercent(durationDrag.fret, viewStart, viewCells);
           const color = getNoteColor(durationDrag.stringIndex, durationDrag.fret);
           const durationLabels = freeMode ? {} : { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
           const label = durationLabels[durationDrag.duration] || (freeMode ? durationDrag.duration.toFixed(1) : `${durationDrag.duration}`);
@@ -417,21 +415,19 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           return (
             <div style={{
               position: 'absolute',
-              left: `${leftPercent}%`,
-              top: `${topPercent}%`,
-              transform: 'translate(-50%, -50%)',
+              left: '50%',
+              top: 12,
+              transform: 'translateX(-50%)',
               pointerEvents: 'none',
               zIndex: 30,
             }}>
               <svg width={size} height={size} style={{ display: 'block' }}>
-                {/* Background circle */}
                 <circle
                   cx={size / 2} cy={size / 2} r={radius}
                   fill="rgba(0,0,0,0.85)"
                   stroke="#444"
                   strokeWidth={strokeWidth}
                 />
-                {/* Fill arc */}
                 <circle
                   cx={size / 2} cy={size / 2} r={radius}
                   fill="none"
@@ -443,7 +439,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
                   transform={`rotate(-90 ${size / 2} ${size / 2})`}
                   style={{ filter: `drop-shadow(0 0 6px ${color})` }}
                 />
-                {/* Label text */}
                 <text
                   x={size / 2} y={size / 2}
                   textAnchor="middle"
@@ -479,8 +474,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         {/* Move drag indicator - circular gauge */}
         {moveDrag && (() => {
-          const leftPercent = PADDING_LEFT + (moveDrag.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
-          const topPercent = cellCenterPercent(moveDrag.fret, viewStart, viewCells);
           const color = '#e67e22';
           const beat = moveDrag.beat;
           const bar = Math.floor(beat / SUBDIVISIONS) + 1;
@@ -495,9 +488,9 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           return (
             <div style={{
               position: 'absolute',
-              left: `${leftPercent}%`,
-              top: `${topPercent}%`,
-              transform: 'translate(-50%, -50%)',
+              left: '50%',
+              top: 12,
+              transform: 'translateX(-50%)',
               pointerEvents: 'none',
               zIndex: 30,
             }}>
