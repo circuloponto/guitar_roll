@@ -23,7 +23,7 @@ function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
   return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -119,6 +119,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           duration: activeNote.duration || 1,
         });
 
+        saveSnapshot();
         const handleDurationMove = (moveE) => {
           const d = durationDragRef.current;
           if (!d) return;
@@ -129,6 +130,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           onDurationChange(d.stringIndex, d.fret, newDuration);
         };
         const handleDurationUp = () => {
+          commitDrag();
           durationDragRef.current = null;
           setDurationDrag(null);
           window.removeEventListener('mousemove', handleDurationMove);
@@ -156,6 +158,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           fret: result.fret,
           beat: activeNote.beat,
         });
+        saveSnapshot();
 
         const handleMoveMove = (moveE) => {
           const d = moveDragRef.current;
@@ -170,6 +173,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           }
         };
         const handleMoveUp = () => {
+          commitDrag();
           moveDragRef.current = null;
           setMoveDrag(null);
           window.removeEventListener('mousemove', handleMoveMove);

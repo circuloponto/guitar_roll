@@ -21,7 +21,8 @@ function rowHeightPercent(totalRows) {
 }
 
 export default function Timeline({
-  notes, setNotes, currentBeat, selectedBeat, setSelectedBeat,
+  notes, setNotes, saveSnapshot, setNotesDrag, commitDrag,
+  currentBeat, selectedBeat, setSelectedBeat,
   playing, eraser, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
@@ -93,6 +94,7 @@ export default function Timeline({
       affectedIndices,
       startDurations,
     };
+    saveSnapshot();
 
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
@@ -100,7 +102,7 @@ export default function Timeline({
       const dBeats = Math.round(dx / CELL_WIDTH);
       const { affectedIndices, startDurations } = draggingRef.current;
 
-      setNotes(prev => prev.map((n, i) => {
+      setNotesDrag(prev => prev.map((n, i) => {
         if (!affectedIndices.includes(i)) return n;
         const baseDuration = startDurations.get(i);
         const newDuration = Math.max(1, baseDuration + dBeats);
@@ -110,6 +112,7 @@ export default function Timeline({
     };
 
     const handleMouseUp = () => {
+      commitDrag();
       setTimeout(() => { draggingRef.current = null; }, 0);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -117,7 +120,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, selectedNotes]);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes]);
 
   const handleNoteDragStart = useCallback((e, noteIndex) => {
     if (eraser || e.shiftKey) return;

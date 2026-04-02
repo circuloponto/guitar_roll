@@ -6,7 +6,56 @@ import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import './App.css';
 
 function App() {
-  const [notes, setNotes] = useState([]);
+  const [notes, setNotesRaw] = useState([]);
+  const notesRef = useRef(notes);
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+
+  // Wrap setNotesRaw to keep notesRef always current
+  const setNotesTracked = useCallback((updater) => {
+    setNotesRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      notesRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // setNotes: pushes undo, for one-shot operations (click to add/remove, etc.)
+  const setNotes = useCallback((updater) => {
+    undoStackRef.current.push(notesRef.current);
+    if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+    redoStackRef.current = [];
+    setNotesTracked(updater);
+  }, [setNotesTracked]);
+
+  // setNotesDrag: no undo push, for continuous drag updates
+  const setNotesDrag = useCallback((updater) => {
+    setNotesTracked(updater);
+  }, [setNotesTracked]);
+
+  // saveSnapshot: push undo once before a drag starts
+  const saveSnapshot = useCallback(() => {
+    undoStackRef.current.push(notesRef.current);
+    if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+    redoStackRef.current = [];
+  }, []);
+
+  // commitDrag: no-op
+  const commitDrag = useCallback(() => {}, []);
+
+  const undo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    redoStackRef.current.push(notesRef.current);
+    const prev = undoStackRef.current.pop();
+    setNotesTracked(() => prev);
+  }, [setNotesTracked]);
+
+  const redo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    undoStackRef.current.push(notesRef.current);
+    const next = redoStackRef.current.pop();
+    setNotesTracked(() => next);
+  }, [setNotesTracked]);
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
@@ -29,7 +78,6 @@ function App() {
   const loopRef = useRef(false);
   const loopStartRef = useRef(0);
   const loopEndRef = useRef(NUM_BARS * SUBDIVISIONS);
-  const notesRef = useRef(notes);
   const animFrameRef = useRef(null);
 
   // Keep refs in sync
@@ -38,7 +86,6 @@ function App() {
   loopRef.current = loop;
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
-  notesRef.current = notes;
 
   // Build synesthesia lookup: note letter (without octave) -> color
   const synesthesiaMap = {};
@@ -68,10 +115,18 @@ function App() {
         e.preventDefault();
         handlePlayRef.current();
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        redo();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [totalBeats]);
+  }, [totalBeats, undo, redo]);
 
   const handleFretClick = useCallback((stringIndex, fret) => {
     setNotes(prev => {
@@ -127,15 +182,15 @@ function App() {
   }, [selectedNotes]);
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
-    setNotes(prev => prev.map(n =>
+    setNotesDrag(prev => prev.map(n =>
       n.stringIndex === stringIndex && n.fret === fret && n.beat === selectedBeat
         ? { ...n, duration: newDuration }
         : n
     ));
-  }, [selectedBeat]);
+  }, [selectedBeat, setNotesDrag]);
 
   const handleBeatChange = useCallback((stringIndex, fret, fromBeat, toBeat) => {
-    setNotes(prev => prev.map(n =>
+    setNotesDrag(prev => prev.map(n =>
       n.stringIndex === stringIndex && n.fret === fret && n.beat === fromBeat
         ? { ...n, beat: toBeat }
         : n
@@ -344,6 +399,8 @@ function App() {
           onMoveNote={handleMoveNote}
           onDurationChange={handleNoteDurationChange}
           onBeatChange={handleBeatChange}
+          saveSnapshot={saveSnapshot}
+          commitDrag={commitDrag}
           activeNotes={playing ? [] : notes.filter(n => n.beat === selectedBeat)}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
@@ -358,6 +415,9 @@ function App() {
         <Timeline
           notes={notes}
           setNotes={setNotes}
+          saveSnapshot={saveSnapshot}
+          setNotesDrag={setNotesDrag}
+          commitDrag={commitDrag}
           currentBeat={currentBeat}
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}
