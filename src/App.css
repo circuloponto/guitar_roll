@@ -369,6 +369,15 @@
   z-index: 20;
 }
 
+/* Marquee Selection */
+.marquee-rect {
+  position: absolute;
+  border: 1px solid rgba(100, 160, 255, 0.8);
+  background: rgba(100, 160, 255, 0.1);
+  pointer-events: none;
+  z-index: 25;
+}
+
 /* Piano Roll */
 .piano-spacer {
   width: 64px;

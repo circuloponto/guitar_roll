@@ -33,13 +33,17 @@ export default function Timeline({
   const gridWidth = totalCols * CELL_WIDTH;
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
-  const [dragPreview, setDragPreview] = useState(null); // { noteIndex, beat, stringIndex, fret }
+  const [dragPreview, setDragPreview] = useState(null);
   const loopDragRef = useRef(null);
+  const marqueeRef = useRef(null);
+  const marqueeDidDragRef = useRef(false);
+  const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
 
   const handleClick = useCallback((e) => {
     if (playing) return;
     if (eraser && e.target.closest('.timeline-note')) return;
     if (draggingRef.current || noteDragRef.current) return;
+    if (marqueeDidDragRef.current) { marqueeDidDragRef.current = false; return; }
     if (!e.shiftKey) {
       setSelectedNotes(new Set());
     }
@@ -124,8 +128,19 @@ export default function Timeline({
     const gridTop = rect.top;
     const gridHeight = rect.height;
 
+    // Determine which notes are being dragged
+    const isSelected = selectedNotes.has(noteIndex);
+    const affectedIndices = isSelected && selectedNotes.size > 1 ? [...selectedNotes] : [noteIndex];
+    const startPositions = new Map(
+      affectedIndices.map(i => [i, { beat: notes[i].beat, stringIndex: notes[i].stringIndex, fret: notes[i].fret }])
+    );
+    const anchorRow = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
+
     noteDragRef.current = {
       noteIndex,
+      affectedIndices,
+      startPositions,
+      anchorRow,
       startX: e.clientX,
       startY: e.clientY,
       startBeat: note.beat,
@@ -133,11 +148,18 @@ export default function Timeline({
       startFret: note.fret,
       lastSoundString: note.stringIndex,
       lastSoundFret: note.fret,
+      lastDeltaBeat: 0,
+      lastDeltaRow: 0,
       gridTop,
       gridHeight,
       didMove: false,
     };
-    setDragPreview({ noteIndex, beat: note.beat, stringIndex: note.stringIndex, fret: note.fret });
+    // Preview for all affected notes
+    setDragPreview({
+      affectedIndices,
+      deltaBeat: 0,
+      deltaRow: 0,
+    });
 
     const handleMouseMove = (moveE) => {
       if (!noteDragRef.current) return;
@@ -148,49 +170,50 @@ export default function Timeline({
       if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       d.didMove = true;
 
-      const dBeats = Math.round(dx / CELL_WIDTH);
-      const newBeat = Math.max(0, Math.min(totalCols - (notes[d.noteIndex].duration || 1), d.startBeat + dBeats));
+      const deltaBeat = Math.round(dx / CELL_WIDTH);
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
       const rowHeight = d.gridHeight * (1 / totalRows);
       const rowFromTop = Math.floor(mouseY / rowHeight);
-      const row = totalRows - 1 - rowFromTop; // invert: bottom = low strings
-      const clampedRow = Math.max(0, Math.min(totalRows - 1, row));
-      const newStringIndex = Math.floor(clampedRow / TOTAL_FRETS_PER_STRING);
-      const newFret = clampedRow % TOTAL_FRETS_PER_STRING;
+      const currentRow = totalRows - 1 - rowFromTop;
+      const deltaRow = currentRow - d.anchorRow;
 
+      // Play sound when anchor note pitch changes
+      const anchorNewRow = Math.max(0, Math.min(totalRows - 1, d.anchorRow + deltaRow));
+      const newStringIndex = Math.floor(anchorNewRow / TOTAL_FRETS_PER_STRING);
+      const newFret = anchorNewRow % TOTAL_FRETS_PER_STRING;
       if (newStringIndex !== d.lastSoundString || newFret !== d.lastSoundFret) {
         playNote(newStringIndex, newFret, 0.2);
         d.lastSoundString = newStringIndex;
         d.lastSoundFret = newFret;
       }
 
-      setDragPreview({ noteIndex: d.noteIndex, beat: newBeat, stringIndex: newStringIndex, fret: newFret });
+      d.lastDeltaBeat = deltaBeat;
+      d.lastDeltaRow = deltaRow;
+      setDragPreview({
+        affectedIndices: d.affectedIndices,
+        deltaBeat,
+        deltaRow,
+      });
     };
 
     const handleMouseUp = () => {
       const d = noteDragRef.current;
       if (d && d.didMove) {
-        setDragPreview(prev => {
-          if (prev) {
-            setNotes(old => {
-              // Remove any note at the destination position
-              const filtered = old.filter((n, i) =>
-                i === d.noteIndex || !(n.stringIndex === prev.stringIndex && n.fret === prev.fret && n.beat === prev.beat)
-              );
-              return filtered.map(n =>
-                n === old[d.noteIndex]
-                  ? { ...n, beat: prev.beat, stringIndex: prev.stringIndex, fret: prev.fret }
-                  : n
-              );
-            });
-          }
-          return null;
-        });
-      } else {
-        setDragPreview(null);
+        const { affectedIndices, startPositions, lastDeltaBeat, lastDeltaRow } = d;
+        setNotes(old => old.map((n, i) => {
+          if (!affectedIndices.includes(i)) return n;
+          const start = startPositions.get(i);
+          const oldRow = start.stringIndex * TOTAL_FRETS_PER_STRING + start.fret;
+          const newRow = Math.max(0, Math.min(totalRows - 1, oldRow + lastDeltaRow));
+          const newStringIndex = Math.floor(newRow / TOTAL_FRETS_PER_STRING);
+          const newFret = newRow % TOTAL_FRETS_PER_STRING;
+          const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), start.beat + lastDeltaBeat));
+          return { ...n, beat: newBeat, stringIndex: newStringIndex, fret: newFret };
+        }));
       }
+      setDragPreview(null);
       noteDragRef.current = null;
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -198,7 +221,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, eraser]);
+  }, [notes, setNotes, eraser, selectedNotes]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -237,6 +260,75 @@ export default function Timeline({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, [setLoopStart, setLoopEnd]);
+
+  // Marquee selection on grid background
+  const handleGridMouseDown = useCallback((e) => {
+    if (playing || eraser) return;
+    if (e.target.closest('.timeline-note')) return;
+    if (e.button !== 0) return;
+
+    const rect = bodyRef.current.getBoundingClientRect();
+    const scrollLeft = bodyRef.current.scrollLeft;
+    const x = e.clientX - rect.left + scrollLeft;
+    const y = e.clientY - rect.top;
+
+    marqueeRef.current = { startX: x, startY: y, didMove: false };
+    if (!e.shiftKey) {
+      setSelectedNotes(new Set());
+    }
+
+    const handleMouseMove = (moveE) => {
+      if (!marqueeRef.current) return;
+      const mx = moveE.clientX - rect.left + bodyRef.current.scrollLeft;
+      const my = moveE.clientY - rect.top;
+      const dx = mx - marqueeRef.current.startX;
+      const dy = my - marqueeRef.current.startY;
+      if (!marqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      marqueeRef.current.didMove = true;
+      marqueeDidDragRef.current = true;
+
+      const x1 = Math.min(marqueeRef.current.startX, mx);
+      const y1 = Math.min(marqueeRef.current.startY, my);
+      const x2 = Math.max(marqueeRef.current.startX, mx);
+      const y2 = Math.max(marqueeRef.current.startY, my);
+      setMarquee({ x1, y1, x2, y2 });
+
+      // Select notes that overlap the marquee
+      const gridHeight = rect.height;
+      const selected = new Set();
+      notes.forEach((note, i) => {
+        const noteLeft = note.beat * CELL_WIDTH;
+        const noteRight = noteLeft + (note.duration || 1) * CELL_WIDTH;
+        const row = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
+        const noteTopFrac = (totalRows - 1 - row) / totalRows;
+        const noteBottomFrac = (totalRows - row) / totalRows;
+        const noteTop = noteTopFrac * gridHeight;
+        const noteBottom = noteBottomFrac * gridHeight;
+
+        if (noteRight > x1 && noteLeft < x2 && noteBottom > y1 && noteTop < y2) {
+          selected.add(i);
+        }
+      });
+      setSelectedNotes(prev => {
+        if (moveE.shiftKey) {
+          const merged = new Set(prev);
+          selected.forEach(i => merged.add(i));
+          return merged;
+        }
+        return selected;
+      });
+    };
+
+    const handleMouseUp = () => {
+      marqueeRef.current = null;
+      setMarquee(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [playing, eraser, notes, setSelectedNotes, totalRows]);
 
   // Auto-scroll to playhead during playback
   useEffect(() => {
@@ -319,6 +411,7 @@ export default function Timeline({
           className="timeline-body"
           ref={bodyRef}
           onClick={handleClick}
+          onMouseDown={handleGridMouseDown}
           style={{ flex: 1 }}
         >
         <div className="timeline-grid" style={{ width: gridWidth }}>
@@ -389,7 +482,7 @@ export default function Timeline({
 
           {/* Note blur glows */}
           {notes.map((note, i) => {
-            const isDragging = dragPreview && dragPreview.noteIndex === i;
+            const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
             const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
             const heightPercent = rowHeightPercent(totalRows);
@@ -416,7 +509,7 @@ export default function Timeline({
 
           {/* Notes */}
           {notes.map((note, i) => {
-            const isDragging = dragPreview && dragPreview.noteIndex === i;
+            const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
             const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
             const heightPercent = rowHeightPercent(totalRows);
@@ -454,20 +547,26 @@ export default function Timeline({
             );
           })}
 
-          {/* Drag preview note */}
-          {dragPreview && (() => {
-            const note = notes[dragPreview.noteIndex];
+          {/* Drag preview notes */}
+          {dragPreview && dragPreview.affectedIndices.map(idx => {
+            const note = notes[idx];
             if (!note) return null;
-            const topPercent = rowTopPercent(dragPreview.stringIndex, dragPreview.fret, totalRows);
+            const oldRow = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
+            const newRow = Math.max(0, Math.min(totalRows - 1, oldRow + dragPreview.deltaRow));
+            const newStringIndex = Math.floor(newRow / TOTAL_FRETS_PER_STRING);
+            const newFret = newRow % TOTAL_FRETS_PER_STRING;
+            const newBeat = Math.max(0, Math.min(totalCols - (note.duration || 1), note.beat + dragPreview.deltaBeat));
+            const topPercent = rowTopPercent(newStringIndex, newFret, totalRows);
             const heightPercent = rowHeightPercent(totalRows);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             return (
               <div
+                key={`preview-${idx}`}
                 className="timeline-note"
                 style={{
-                  left: dragPreview.beat * CELL_WIDTH + 1,
-                  backgroundColor: getNoteColor(dragPreview.stringIndex, dragPreview.fret),
+                  left: newBeat * CELL_WIDTH + 1,
+                  backgroundColor: getNoteColor(newStringIndex, newFret),
                   top: `${topPercent}%`,
                   width: noteWidth,
                   height: `${heightPercent}%`,
@@ -477,10 +576,20 @@ export default function Timeline({
                   pointerEvents: 'none',
                 }}
               >
-                {getNoteName(dragPreview.stringIndex, dragPreview.fret)}
+                {getNoteName(newStringIndex, newFret)}
               </div>
             );
-          })()}
+          })}
+
+          {/* Marquee selection rectangle */}
+          {marquee && (
+            <div className="marquee-rect" style={{
+              left: marquee.x1,
+              top: marquee.y1,
+              width: marquee.x2 - marquee.x1,
+              height: marquee.y2 - marquee.y1,
+            }} />
+          )}
 
           {/* Playhead */}
           {currentBeat !== null && playing && (
