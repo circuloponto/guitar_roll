@@ -4,21 +4,28 @@ import {
   CELL_WIDTH, BAR_WIDTH
 } from '../utils/constants';
 import { getNoteName, playNote } from '../utils/audio';
+import {
+  TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi,
+  midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
+} from '../utils/pitchMap';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 
 const totalCols = NUM_BARS * SUBDIVISIONS;
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
+const totalRows = TOTAL_PITCH_ROWS;
 
-// Convert stringIndex + fret to a bottom-up row position (bass at bottom)
-function rowTopPercent(stringIndex, fret, totalRows) {
-  const row = stringIndex * TOTAL_FRETS_PER_STRING + fret;
+// Convert stringIndex + fret to a pitch-based row position (bass at bottom)
+function rowTopPercent(stringIndex, fret) {
+  const row = noteToPitchRow(stringIndex, fret);
   return ((totalRows - 1 - row) / totalRows) * 100;
 }
 
-function rowHeightPercent(totalRows) {
-  return (1 / totalRows) * 100;
+function pitchRowTop(pitchRow) {
+  return ((totalRows - 1 - pitchRow) / totalRows) * 100;
 }
+
+const heightPercent = (1 / totalRows) * 100;
 
 export default function Timeline({
   notes, setNotes, saveSnapshot, setNotesDrag, commitDrag,
@@ -30,7 +37,6 @@ export default function Timeline({
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
-  const totalRows = NUM_STRINGS * TOTAL_FRETS_PER_STRING;
   const gridWidth = totalCols * CELL_WIDTH;
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
@@ -137,13 +143,13 @@ export default function Timeline({
     const startPositions = new Map(
       affectedIndices.map(i => [i, { beat: notes[i].beat, stringIndex: notes[i].stringIndex, fret: notes[i].fret }])
     );
-    const anchorRow = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
+    const anchorPitchRow = noteToPitchRow(note.stringIndex, note.fret);
 
     noteDragRef.current = {
       noteIndex,
       affectedIndices,
       startPositions,
-      anchorRow,
+      anchorPitchRow,
       startX: e.clientX,
       startY: e.clientY,
       startBeat: note.beat,
@@ -177,19 +183,19 @@ export default function Timeline({
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
-      const rowHeight = d.gridHeight * (1 / totalRows);
+      const rowHeight = d.gridHeight / totalRows;
       const rowFromTop = Math.floor(mouseY / rowHeight);
-      const currentRow = totalRows - 1 - rowFromTop;
-      const deltaRow = currentRow - d.anchorRow;
+      const currentPitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
+      const deltaRow = currentPitchRow - d.anchorPitchRow;
 
       // Play sound when anchor note pitch changes
-      const anchorNewRow = Math.max(0, Math.min(totalRows - 1, d.anchorRow + deltaRow));
-      const newStringIndex = Math.floor(anchorNewRow / TOTAL_FRETS_PER_STRING);
-      const newFret = anchorNewRow % TOTAL_FRETS_PER_STRING;
-      if (newStringIndex !== d.lastSoundString || newFret !== d.lastSoundFret) {
-        playNote(newStringIndex, newFret, 0.2);
-        d.lastSoundString = newStringIndex;
-        d.lastSoundFret = newFret;
+      const anchorNewPitchRow = Math.max(0, Math.min(totalRows - 1, d.anchorPitchRow + deltaRow));
+      const anchorNewMidi = pitchRowToMidi(anchorNewPitchRow);
+      const combo = closestComboForPitch(anchorNewMidi, d.startStringIndex);
+      if (combo && (combo.stringIndex !== d.lastSoundString || combo.fret !== d.lastSoundFret)) {
+        playNote(combo.stringIndex, combo.fret, 0.2);
+        d.lastSoundString = combo.stringIndex;
+        d.lastSoundFret = combo.fret;
       }
 
       d.lastDeltaBeat = deltaBeat;
@@ -208,12 +214,13 @@ export default function Timeline({
         setNotes(old => old.map((n, i) => {
           if (!affectedIndices.includes(i)) return n;
           const start = startPositions.get(i);
-          const oldRow = start.stringIndex * TOTAL_FRETS_PER_STRING + start.fret;
-          const newRow = Math.max(0, Math.min(totalRows - 1, oldRow + lastDeltaRow));
-          const newStringIndex = Math.floor(newRow / TOTAL_FRETS_PER_STRING);
-          const newFret = newRow % TOTAL_FRETS_PER_STRING;
+          const oldPitchRow = noteToPitchRow(start.stringIndex, start.fret);
+          const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + lastDeltaRow));
+          const newMidi = pitchRowToMidi(newPitchRow);
+          const combo = closestComboForPitch(newMidi, start.stringIndex);
+          if (!combo) return n;
           const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), start.beat + lastDeltaBeat));
-          return { ...n, beat: newBeat, stringIndex: newStringIndex, fret: newFret };
+          return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
         }));
       }
       setDragPreview(null);
@@ -302,9 +309,9 @@ export default function Timeline({
       notes.forEach((note, i) => {
         const noteLeft = note.beat * CELL_WIDTH;
         const noteRight = noteLeft + (note.duration || 1) * CELL_WIDTH;
-        const row = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
-        const noteTopFrac = (totalRows - 1 - row) / totalRows;
-        const noteBottomFrac = (totalRows - row) / totalRows;
+        const pitchRow = noteToPitchRow(note.stringIndex, note.fret);
+        const noteTopFrac = (totalRows - 1 - pitchRow) / totalRows;
+        const noteBottomFrac = (totalRows - pitchRow) / totalRows;
         const noteTop = noteTopFrac * gridHeight;
         const noteBottom = noteBottomFrac * gridHeight;
 
@@ -331,7 +338,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, eraser, notes, setSelectedNotes, totalRows]);
+  }, [playing, eraser, notes, setSelectedNotes]);
 
   // Auto-scroll to playhead during playback
   useEffect(() => {
@@ -350,18 +357,16 @@ export default function Timeline({
   const loopLeftPx = loopStart * CELL_WIDTH;
   const loopWidthPx = (loopEnd - loopStart) * CELL_WIDTH;
 
-  // Build piano roll rows (bottom-up: row 0 = bottom = string 0 fret 0)
+  // Build piano roll rows from unique pitches (top = highest, bottom = lowest)
   const pianoRows = [];
-  for (let s = 0; s < NUM_STRINGS; s++) {
-    for (let f = 0; f < TOTAL_FRETS_PER_STRING; f++) {
-      const name = getNoteName(s, f);
-      const noteLetter = name.replace(/[0-9]/g, '');
-      const isBlack = BLACK_NOTES.has(noteLetter);
-      pianoRows.push({ stringIndex: s, fret: f, name, isBlack });
-    }
+  for (let r = totalRows - 1; r >= 0; r--) {
+    const midi = pitchRowToMidi(r);
+    const name = midiToNoteName(midi);
+    const noteLetter = name.replace(/[0-9]/g, '');
+    const isBlack = BLACK_NOTES.has(noteLetter);
+    const isC = noteLetter === 'C';
+    pianoRows.push({ pitchRow: r, midi, name, isBlack, isC });
   }
-  // Reverse so index 0 is bottom (low notes)
-  pianoRows.reverse();
 
   return (
     <div className={`timeline-container ${eraser ? 'eraser-mode' : ''}`}>
@@ -391,17 +396,19 @@ export default function Timeline({
         <div className="piano-roll" onMouseLeave={() => setHoveredNote(null)}>
           {pianoRows.map((row, i) => {
             const isHovered = hoveredNote &&
-              hoveredNote.stringIndex === row.stringIndex &&
-              hoveredNote.fret === row.fret;
+              noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
+            // Pick a representative combo for hover
+            const combos = pitchRowCombos(row.pitchRow);
+            const repCombo = combos[0];
             return (
               <div
                 key={i}
                 className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
                 style={{
                   height: `${100 / totalRows}%`,
-                  borderBottom: row.fret === 0 ? `1px solid ${stringColors[row.stringIndex]}` : undefined,
+                  borderTop: row.isC ? '1px solid #555' : undefined,
                 }}
-                onMouseEnter={() => setHoveredNote({ stringIndex: row.stringIndex, fret: row.fret })}
+                onMouseEnter={() => repCombo && setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret })}
               >
                 <span className="piano-key-label">{row.name}</span>
               </div>
@@ -436,17 +443,17 @@ export default function Timeline({
           <div className="loop-boundary" style={{ left: loopLeftPx }} />
           <div className="loop-boundary" style={{ left: loopLeftPx + loopWidthPx }} />
 
-          {/* Row lines for each string group */}
-          {Array.from({ length: NUM_STRINGS }, (_, i) => (
+          {/* Octave separator lines at each C note */}
+          {pianoRows.filter(r => r.isC).map(r => (
             <div
-              key={`string-sep-${i}`}
+              key={`oct-${r.pitchRow}`}
               style={{
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                bottom: `${(i / NUM_STRINGS) * 100}%`,
+                top: `${pitchRowTop(r.pitchRow)}%`,
                 height: '1px',
-                background: '#333',
+                background: '#444',
                 zIndex: 1,
               }}
             />
@@ -458,8 +465,8 @@ export default function Timeline({
               position: 'absolute',
               left: 0,
               right: 0,
-              top: `${rowTopPercent(hoveredNote.stringIndex, hoveredNote.fret, totalRows)}%`,
-              height: `${rowHeightPercent(totalRows)}%`,
+              top: `${rowTopPercent(hoveredNote.stringIndex, hoveredNote.fret)}%`,
+              height: `${heightPercent}%`,
               background: 'rgba(100, 160, 255, 0.15)',
               pointerEvents: 'none',
               zIndex: 1,
@@ -487,8 +494,7 @@ export default function Timeline({
           {notes.map((note, i) => {
             const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
-            const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
-            const heightPercent = rowHeightPercent(totalRows);
+            const topPercent = rowTopPercent(note.stringIndex, note.fret);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             const color = getNoteColor(note.stringIndex, note.fret);
@@ -514,8 +520,7 @@ export default function Timeline({
           {notes.map((note, i) => {
             const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
-            const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
-            const heightPercent = rowHeightPercent(totalRows);
+            const topPercent = rowTopPercent(note.stringIndex, note.fret);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             const isPlaying = playing && currentBeat !== null &&
@@ -554,13 +559,13 @@ export default function Timeline({
           {dragPreview && dragPreview.affectedIndices.map(idx => {
             const note = notes[idx];
             if (!note) return null;
-            const oldRow = note.stringIndex * TOTAL_FRETS_PER_STRING + note.fret;
-            const newRow = Math.max(0, Math.min(totalRows - 1, oldRow + dragPreview.deltaRow));
-            const newStringIndex = Math.floor(newRow / TOTAL_FRETS_PER_STRING);
-            const newFret = newRow % TOTAL_FRETS_PER_STRING;
+            const oldPitchRow = noteToPitchRow(note.stringIndex, note.fret);
+            const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + dragPreview.deltaRow));
+            const newMidi = pitchRowToMidi(newPitchRow);
+            const combo = closestComboForPitch(newMidi, note.stringIndex);
+            if (!combo) return null;
             const newBeat = Math.max(0, Math.min(totalCols - (note.duration || 1), note.beat + dragPreview.deltaBeat));
-            const topPercent = rowTopPercent(newStringIndex, newFret, totalRows);
-            const heightPercent = rowHeightPercent(totalRows);
+            const topPct = pitchRowTop(newPitchRow);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             return (
@@ -569,8 +574,8 @@ export default function Timeline({
                 className="timeline-note"
                 style={{
                   left: newBeat * CELL_WIDTH + 1,
-                  backgroundColor: getNoteColor(newStringIndex, newFret),
-                  top: `${topPercent}%`,
+                  backgroundColor: getNoteColor(combo.stringIndex, combo.fret),
+                  top: `${topPct}%`,
                   width: noteWidth,
                   height: `${heightPercent}%`,
                   minHeight: 4,
@@ -579,7 +584,7 @@ export default function Timeline({
                   pointerEvents: 'none',
                 }}
               >
-                {getNoteName(newStringIndex, newFret)}
+                {midiToNoteName(newMidi)}
               </div>
             );
           })}
