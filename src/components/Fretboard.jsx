@@ -23,7 +23,7 @@ function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
   return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -120,12 +120,16 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         });
 
         saveSnapshot();
+        const isFree = freeMode;
         const handleDurationMove = (moveE) => {
           const d = durationDragRef.current;
           if (!d) return;
           const dx = moveE.clientX - d.startX;
-          const dBeats = Math.round(dx / CELL_WIDTH);
-          const newDuration = Math.max(1, Math.min(MAX_DURATION - d.noteBeat, d.startDuration + dBeats));
+          const dBeats = dx / CELL_WIDTH;
+          const rawDuration = d.startDuration + dBeats;
+          const newDuration = isFree
+            ? Math.max(0.1, Math.min(MAX_DURATION - d.noteBeat, rawDuration))
+            : Math.max(1, Math.min(MAX_DURATION - d.noteBeat, Math.round(rawDuration)));
           setDurationDrag({ stringIndex: d.stringIndex, fret: d.fret, duration: newDuration });
           onDurationChange(d.stringIndex, d.fret, newDuration);
         };
@@ -159,13 +163,17 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           beat: activeNote.beat,
         });
         saveSnapshot();
+        const isFree = freeMode;
 
         const handleMoveMove = (moveE) => {
           const d = moveDragRef.current;
           if (!d) return;
           const dx = moveE.clientX - d.startX;
-          const dBeats = Math.round(dx / CELL_WIDTH);
-          const newBeat = Math.max(0, Math.min(MAX_DURATION - (d.noteDuration || 1), d.startBeat + dBeats));
+          const dBeats = dx / CELL_WIDTH;
+          const rawBeat = d.startBeat + dBeats;
+          const newBeat = isFree
+            ? Math.max(0, Math.min(MAX_DURATION - (d.noteDuration || 1), rawBeat))
+            : Math.max(0, Math.min(MAX_DURATION - (d.noteDuration || 1), Math.round(rawBeat)));
           if (newBeat !== d.currentBeat) {
             onBeatChange(d.stringIndex, d.fret, d.currentBeat, newBeat);
             d.currentBeat = newBeat;
@@ -192,7 +200,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, onDurationChange, onBeatChange]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange]);
 
   const handleMouseUp = useCallback((e) => {
     // Block all other interactions in modifier modes (except adjacent)
@@ -397,8 +405,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const leftPercent = PADDING_LEFT + (durationDrag.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
           const topPercent = cellCenterPercent(durationDrag.fret, viewStart, viewCells);
           const color = getNoteColor(durationDrag.stringIndex, durationDrag.fret);
-          const durationLabels = { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
-          const label = durationLabels[durationDrag.duration] || `${durationDrag.duration}`;
+          const durationLabels = freeMode ? {} : { 1: '1/16', 2: '1/8', 4: '1/4', 8: '1/2', 16: '1/1' };
+          const label = durationLabels[durationDrag.duration] || (freeMode ? durationDrag.duration.toFixed(1) : `${durationDrag.duration}`);
           // Fill percentage: 1 beat = ~6%, 16 beats = 100%
           const fillPercent = Math.min(100, (durationDrag.duration / 16) * 100);
           const size = 64;
@@ -476,7 +484,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const color = '#e67e22';
           const beat = moveDrag.beat;
           const bar = Math.floor(beat / SUBDIVISIONS) + 1;
-          const beatInBar = (beat % SUBDIVISIONS) + 1;
+          const beatInBar = freeMode ? (beat % SUBDIVISIONS + 1).toFixed(1) : (beat % SUBDIVISIONS) + 1;
           const label = `${bar}.${beatInBar}`;
           const fillPercent = Math.min(100, (beat / (MAX_DURATION - 1)) * 100);
           const size = 64;

@@ -67,6 +67,7 @@ function App() {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
   const [fretboardZoom, setFretboardZoom] = useState(false);
+  const [freeMode, setFreeMode] = useState(false);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
@@ -154,6 +155,9 @@ function App() {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
         e.preventDefault();
         redo();
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        setFreeMode(m => !m);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -420,8 +424,8 @@ function App() {
           </button>
         ))}
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: '#888' }}>
-          {notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ fontSize: '12px', color: freeMode ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       <div className="main-area">
@@ -433,6 +437,7 @@ function App() {
           onBeatChange={handleBeatChange}
           saveSnapshot={saveSnapshot}
           commitDrag={commitDrag}
+          freeMode={freeMode}
           activeNotes={playing ? [] : notes.filter(n => n.beat === selectedBeat)}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
@@ -450,6 +455,7 @@ function App() {
           saveSnapshot={saveSnapshot}
           setNotesDrag={setNotesDrag}
           commitDrag={commitDrag}
+          freeMode={freeMode}
           currentBeat={currentBeat}
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}

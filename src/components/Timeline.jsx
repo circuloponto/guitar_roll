@@ -28,7 +28,7 @@ function pitchRowTop(pitchRow) {
 const heightPercent = (1 / totalRows) * 100;
 
 export default function Timeline({
-  notes, setNotes, saveSnapshot, setNotesDrag, commitDrag,
+  notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   currentBeat, selectedBeat, setSelectedBeat,
   playing, eraser, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
@@ -101,17 +101,19 @@ export default function Timeline({
       startDurations,
     };
     saveSnapshot();
+    const isFree = freeMode;
 
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
       const dx = moveE.clientX - draggingRef.current.startX;
-      const dBeats = Math.round(dx / CELL_WIDTH);
+      const dBeats = dx / CELL_WIDTH;
       const { affectedIndices, startDurations } = draggingRef.current;
 
       setNotesDrag(prev => prev.map((n, i) => {
         if (!affectedIndices.includes(i)) return n;
         const baseDuration = startDurations.get(i);
-        const newDuration = Math.max(1, baseDuration + dBeats);
+        const rawDuration = baseDuration + dBeats;
+        let newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(1, Math.round(rawDuration));
         const maxDuration = totalCols - n.beat;
         return { ...n, duration: Math.min(newDuration, maxDuration) };
       }));
@@ -126,7 +128,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes]);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode]);
 
   const handleNoteDragStart = useCallback((e, noteIndex) => {
     if (eraser || e.shiftKey) return;
@@ -170,6 +172,8 @@ export default function Timeline({
       deltaRow: 0,
     });
 
+    const isFree = freeMode;
+
     const handleMouseMove = (moveE) => {
       if (!noteDragRef.current) return;
       const d = noteDragRef.current;
@@ -179,7 +183,7 @@ export default function Timeline({
       if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       d.didMove = true;
 
-      const deltaBeat = Math.round(dx / CELL_WIDTH);
+      const deltaBeat = dx / CELL_WIDTH;
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
@@ -219,7 +223,8 @@ export default function Timeline({
           const newMidi = pitchRowToMidi(newPitchRow);
           const combo = closestComboForPitch(newMidi, start.stringIndex);
           if (!combo) return n;
-          const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), start.beat + lastDeltaBeat));
+          const rawBeat = start.beat + lastDeltaBeat;
+          const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
           return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
         }));
       }
@@ -231,7 +236,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, eraser, selectedNotes]);
+  }, [notes, setNotes, eraser, selectedNotes, freeMode]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
