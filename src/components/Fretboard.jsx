@@ -44,7 +44,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       if (e.target.tagName === 'INPUT') return;
       if (e.key === 'l' || e.key === 'L') { setDurationMode(m => !m); setMoveMode(false); setAdjacentMode(false); }
       if (e.key === 'm' || e.key === 'M') { setMoveMode(m => !m); setDurationMode(false); setAdjacentMode(false); }
-      if (e.key === 'c' || e.key === 'C') { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
+      if (e.key === 'a' || e.key === 'A') { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
       if (e.key === 'Escape') { setDurationMode(false); setMoveMode(false); setAdjacentMode(false); }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -251,7 +251,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       <div className="fretboard-note-box">
         {durationMode ? <span style={{ color: '#3498db' }}>Duration Mode (L)</span>
           : moveMode ? <span style={{ color: '#e67e22' }}>Move Mode (M)</span>
-          : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode (C)</span>
+          : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode (A)</span>
           : noteName || '\u00A0'}
       </div>
       <div
