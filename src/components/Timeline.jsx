@@ -3,7 +3,7 @@ import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
   CELL_WIDTH, BAR_WIDTH
 } from '../utils/constants';
-import { getNoteName } from '../utils/audio';
+import { getNoteName, playNote } from '../utils/audio';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 
@@ -131,6 +131,8 @@ export default function Timeline({
       startBeat: note.beat,
       startStringIndex: note.stringIndex,
       startFret: note.fret,
+      lastSoundString: note.stringIndex,
+      lastSoundFret: note.fret,
       gridTop,
       gridHeight,
       didMove: false,
@@ -157,6 +159,12 @@ export default function Timeline({
       const clampedRow = Math.max(0, Math.min(totalRows - 1, row));
       const newStringIndex = Math.floor(clampedRow / TOTAL_FRETS_PER_STRING);
       const newFret = clampedRow % TOTAL_FRETS_PER_STRING;
+
+      if (newStringIndex !== d.lastSoundString || newFret !== d.lastSoundFret) {
+        playNote(newStringIndex, newFret, 0.2);
+        d.lastSoundString = newStringIndex;
+        d.lastSoundFret = newFret;
+      }
 
       setDragPreview({ noteIndex: d.noteIndex, beat: newBeat, stringIndex: newStringIndex, fret: newFret });
     };
@@ -379,6 +387,33 @@ export default function Timeline({
             />
           )}
 
+          {/* Note blur glows */}
+          {notes.map((note, i) => {
+            const isDragging = dragPreview && dragPreview.noteIndex === i;
+            if (isDragging) return null;
+            const topPercent = rowTopPercent(note.stringIndex, note.fret, totalRows);
+            const heightPercent = rowHeightPercent(totalRows);
+            const duration = note.duration || 1;
+            const noteWidth = duration * CELL_WIDTH - 2;
+            const color = getNoteColor(note.stringIndex, note.fret);
+            return (
+              <div key={`blur-${i}`} style={{
+                position: 'absolute',
+                left: note.beat * CELL_WIDTH + 1,
+                top: `${topPercent}%`,
+                width: noteWidth,
+                height: `${heightPercent}%`,
+                minHeight: 4,
+                background: color,
+                filter: 'blur(8px)',
+                opacity: 0.5,
+                borderRadius: 2,
+                pointerEvents: 'none',
+                zIndex: 3,
+              }} />
+            );
+          })}
+
           {/* Notes */}
           {notes.map((note, i) => {
             const isDragging = dragPreview && dragPreview.noteIndex === i;
@@ -389,6 +424,7 @@ export default function Timeline({
             const noteWidth = duration * CELL_WIDTH - 2;
             const isPlaying = playing && currentBeat !== null &&
               currentBeat >= note.beat && currentBeat < note.beat + duration;
+            const color = getNoteColor(note.stringIndex, note.fret);
 
             return (
               <div
@@ -400,8 +436,8 @@ export default function Timeline({
                   width: noteWidth,
                   height: `${heightPercent}%`,
                   minHeight: 4,
-                  backgroundColor: getNoteColor(note.stringIndex, note.fret),
-                  boxShadow: isPlaying ? `0 0 12px 4px ${getNoteColor(note.stringIndex, note.fret)}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
+                  backgroundColor: color,
+                  boxShadow: isPlaying ? `0 0 12px 4px ${color}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
                 }}
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}

@@ -329,6 +329,31 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
           );
         })}
 
+        {/* Active notes glow blur */}
+        {activeNotes.map((note, i) => {
+          const isDragging = dragStartRef.current &&
+            note.stringIndex === dragStartRef.current.stringIndex &&
+            note.fret === dragStartRef.current.fret;
+          if (isDragging) return null;
+          const color = getNoteColor(note.stringIndex, note.fret);
+          return (
+            <div key={`blur-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              width: 40,
+              height: 20,
+              borderRadius: '50%',
+              background: color,
+              filter: 'blur(10px)',
+              opacity: 0.6,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 4,
+            }} />
+          );
+        })}
+
         {/* Active notes at current beat */}
         {activeNotes.map((note, i) => {
           const isDragging = dragStartRef.current &&
@@ -338,6 +363,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
           const isPlaying = playingNotes.some(
             p => p.stringIndex === note.stringIndex && p.fret === note.fret
           );
+          const color = getNoteColor(note.stringIndex, note.fret);
           return (
             <div key={`active-${i}`} style={{
               position: 'absolute',
@@ -346,8 +372,8 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
               width: 28,
               height: 10,
               borderRadius: 5,
-              background: getNoteColor(note.stringIndex, note.fret),
-              boxShadow: isPlaying ? `0 0 10px 3px ${getNoteColor(note.stringIndex, note.fret)}` : 'none',
+              background: color,
+              boxShadow: isPlaying ? `0 0 10px 3px ${color}` : 'none',
               transform: 'translate(-50%, -50%) rotate(-35deg)',
               pointerEvents: 'none',
               zIndex: 5,
@@ -508,20 +534,25 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
         )}
 
         {/* Playing notes glow background */}
-        {playingNotes.map((note, i) => (
-          <div key={`glow-${i}`} style={{
-            position: 'absolute',
-            left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
-            width: 50,
-            height: 50,
-            borderRadius: '50%',
-            background: `radial-gradient(circle, ${getNoteColor(note.stringIndex, note.fret)}66 0%, transparent 70%)`,
-            transform: 'translate(-50%, -50%)',
-            pointerEvents: 'none',
-            zIndex: 3,
-          }} />
-        ))}
+        {playingNotes.map((note, i) => {
+          const color = getNoteColor(note.stringIndex, note.fret);
+          return (
+            <div key={`glow-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              width: 60,
+              height: 30,
+              borderRadius: '50%',
+              background: color,
+              filter: 'blur(14px)',
+              opacity: 0.7,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 3,
+            }} />
+          );
+        })}
 
         {/* Playing notes not on the selected beat */}
         {playingNotes
