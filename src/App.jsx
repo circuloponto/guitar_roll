@@ -88,6 +88,19 @@ function App() {
     });
   }, [selectedBeat, noteDuration]);
 
+  const handleAdjacentClick = useCallback((stringIndex, fret) => {
+    setNotes(prev => {
+      const exactMatch = prev.findIndex(
+        n => n.stringIndex === stringIndex && n.fret === fret && n.beat === selectedBeat
+      );
+      if (exactMatch >= 0) {
+        return prev.filter((_, i) => i !== exactMatch);
+      }
+      // Don't remove existing notes on the same string — just add
+      return [...prev, { stringIndex, fret, beat: selectedBeat, duration: noteDuration }];
+    });
+  }, [selectedBeat, noteDuration]);
+
   const handleMoveNote = useCallback((fromString, fromFret, toString, toFret) => {
     setNotes(prev => {
       const idx = prev.findIndex(
@@ -327,6 +340,7 @@ function App() {
       <div className="main-area">
         <Fretboard
           onNoteClick={handleFretClick}
+          onAdjacentClick={handleAdjacentClick}
           onMoveNote={handleMoveNote}
           onDurationChange={handleNoteDurationChange}
           onBeatChange={handleBeatChange}

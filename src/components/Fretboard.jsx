@@ -23,7 +23,7 @@ function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
   return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
 }
 
-export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -33,6 +33,7 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
   const [durationDrag, setDurationDrag] = useState(null);
   const durationDragRef = useRef(null);
   const [moveMode, setMoveMode] = useState(false);
+  const [adjacentMode, setAdjacentMode] = useState(false);
   const [moveDrag, setMoveDrag] = useState(null); // { stringIndex, fret, beat }
   const moveDragRef = useRef(null);
   const viewStartRef = useRef(0);
@@ -41,9 +42,10 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
-      if (e.key === 'l' || e.key === 'L') { setDurationMode(m => !m); setMoveMode(false); }
-      if (e.key === 'm' || e.key === 'M') { setMoveMode(m => !m); setDurationMode(false); }
-      if (e.key === 'Escape') { setDurationMode(false); setMoveMode(false); }
+      if (e.key === 'l' || e.key === 'L') { setDurationMode(m => !m); setMoveMode(false); setAdjacentMode(false); }
+      if (e.key === 'm' || e.key === 'M') { setMoveMode(m => !m); setDurationMode(false); setAdjacentMode(false); }
+      if (e.key === 'c' || e.key === 'C') { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
+      if (e.key === 'Escape') { setDurationMode(false); setMoveMode(false); setAdjacentMode(false); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -180,19 +182,19 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
       return;
     }
 
-    if (activeNote) {
+    if (activeNote && !adjacentMode) {
       dragStartRef.current = result;
       didDragRef.current = false;
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, onDurationChange, onBeatChange]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, onDurationChange, onBeatChange]);
 
   const handleMouseUp = useCallback((e) => {
-    // Block all other interactions in modifier modes
+    // Block all other interactions in modifier modes (except adjacent)
     if (durationMode || moveMode) return;
 
-    if (dragStartRef.current && didDragRef.current) {
+    if (!adjacentMode && dragStartRef.current && didDragRef.current) {
       const pos = getStringAndFret(e);
       if (pos) {
         playNote(pos.stringIndex, pos.fret);
@@ -211,9 +213,13 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
     const result = getStringAndFret(e);
     if (result) {
       playNote(result.stringIndex, result.fret);
-      onNoteClick(result.stringIndex, result.fret);
+      if (adjacentMode) {
+        onAdjacentClick(result.stringIndex, result.fret);
+      } else {
+        onNoteClick(result.stringIndex, result.fret);
+      }
     }
-  }, [getStringAndFret, onNoteClick, onMoveNote, durationMode]);
+  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode]);
 
   // Compute zoom range from all notes in the loop region
   let viewStart = 0;
@@ -241,12 +247,13 @@ export default function Fretboard({ onNoteClick, onMoveNote, onDurationChange, o
       <div className="fretboard-note-box">
         {durationMode ? <span style={{ color: '#3498db' }}>Duration Mode (L)</span>
           : moveMode ? <span style={{ color: '#e67e22' }}>Move Mode (M)</span>
+          : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode (C)</span>
           : noteName || '\u00A0'}
       </div>
       <div
         className="fretboard"
         ref={containerRef}
-        style={(durationMode || moveMode) ? { cursor: 'ew-resize' } : undefined}
+        style={(durationMode || moveMode) ? { cursor: 'ew-resize' } : adjacentMode ? { cursor: 'cell' } : undefined}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
