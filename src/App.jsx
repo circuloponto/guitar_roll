@@ -3,6 +3,8 @@ import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
+import { stateFromUrl } from './utils/storage';
+import SettingsModal from './components/SettingsModal';
 import './App.css';
 
 function App() {
@@ -66,7 +68,7 @@ function App() {
   const [metronome, setMetronome] = useState(false);
   const [fretboardZoom, setFretboardZoom] = useState(false);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [loop, setLoop] = useState(false);
@@ -97,6 +99,29 @@ function App() {
     if (synesthesiaMap[letter]) return synesthesiaMap[letter];
     return stringColors[stringIndex];
   }, [stringColors, synesthesia]);
+
+  // Apply partial state from settings/load/URL
+  const applyState = useCallback((data) => {
+    if (data.notes !== undefined) setNotesTracked(data.notes);
+    if (data.bpm !== undefined) setBpm(data.bpm);
+    if (data.loop !== undefined) setLoop(data.loop);
+    if (data.loopStart !== undefined) setLoopStart(data.loopStart);
+    if (data.loopEnd !== undefined) setLoopEnd(data.loopEnd);
+    if (data.stringColors !== undefined) setStringColors(data.stringColors);
+    if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
+    if (data.noteDuration !== undefined) setNoteDuration(data.noteDuration);
+    if (data.metronome !== undefined) setMetronome(data.metronome);
+    if (data.fretboardZoom !== undefined) setFretboardZoom(data.fretboardZoom);
+  }, [setNotesTracked]);
+
+  // Load from URL on mount
+  useEffect(() => {
+    const urlState = stateFromUrl();
+    if (urlState) {
+      applyState(urlState);
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   const totalBeats = NUM_BARS * SUBDIVISIONS;
   const handlePlayRef = useRef(null);
@@ -344,10 +369,10 @@ function App() {
         </button>
         <button
           className="tool-btn"
-          onClick={() => setShowColorPicker(p => !p)}
-          title="Customize string colors"
+          onClick={() => setShowSettings(true)}
+          title="Settings, colors, save/load"
         >
-          Colors
+          Settings
         </button>
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
@@ -357,7 +382,7 @@ function App() {
           defaultValue={bpm}
           min={30}
           max={300}
-          key="bpm-input"
+          key={`bpm-${bpm}`}
           onBlur={(e) => setBpm(Math.max(30, Math.min(300, Number(e.target.value) || 120)))}
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -438,76 +463,17 @@ function App() {
         />
       </div>
 
-      {/* Color Picker Popup */}
-      {showColorPicker && (
-        <div className="color-picker-overlay" onClick={() => setShowColorPicker(false)}>
-          <div className="color-picker-popup" onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 12px', fontSize: 16 }}>String Colors</h3>
-            {['E', 'A', 'D', 'G', 'B', 'e'].map((name, i) => (
-              <div key={i} className="color-picker-row">
-                <span className="color-picker-label">{name}</span>
-                <input
-                  type="color"
-                  value={stringColors[i]}
-                  onChange={(e) => setStringColors(prev => {
-                    const next = [...prev];
-                    next[i] = e.target.value;
-                    return next;
-                  })}
-                />
-                <span className="color-picker-hex">{stringColors[i]}</span>
-              </div>
-            ))}
-            <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '14px 0' }} />
-            <h3 style={{ margin: '0 0 10px', fontSize: 16 }}>Synesthesia</h3>
-            <p style={{ fontSize: 11, color: '#888', margin: '0 0 10px' }}>Map note names to colors (overrides string colors)</p>
-            {synesthesia.map((s, i) => (
-              <div key={i} className="color-picker-row">
-                <select
-                  value={s.note}
-                  onChange={(e) => setSynesthesia(prev => {
-                    const next = [...prev];
-                    next[i] = { ...next[i], note: e.target.value };
-                    return next;
-                  })}
-                  className="synesthesia-select"
-                >
-                  <option value="">--</option>
-                  {['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].map(n => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-                <input
-                  type="color"
-                  value={s.color}
-                  onChange={(e) => setSynesthesia(prev => {
-                    const next = [...prev];
-                    next[i] = { ...next[i], color: e.target.value };
-                    return next;
-                  })}
-                />
-                <span className="color-picker-hex">{s.color}</span>
-                <button
-                  className="synesthesia-remove"
-                  onClick={() => setSynesthesia(prev => prev.filter((_, j) => j !== i))}
-                  title="Remove"
-                >
-                  x
-                </button>
-              </div>
-            ))}
-            <button
-              className="tool-btn"
-              style={{ marginTop: 6, width: '100%', fontSize: 18, padding: '4px' }}
-              onClick={() => setSynesthesia(prev => [...prev, { note: '', color: '#ffffff' }])}
-            >
-              +
-            </button>
-            <button className="tool-btn" style={{ marginTop: 12, width: '100%' }} onClick={() => setShowColorPicker(false)}>
-              Done
-            </button>
-          </div>
-        </div>
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal
+          appState={{
+            notes, bpm, loop, loopStart, loopEnd,
+            stringColors, synesthesia, noteDuration,
+            metronome, fretboardZoom,
+          }}
+          onApplyState={applyState}
+          onClose={() => setShowSettings(false)}
+        />
       )}
     </div>
   );
