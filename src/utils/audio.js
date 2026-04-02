@@ -115,21 +115,28 @@ export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3) {
 export function playClickAtTime(time, accent = false) {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
   const gainNode = ctx.createGain();
 
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(accent ? 1200 : 800, time);
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(accent ? 1500 : 1000, time);
 
-  const volume = accent ? 0.3 : 0.15;
-  const dur = 0.03;
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(accent ? 3000 : 2000, time);
+
+  const volume = accent ? 0.5 : 0.3;
+  const dur = accent ? 0.06 : 0.04;
   gainNode.gain.setValueAtTime(0.001, time);
-  gainNode.gain.linearRampToValueAtTime(volume, time + 0.002);
-  gainNode.gain.exponentialRampToValueAtTime(0.001, time + dur);
+  gainNode.gain.linearRampToValueAtTime(volume, time + 0.001);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, time + dur);
 
   osc.connect(gainNode);
+  osc2.connect(gainNode);
   gainNode.connect(ctx.destination);
   osc.start(time);
+  osc2.start(time);
   osc.stop(time + dur + 0.01);
+  osc2.stop(time + dur + 0.01);
 }
 
 export { getAudioContext };
