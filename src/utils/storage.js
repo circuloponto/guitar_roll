@@ -32,6 +32,8 @@ export function getSessionState(appState) {
     noteDuration: appState.noteDuration,
     metronome: appState.metronome,
     fretboardZoom: appState.fretboardZoom,
+    activeColorScheme: appState.activeColorScheme || null,
+    colorSchemes: listColorSchemes(),
   };
 }
 
@@ -113,7 +115,12 @@ export function importFromFile() {
 
 // --- URL compression ---
 export function stateToUrl(state) {
-  const json = JSON.stringify(state);
+  const { colorSchemes, ...urlState } = state;
+  // Only include the active color scheme, not all saved schemes
+  if (urlState.activeColorScheme) {
+    urlState.colorSchemes = { [urlState.activeColorScheme.name]: urlState.activeColorScheme.colors };
+  }
+  const json = JSON.stringify(urlState);
   const compressed = compressToEncodedURIComponent(json);
   return window.location.origin + window.location.pathname + '#s=' + compressed;
 }

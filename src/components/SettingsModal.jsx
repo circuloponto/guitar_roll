@@ -1,9 +1,39 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   listColorSchemes, saveColorScheme, deleteColorScheme,
   listSessions, saveSession, loadSession, deleteSession,
   exportToFile, importFromFile, stateToUrl, getSessionState,
 } from '../utils/storage';
+
+// Editable hex input that allows free typing and applies on valid hex
+function HexInput({ value, onChange }) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+
+  const apply = (v) => {
+    let hex = v.trim();
+    if (hex && !hex.startsWith('#')) hex = '#' + hex;
+    if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+      onChange(hex.toLowerCase());
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      className="settings-hex-input"
+      value={text}
+      onChange={e => setText(e.target.value)}
+      onBlur={() => apply(text)}
+      onKeyDown={e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { apply(text); e.target.blur(); }
+      }}
+      onPaste={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+    />
+  );
+}
 
 const CHROMATIC = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 // Map display names to internal names used by synesthesia
@@ -27,11 +57,11 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
   const refreshSessions = () => setSessions(listSessions());
 
   // Apply a color scheme to the app
-  const applyScheme = (colors) => {
+  const applyScheme = (name, colors) => {
     const synesthesia = Object.entries(colors)
       .filter(([_, c]) => c !== '#ffffff')
       .map(([note, color]) => ({ note, color }));
-    onApplyState({ synesthesia });
+    onApplyState({ synesthesia, activeColorScheme: { name, colors } });
   };
 
   // --- Main page ---
@@ -62,7 +92,14 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
                     onApplyState({ stringColors: next });
                   }}
                 />
-                <span className="settings-hex">{appState.stringColors[i]}</span>
+                <HexInput
+                  value={appState.stringColors[i]}
+                  onChange={(v) => {
+                    const next = [...appState.stringColors];
+                    next[i] = v;
+                    onApplyState({ stringColors: next });
+                  }}
+                />
               </div>
             ))}
           </div>
@@ -131,7 +168,7 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
                   ))}
                 </div>
                 <div className="scheme-actions">
-                  <button className="settings-btn-sm" onClick={() => applyScheme(schemes[name])}>Apply</button>
+                  <button className="settings-btn-sm" onClick={() => applyScheme(name, schemes[name])}>Apply</button>
                   <button className="settings-btn-sm" onClick={() => {
                     setEditingScheme({ name, colors: { ...schemes[name] } });
                     setPage('editScheme');
@@ -192,7 +229,16 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
                       colors: { ...prev.colors, [internalName]: e.target.value }
                     }))}
                   />
-                  <span className="settings-hex">{editingScheme.colors[internalName] || '#ffffff'}</span>
+                  <HexInput
+                    value={editingScheme.colors[internalName] || '#ffffff'}
+                    onChange={v => {
+                      const n = internalName;
+                      setEditingScheme(prev => ({
+                        ...prev,
+                        colors: { ...prev.colors, [n]: v }
+                      }));
+                    }}
+                  />
                 </div>
               );
             })}

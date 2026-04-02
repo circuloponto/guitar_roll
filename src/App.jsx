@@ -3,7 +3,7 @@ import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
-import { stateFromUrl } from './utils/storage';
+import { stateFromUrl, saveColorScheme } from './utils/storage';
 import SettingsModal from './components/SettingsModal';
 import './App.css';
 
@@ -71,6 +71,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
+  const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(NUM_BARS * SUBDIVISIONS);
@@ -112,6 +113,12 @@ function App() {
     if (data.noteDuration !== undefined) setNoteDuration(data.noteDuration);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.fretboardZoom !== undefined) setFretboardZoom(data.fretboardZoom);
+    if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
+    if (data.colorSchemes) {
+      Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
+        saveColorScheme(name, scheme);
+      });
+    }
   }, [setNotesTracked]);
 
   // Load from URL on mount
@@ -468,8 +475,8 @@ function App() {
         <SettingsModal
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
-            stringColors, synesthesia, noteDuration,
-            metronome, fretboardZoom,
+            stringColors, synesthesia, activeColorScheme,
+            noteDuration, metronome, fretboardZoom,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
