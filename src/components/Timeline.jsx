@@ -424,7 +424,8 @@ export default function Timeline({
               const isHovered = hoveredNote &&
                 noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
               const combos = pitchRowCombos(row.pitchRow);
-              const repCombo = combos[0];
+              // Pick the combo with lowest fret (first position playing)
+              const repCombo = combos.reduce((best, c) => (!best || c.fret < best.fret) ? c : best, null);
               return (
                 <div
                   key={i}

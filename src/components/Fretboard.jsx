@@ -238,6 +238,22 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode]);
 
 
+  // Auto-scroll fretboard to show hovered note (from piano roll — only when local hover is null)
+  useEffect(() => {
+    if (!hoveredNote || !scrollRef.current || hover) return;
+    const noteTop = cellTopPx(hoveredNote.fret);
+    const noteBottom = noteTop + FRET_HEIGHT;
+    const container = scrollRef.current;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (noteTop < viewTop) {
+      container.scrollTo({ top: Math.max(0, noteTop - 20), behavior: 'smooth' });
+    } else if (noteBottom > viewBottom) {
+      container.scrollTo({ top: noteBottom - container.clientHeight + 20, behavior: 'smooth' });
+    }
+  }, [hoveredNote, hover]);
+
   // Compute zoom range from all notes in the loop region
   let viewStart = 0;
   let viewCells = TOTAL_CELLS;
