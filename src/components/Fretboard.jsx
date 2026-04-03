@@ -11,8 +11,6 @@ const FRET_HEIGHT = 40; // pixels per fret cell
 // Total cells = NUM_FRETS + 1 (fret 0 is open string, frets 1..NUM_FRETS are normal)
 const TOTAL_CELLS = NUM_FRETS + 1;
 const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
-const ZOOM_PADDING = 2;
-const MIN_ZOOM_SPAN = 5;
 
 function cellTopPx(cell) {
   return cell * FRET_HEIGHT;
@@ -22,16 +20,9 @@ function cellCenterPx(cell) {
   return (cell + 0.5) * FRET_HEIGHT;
 }
 
-// Percent-based helpers for zoom mode (relative to visible range)
-function cellTopPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
-  return ((cell - viewStart) / viewCells) * 100;
-}
 
-function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
-  return ((cell - viewStart + 0.5) / viewCells) * 100;
-}
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, verticalScroll, setVerticalScroll }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -45,8 +36,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const [adjacentMode, setAdjacentMode] = useState(false);
   const [moveDrag, setMoveDrag] = useState(null); // { stringIndex, fret, beat }
   const moveDragRef = useRef(null);
-  const viewStartRef = useRef(0);
-  const viewCellsRef = useRef(TOTAL_CELLS);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -254,24 +243,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
   }, [hoveredNote, hover]);
 
-  // Compute zoom range from all notes in the loop region
-  let viewStart = 0;
-  let viewCells = TOTAL_CELLS;
-  if (zoom && zoomNotes.length > 0) {
-    const frets = zoomNotes.map(n => n.fret);
-    const minFret = Math.min(...frets);
-    const maxFret = Math.max(...frets);
-    viewStart = Math.max(0, minFret - ZOOM_PADDING);
-    const viewEnd = Math.min(TOTAL_CELLS, maxFret + ZOOM_PADDING + 1);
-    viewCells = Math.max(MIN_ZOOM_SPAN, viewEnd - viewStart);
-    if (viewEnd - viewStart < viewCells) {
-      const center = (minFret + maxFret) / 2;
-      viewStart = Math.max(0, Math.round(center - viewCells / 2));
-      if (viewStart + viewCells > TOTAL_CELLS) viewStart = TOTAL_CELLS - viewCells;
-    }
-  }
-  viewStartRef.current = viewStart;
-  viewCellsRef.current = viewCells;
 
   const noteName = hover ? getNoteName(hover.stringIndex, hover.fret) : null;
 
@@ -678,7 +649,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* External hover highlight (from piano roll) */}
-        {!hover && hoveredNote && hoveredNote.fret >= viewStart && hoveredNote.fret < viewStart + viewCells && (
+        {!hover && hoveredNote && hoveredNote.fret >= 0 && hoveredNote.fret < TOTAL_CELLS && (
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hoveredNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,

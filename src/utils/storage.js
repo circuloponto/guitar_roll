@@ -16,7 +16,6 @@ function defaultSession() {
     synesthesia: [],
     noteDuration: 1,
     metronome: false,
-    fretboardZoom: false,
   };
 }
 
@@ -31,7 +30,6 @@ export function getSessionState(appState) {
     synesthesia: appState.synesthesia,
     noteDuration: appState.noteDuration,
     metronome: appState.metronome,
-    fretboardZoom: appState.fretboardZoom,
     activeColorScheme: appState.activeColorScheme || null,
     colorSchemes: listColorSchemes(),
   };

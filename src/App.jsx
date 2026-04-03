@@ -67,7 +67,6 @@ function App() {
   selectedNotesRef.current = selectedNotes;
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
-  const [fretboardZoom, setFretboardZoom] = useState(false);
   const [freeMode, setFreeMode] = useState(false);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
@@ -117,7 +116,6 @@ function App() {
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
     if (data.noteDuration !== undefined) setNoteDuration(data.noteDuration);
     if (data.metronome !== undefined) setMetronome(data.metronome);
-    if (data.fretboardZoom !== undefined) setFretboardZoom(data.fretboardZoom);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.colorSchemes) {
       Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
@@ -373,13 +371,6 @@ function App() {
           Metronome
         </button>
         <button
-          className={`tool-btn ${fretboardZoom ? 'active' : ''}`}
-          onClick={() => setFretboardZoom(z => !z)}
-          title="Zoom fretboard to follow played notes"
-        >
-          Zoom
-        </button>
-        <button
           className="tool-btn"
           onClick={() => setShowSettings(true)}
           title="Settings, colors, save/load"
@@ -443,8 +434,6 @@ function App() {
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
             : []}
-          zoom={fretboardZoom}
-          zoomNotes={fretboardZoom ? notes.filter(n => n.beat >= loopStart && n.beat < loopEnd) : []}
           stringColors={stringColors}
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
@@ -486,7 +475,7 @@ function App() {
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            noteDuration, metronome, fretboardZoom,
+            noteDuration, metronome,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
