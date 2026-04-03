@@ -30,7 +30,7 @@ const heightPercent = (1 / totalRows) * 100;
 export default function Timeline({
   notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   currentBeat, selectedBeat, setSelectedBeat,
-  playing, eraser, onDeleteNote,
+  playing, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
@@ -48,7 +48,6 @@ export default function Timeline({
 
   const handleClick = useCallback((e) => {
     if (playing) return;
-    if (eraser && e.target.closest('.timeline-note')) return;
     if (draggingRef.current || noteDragRef.current) return;
     if (marqueeDidDragRef.current) { marqueeDidDragRef.current = false; return; }
     if (!e.shiftKey) {
@@ -60,14 +59,9 @@ export default function Timeline({
     if (col >= 0 && col < totalCols) {
       setSelectedBeat(col);
     }
-  }, [setSelectedBeat, setSelectedNotes, playing, eraser]);
+  }, [setSelectedBeat, setSelectedNotes, playing]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
-    if (eraser) {
-      e.stopPropagation();
-      onDeleteNote(noteIndex);
-      return;
-    }
     if (e.shiftKey) {
       e.stopPropagation();
       setSelectedNotes(prev => {
@@ -81,7 +75,7 @@ export default function Timeline({
       });
       return;
     }
-  }, [eraser, onDeleteNote, setSelectedNotes]);
+  }, [setSelectedNotes]);
 
   const handleResizeStart = useCallback((e, noteIndex) => {
     e.stopPropagation();
@@ -131,7 +125,7 @@ export default function Timeline({
   }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode]);
 
   const handleNoteDragStart = useCallback((e, noteIndex) => {
-    if (eraser || e.shiftKey) return;
+    if (e.shiftKey) return;
     e.stopPropagation();
     e.preventDefault();
     const note = notes[noteIndex];
@@ -236,7 +230,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, eraser, selectedNotes, freeMode]);
+  }, [notes, setNotes, selectedNotes, freeMode]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -278,7 +272,7 @@ export default function Timeline({
 
   // Marquee selection on grid background
   const handleGridMouseDown = useCallback((e) => {
-    if (playing || eraser) return;
+    if (playing) return;
     if (e.target.closest('.timeline-note')) return;
     if (e.button !== 0) return;
 
@@ -343,7 +337,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, eraser, notes, setSelectedNotes]);
+  }, [playing, notes, setSelectedNotes]);
 
   // Auto-scroll to playhead during playback
   useEffect(() => {
@@ -374,7 +368,7 @@ export default function Timeline({
   }
 
   return (
-    <div className={`timeline-container ${eraser ? 'eraser-mode' : ''}`}>
+    <div className="timeline-container">
       {/* Header row: piano spacer + bar numbers */}
       <div style={{ display: 'flex' }}>
         <div className="piano-spacer" />
@@ -535,7 +529,7 @@ export default function Timeline({
             return (
               <div
                 key={i}
-                className={`timeline-note ${eraser ? 'erasable' : ''} ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
+                className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
                   left: note.beat * CELL_WIDTH + 1,
                   top: `${topPercent}%`,
@@ -550,12 +544,10 @@ export default function Timeline({
                 onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
                 {getNoteName(note.stringIndex, note.fret)}
-                {!eraser && (
-                  <div
+                <div
                     className="note-resize-handle"
                     onMouseDown={(e) => handleResizeStart(e, i)}
                   />
-                )}
               </div>
             );
           })}

@@ -61,9 +61,10 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
-  const [eraser, setEraser] = useState(false);
   const [noteDuration, setNoteDuration] = useState(1);
   const [selectedNotes, setSelectedNotes] = useState(new Set());
+  const selectedNotesRef = useRef(selectedNotes);
+  selectedNotesRef.current = selectedNotes;
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
   const [fretboardZoom, setFretboardZoom] = useState(false);
@@ -159,10 +160,17 @@ function App() {
       if (e.key === 'f' || e.key === 'F') {
         setFreeMode(m => !m);
       }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          setNotes(prev => prev.filter((_, i) => !selectedNotesRef.current.has(i)));
+          setSelectedNotes(new Set());
+        }
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [totalBeats, undo, redo]);
+  }, [totalBeats, undo, redo, setNotes]);
 
   const handleFretClick = useCallback((stringIndex, fret) => {
     setNotes(prev => {
@@ -358,13 +366,6 @@ function App() {
           ⟳ Loop
         </button>
         <button
-          className={`tool-btn ${eraser ? 'active' : ''}`}
-          onClick={() => setEraser(e => !e)}
-          title="Eraser: click notes on timeline to delete"
-        >
-          ✕ Eraser
-        </button>
-        <button
           className={`tool-btn ${metronome ? 'active' : ''}`}
           onClick={() => setMetronome(m => !m)}
           title="Metronome"
@@ -460,7 +461,6 @@ function App() {
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}
           playing={playing}
-          eraser={eraser}
           onDeleteNote={handleDeleteNote}
           loopStart={loopStart}
           loopEnd={loopEnd}
