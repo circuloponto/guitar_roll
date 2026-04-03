@@ -135,16 +135,39 @@ function App() {
 
   const totalBeats = NUM_BARS * SUBDIVISIONS;
   const handlePlayRef = useRef(null);
+  const [noteJump, setNoteJump] = useState(false);
+  const noteJumpRef = useRef(false);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
+      if (e.key === 'n' || e.key === 'N') { noteJumpRef.current = !noteJumpRef.current; setNoteJump(noteJumpRef.current); return; }
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        setSelectedBeat(b => Math.max(0, b - 1));
+        if (noteJumpRef.current) {
+          // Jump to previous note beat
+          const currentNotes = notesRef.current;
+          setSelectedBeat(b => {
+            const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
+            const prev = beats.filter(beat => beat < b);
+            return prev.length > 0 ? prev[prev.length - 1] : b;
+          });
+        } else {
+          setSelectedBeat(b => Math.max(0, b - 1));
+        }
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault();
-        setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
+        if (noteJumpRef.current) {
+          // Jump to next note beat
+          const currentNotes = notesRef.current;
+          setSelectedBeat(b => {
+            const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
+            const next = beats.filter(beat => beat > b);
+            return next.length > 0 ? next[0] : b;
+          });
+        } else {
+          setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
+        }
       }
       if (e.key === ' ') {
         e.preventDefault();
@@ -416,8 +439,8 @@ function App() {
           </button>
         ))}
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: (freeMode || loop) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{loop ? 'LOOP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ fontSize: '12px', color: (freeMode || loop || noteJump) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{loop ? 'LOOP ' : ''}{noteJump ? 'JUMP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       <div className="main-area">
