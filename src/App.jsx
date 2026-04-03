@@ -438,7 +438,7 @@ function App() {
           saveSnapshot={saveSnapshot}
           commitDrag={commitDrag}
           freeMode={freeMode}
-          activeNotes={playing ? [] : notes.filter(n => n.beat === selectedBeat)}
+          activeNotes={playing ? [] : notes.filter(n => selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1))}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
             : []}
