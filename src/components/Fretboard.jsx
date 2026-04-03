@@ -359,7 +359,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             right: 10,
             top: cellCenterPx(fret),
             fontSize: 13,
-            color: '#555',
+            color: '#ccc',
             transform: 'translateY(-50%)',
             pointerEvents: 'none',
           }}>
