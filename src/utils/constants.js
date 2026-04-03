@@ -1,5 +1,5 @@
 export const NUM_STRINGS = 6;
-export const NUM_FRETS = 15;
+export const NUM_FRETS = 24;
 export const NUM_BARS = 16;
 export const SUBDIVISIONS = 4; // 4 subdivisions per bar (16th note feel)
 export const CELL_WIDTH = 30; // pixels per subdivision
@@ -10,8 +10,8 @@ export const BPM = 120;
 export const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'e'];
 
 // Fret dot positions (standard guitar)
-export const FRET_DOTS = [3, 5, 7, 9, 12, 15, 17, 19, 21];
-export const DOUBLE_DOTS = [12];
+export const FRET_DOTS = [3, 5, 7, 9, 12, 15, 17, 19, 21, 24];
+export const DOUBLE_DOTS = [12, 24];
 
 // String colors
 export const STRING_COLORS = [

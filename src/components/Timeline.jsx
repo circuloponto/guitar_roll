@@ -14,18 +14,18 @@ const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const totalCols = NUM_BARS * SUBDIVISIONS;
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
 const totalRows = TOTAL_PITCH_ROWS;
+const ROW_HEIGHT = 20; // pixels per pitch row
+const GRID_TOTAL_HEIGHT = totalRows * ROW_HEIGHT;
 
-// Convert stringIndex + fret to a pitch-based row position (bass at bottom)
-function rowTopPercent(stringIndex, fret) {
+// Convert stringIndex + fret to pixel position (bass at bottom)
+function rowTopPx(stringIndex, fret) {
   const row = noteToPitchRow(stringIndex, fret);
-  return ((totalRows - 1 - row) / totalRows) * 100;
+  return (totalRows - 1 - row) * ROW_HEIGHT;
 }
 
-function pitchRowTop(pitchRow) {
-  return ((totalRows - 1 - pitchRow) / totalRows) * 100;
+function pitchRowTopPx(pitchRow) {
+  return (totalRows - 1 - pitchRow) * ROW_HEIGHT;
 }
-
-const heightPercent = (1 / totalRows) * 100;
 
 export default function Timeline({
   notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
@@ -34,6 +34,7 @@ export default function Timeline({
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
+  verticalScroll, setVerticalScroll,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -131,7 +132,6 @@ export default function Timeline({
     const note = notes[noteIndex];
     const rect = bodyRef.current.getBoundingClientRect();
     const gridTop = rect.top;
-    const gridHeight = rect.height;
 
     // Determine which notes are being dragged
     const isSelected = selectedNotes.has(noteIndex);
@@ -156,7 +156,6 @@ export default function Timeline({
       lastDeltaBeat: 0,
       lastDeltaRow: 0,
       gridTop,
-      gridHeight,
       didMove: false,
     };
     // Preview for all affected notes
@@ -181,8 +180,7 @@ export default function Timeline({
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
-      const rowHeight = d.gridHeight / totalRows;
-      const rowFromTop = Math.floor(mouseY / rowHeight);
+      const rowFromTop = Math.floor(mouseY / ROW_HEIGHT);
       const currentPitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
       const deltaRow = currentPitchRow - d.anchorPitchRow;
 
@@ -278,8 +276,9 @@ export default function Timeline({
 
     const rect = bodyRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current.scrollLeft;
+    const scrollTop = bodyRef.current.scrollTop;
     const x = e.clientX - rect.left + scrollLeft;
-    const y = e.clientY - rect.top;
+    const y = e.clientY - rect.top + scrollTop;
 
     marqueeRef.current = { startX: x, startY: y, didMove: false };
     if (!e.shiftKey) {
@@ -289,7 +288,7 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!marqueeRef.current) return;
       const mx = moveE.clientX - rect.left + bodyRef.current.scrollLeft;
-      const my = moveE.clientY - rect.top;
+      const my = moveE.clientY - rect.top + bodyRef.current.scrollTop;
       const dx = mx - marqueeRef.current.startX;
       const dy = my - marqueeRef.current.startY;
       if (!marqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
@@ -303,16 +302,12 @@ export default function Timeline({
       setMarquee({ x1, y1, x2, y2 });
 
       // Select notes that overlap the marquee
-      const gridHeight = rect.height;
       const selected = new Set();
       notes.forEach((note, i) => {
         const noteLeft = note.beat * CELL_WIDTH;
         const noteRight = noteLeft + (note.duration || 1) * CELL_WIDTH;
-        const pitchRow = noteToPitchRow(note.stringIndex, note.fret);
-        const noteTopFrac = (totalRows - 1 - pitchRow) / totalRows;
-        const noteBottomFrac = (totalRows - pitchRow) / totalRows;
-        const noteTop = noteTopFrac * gridHeight;
-        const noteBottom = noteBottomFrac * gridHeight;
+        const noteTop = rowTopPx(note.stringIndex, note.fret);
+        const noteBottom = noteTop + ROW_HEIGHT;
 
         if (noteRight > x1 && noteLeft < x2 && noteBottom > y1 && noteTop < y2) {
           selected.add(i);
@@ -338,6 +333,31 @@ export default function Timeline({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, [playing, notes, setSelectedNotes]);
+
+  // Sync vertical scroll from external source (fretboard)
+  useEffect(() => {
+    if (bodyRef.current && Math.abs(bodyRef.current.scrollTop - verticalScroll) > 1) {
+      bodyRef.current.scrollTop = verticalScroll;
+    }
+  }, [verticalScroll]);
+
+  // Auto-scroll vertically to show hovered note
+  useEffect(() => {
+    if (!hoveredNote || !bodyRef.current) return;
+    const noteTop = rowTopPx(hoveredNote.stringIndex, hoveredNote.fret);
+    const noteBottom = noteTop + ROW_HEIGHT;
+    const container = bodyRef.current;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (noteTop < viewTop) {
+      const target = noteTop - 20;
+      container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+    } else if (noteBottom > viewBottom) {
+      const target = noteBottom - container.clientHeight + 20;
+      container.scrollTo({ top: target, behavior: 'smooth' });
+    }
+  }, [hoveredNote]);
 
   // Auto-scroll to playhead during playback
   useEffect(() => {
@@ -391,28 +411,35 @@ export default function Timeline({
 
       {/* Body row: piano roll + grid */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Piano roll */}
-        <div className="piano-roll" onMouseLeave={() => setHoveredNote(null)}>
-          {pianoRows.map((row, i) => {
-            const isHovered = hoveredNote &&
-              noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
-            // Pick a representative combo for hover
-            const combos = pitchRowCombos(row.pitchRow);
-            const repCombo = combos[0];
-            return (
-              <div
-                key={i}
-                className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
-                style={{
-                  height: `${100 / totalRows}%`,
-                  borderTop: row.isC ? '1px solid #555' : undefined,
-                }}
-                onMouseEnter={() => repCombo && setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret })}
-              >
-                <span className="piano-key-label">{row.name}</span>
-              </div>
-            );
-          })}
+        {/* Piano roll - syncs vertical scroll */}
+        <div className="piano-roll-scroll"
+          onScroll={(e) => setVerticalScroll(e.target.scrollTop)}
+          ref={el => {
+            if (el && Math.abs(el.scrollTop - verticalScroll) > 1) el.scrollTop = verticalScroll;
+          }}
+          onMouseLeave={() => setHoveredNote(null)}
+        >
+          <div className="piano-roll-inner" style={{ height: GRID_TOTAL_HEIGHT }}>
+            {pianoRows.map((row, i) => {
+              const isHovered = hoveredNote &&
+                noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
+              const combos = pitchRowCombos(row.pitchRow);
+              const repCombo = combos[0];
+              return (
+                <div
+                  key={i}
+                  className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
+                  style={{
+                    height: ROW_HEIGHT,
+                    borderTop: row.isC ? '1px solid #555' : undefined,
+                  }}
+                  onMouseEnter={() => repCombo && setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret })}
+                >
+                  <span className="piano-key-label">{row.name}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Grid body */}
@@ -421,9 +448,10 @@ export default function Timeline({
           ref={bodyRef}
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
+          onScroll={(e) => setVerticalScroll(e.target.scrollTop)}
           style={{ flex: 1 }}
         >
-        <div className="timeline-grid" style={{ width: gridWidth }}>
+        <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
           {/* Loop region highlight in grid */}
           {loop && <>
             <div
@@ -452,7 +480,7 @@ export default function Timeline({
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                top: `${pitchRowTop(r.pitchRow)}%`,
+                top: pitchRowTopPx(r.pitchRow),
                 height: '1px',
                 background: '#444',
                 zIndex: 1,
@@ -466,8 +494,8 @@ export default function Timeline({
               position: 'absolute',
               left: 0,
               right: 0,
-              top: `${rowTopPercent(hoveredNote.stringIndex, hoveredNote.fret)}%`,
-              height: `${heightPercent}%`,
+              top: rowTopPx(hoveredNote.stringIndex, hoveredNote.fret),
+              height: ROW_HEIGHT,
               background: 'rgba(100, 160, 255, 0.15)',
               pointerEvents: 'none',
               zIndex: 1,
@@ -495,7 +523,7 @@ export default function Timeline({
           {notes.map((note, i) => {
             const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
-            const topPercent = rowTopPercent(note.stringIndex, note.fret);
+            const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             const color = getNoteColor(note.stringIndex, note.fret);
@@ -503,9 +531,9 @@ export default function Timeline({
               <div key={`blur-${i}`} style={{
                 position: 'absolute',
                 left: note.beat * CELL_WIDTH + 1,
-                top: `${topPercent}%`,
+                top: topPx,
                 width: noteWidth,
-                height: `${heightPercent}%`,
+                height: ROW_HEIGHT,
                 minHeight: 4,
                 background: color,
                 filter: 'blur(8px)',
@@ -521,7 +549,7 @@ export default function Timeline({
           {notes.map((note, i) => {
             const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
-            const topPercent = rowTopPercent(note.stringIndex, note.fret);
+            const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             const isPlaying = playing && currentBeat !== null &&
@@ -534,9 +562,9 @@ export default function Timeline({
                 className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
                   left: note.beat * CELL_WIDTH + 1,
-                  top: `${topPercent}%`,
+                  top: topPx,
                   width: noteWidth,
-                  height: `${heightPercent}%`,
+                  height: ROW_HEIGHT,
                   minHeight: 4,
                   backgroundColor: color,
                   boxShadow: isPlaying ? `0 0 12px 4px ${color}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
@@ -564,7 +592,7 @@ export default function Timeline({
             const combo = closestComboForPitch(newMidi, note.stringIndex);
             if (!combo) return null;
             const newBeat = Math.max(0, Math.min(totalCols - (note.duration || 1), note.beat + dragPreview.deltaBeat));
-            const topPct = pitchRowTop(newPitchRow);
+            const topPct = pitchRowTopPx(newPitchRow);
             const duration = note.duration || 1;
             const noteWidth = duration * CELL_WIDTH - 2;
             return (
@@ -574,9 +602,9 @@ export default function Timeline({
                 style={{
                   left: newBeat * CELL_WIDTH + 1,
                   backgroundColor: getNoteColor(combo.stringIndex, combo.fret),
-                  top: `${topPct}%`,
+                  top: topPct,
                   width: noteWidth,
-                  height: `${heightPercent}%`,
+                  height: ROW_HEIGHT,
                   minHeight: 4,
                   opacity: 0.7,
                   zIndex: 20,

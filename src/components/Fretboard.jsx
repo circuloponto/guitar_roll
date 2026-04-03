@@ -6,25 +6,34 @@ const MAX_DURATION = NUM_BARS * SUBDIVISIONS;
 
 const PADDING_LEFT = 12;
 const PADDING_RIGHT = 8;
-const PADDING_TOP = 2;
+const FRET_HEIGHT = 40; // pixels per fret cell
 
 // Total cells = NUM_FRETS + 1 (fret 0 is open string, frets 1..NUM_FRETS are normal)
 const TOTAL_CELLS = NUM_FRETS + 1;
-const ZOOM_PADDING = 2; // extra frets shown above/below notes
-const MIN_ZOOM_SPAN = 5; // minimum frets visible when zoomed
+const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
+const ZOOM_PADDING = 2;
+const MIN_ZOOM_SPAN = 5;
 
-// Get the Y percent for the top edge of a cell within a visible range
+function cellTopPx(cell) {
+  return cell * FRET_HEIGHT;
+}
+
+function cellCenterPx(cell) {
+  return (cell + 0.5) * FRET_HEIGHT;
+}
+
+// Percent-based helpers for zoom mode (relative to visible range)
 function cellTopPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
-  return PADDING_TOP + ((cell - viewStart) / viewCells) * (100 - PADDING_TOP);
+  return ((cell - viewStart) / viewCells) * 100;
 }
 
-// Get the Y percent for the center of a cell within a visible range
 function cellCenterPercent(cell, viewStart = 0, viewCells = TOTAL_CELLS) {
-  return PADDING_TOP + ((cell - viewStart + 0.5) / viewCells) * (100 - PADDING_TOP);
+  return ((cell - viewStart + 0.5) / viewCells) * 100;
 }
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], zoom = false, zoomNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, verticalScroll, setVerticalScroll }) {
   const containerRef = useRef(null);
+  const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
   const dragStartRef = useRef(null); // tracks mousedown position to distinguish click vs drag
@@ -58,21 +67,16 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const w = rect.width;
-    const h = rect.height;
 
     const leftPx = w * PADDING_LEFT / 100;
     const rightPx = w * PADDING_RIGHT / 100;
-    const topPx = h * PADDING_TOP / 100;
-
     const usableW = w - leftPx - rightPx;
-    const usableH = h - topPx;
     const stringSpacing = usableW / (NUM_STRINGS - 1);
-    const cellHeight = usableH / viewCellsRef.current;
 
     const stringIndex = Math.round((x - leftPx) / stringSpacing);
-    const fret = viewStartRef.current + Math.floor((y - topPx) / cellHeight);
+    const fret = Math.floor(y / FRET_HEIGHT);
 
-    if (stringIndex < 0 || stringIndex >= NUM_STRINGS || fret < viewStartRef.current || fret >= viewStartRef.current + viewCellsRef.current) {
+    if (stringIndex < 0 || stringIndex >= NUM_STRINGS || fret < 0 || fret >= TOTAL_CELLS) {
       return null;
     }
 
@@ -233,6 +237,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
   }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode]);
 
+
   // Compute zoom range from all notes in the loop region
   let viewStart = 0;
   let viewCells = TOTAL_CELLS;
@@ -263,52 +268,55 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           : noteName || '\u00A0'}
       </div>
       <div
+        className="fretboard-scroll"
+        ref={scrollRef}
+      >
+      <div
         className="fretboard"
         ref={containerRef}
-        style={(durationMode || moveMode) ? { cursor: 'ew-resize' } : adjacentMode ? { cursor: 'cell' } : undefined}
+        style={{
+          height: GRID_HEIGHT,
+          cursor: (durationMode || moveMode) ? 'ew-resize' : adjacentMode ? 'cell' : undefined,
+        }}
         onMouseMove={handleMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { setHover(null); setHoveredNote(null); if (!durationDragRef.current && !moveDragRef.current) { dragStartRef.current = null; didDragRef.current = false; setDragNote(null); } }}
       >
-        {/* Nut - horizontal line between fret 0 and fret 1 (only if visible) */}
-        {viewStart < 1 && 1 < viewStart + viewCells && (
-          <div style={{
+        {/* Nut - horizontal line between fret 0 and fret 1 */}
+        <div style={{
+          position: 'absolute',
+          left: `${PADDING_LEFT - 1}%`,
+          right: `${PADDING_RIGHT - 1}%`,
+          top: cellTopPx(1),
+          height: 4,
+          background: '#ccc',
+          zIndex: 2,
+        }} />
+
+        {/* Fret wires */}
+        {Array.from({ length: NUM_FRETS - 1 }, (_, i) => (
+          <div key={`fret-${i}`} style={{
             position: 'absolute',
             left: `${PADDING_LEFT - 1}%`,
             right: `${PADDING_RIGHT - 1}%`,
-            top: `${cellTopPercent(1, viewStart, viewCells)}%`,
-            height: 4,
-            background: '#ccc',
-            zIndex: 2,
+            top: cellTopPx(i + 2),
+            height: 1,
+            background: '#555',
           }} />
-        )}
-
-        {/* Fret wires */}
-        {Array.from({ length: NUM_FRETS - 1 }, (_, i) => i + 2)
-          .filter(f => f >= viewStart && f < viewStart + viewCells)
-          .map(f => (
-            <div key={`fret-${f}`} style={{
-              position: 'absolute',
-              left: `${PADDING_LEFT - 1}%`,
-              right: `${PADDING_RIGHT - 1}%`,
-              top: `${cellTopPercent(f, viewStart, viewCells)}%`,
-              height: 1,
-              background: '#555',
-            }} />
-          ))}
+        ))}
 
         {/* Fret dots */}
-        {FRET_DOTS.filter(f => f <= NUM_FRETS && f >= viewStart && f < viewStart + viewCells).map(fret => {
+        {FRET_DOTS.filter(f => f <= NUM_FRETS).map(fret => {
           const isDouble = DOUBLE_DOTS.includes(fret);
-          const topPercent = cellCenterPercent(fret, viewStart, viewCells);
+          const top = cellCenterPx(fret);
           return isDouble ? (
             <div key={`dot-${fret}`}>
-              <div className="fret-dot" style={{ left: '3%', top: `calc(${topPercent}% - 5px)` }} />
-              <div className="fret-dot" style={{ left: '3%', top: `calc(${topPercent}% + 5px)` }} />
+              <div className="fret-dot" style={{ left: '3%', top: top - 5 }} />
+              <div className="fret-dot" style={{ left: '3%', top: top + 5 }} />
             </div>
           ) : (
-            <div key={`dot-${fret}`} className="fret-dot" style={{ left: '3%', top: `${topPercent}%` }} />
+            <div key={`dot-${fret}`} className="fret-dot" style={{ left: '3%', top }} />
           );
         })}
 
@@ -320,7 +328,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`string-${i}`} style={{
               position: 'absolute',
               left: `${leftPercent}%`,
-              top: `${PADDING_TOP}%`,
+              top: 0,
               bottom: 0,
               width: Math.max(1, thickness * 0.5),
               background: '#ddd',
@@ -331,23 +339,19 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Fret numbers on the right */}
-        {Array.from({ length: viewCells }, (_, i) => {
-          const fret = viewStart + i;
-          if (fret >= TOTAL_CELLS) return null;
-          return (
-            <div key={`fnum-${fret}`} style={{
-              position: 'absolute',
-              right: 10,
-              top: `${cellCenterPercent(fret, viewStart, viewCells)}%`,
-              fontSize: 13,
-              color: '#555',
-              transform: 'translateY(-50%)',
-              pointerEvents: 'none',
-            }}>
-              {fret}
-            </div>
-          );
-        })}
+        {Array.from({ length: TOTAL_CELLS }, (_, fret) => (
+          <div key={`fnum-${fret}`} style={{
+            position: 'absolute',
+            right: 10,
+            top: cellCenterPx(fret),
+            fontSize: 13,
+            color: '#555',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+          }}>
+            {fret}
+          </div>
+        ))}
 
         {/* Active notes glow blur */}
         {activeNotes.map((note, i) => {
@@ -360,7 +364,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`blur-${i}`} style={{
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              top: cellCenterPx(note.fret),
               width: 40,
               height: 20,
               borderRadius: '50%',
@@ -388,7 +392,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`active-${i}`} style={{
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              top: cellCenterPx(note.fret),
               width: 32,
               height: 12,
               borderRadius: 6,
@@ -462,7 +466,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div style={{
             position: 'absolute',
             left: `calc(${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}% + 18px)`,
-            top: `calc(${cellCenterPercent(hover.fret, viewStart, viewCells)}% - 8px)`,
+            top: cellCenterPx(hover.fret) - 8,
             fontSize: 10,
             color: '#aaa',
             pointerEvents: 'none',
@@ -535,7 +539,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div style={{
             position: 'absolute',
             left: `calc(${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}% + 18px)`,
-            top: `calc(${cellCenterPercent(hover.fret, viewStart, viewCells)}% - 8px)`,
+            top: cellCenterPx(hover.fret) - 8,
             fontSize: 10,
             color: '#aaa',
             pointerEvents: 'none',
@@ -551,7 +555,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div key={`mask-${i}`} style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+            top: cellCenterPx(note.fret),
             width: 38,
             height: 18,
             borderRadius: 9,
@@ -572,7 +576,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`amask-${i}`} style={{
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              top: cellCenterPx(note.fret),
               width: 34,
               height: 16,
               borderRadius: 8,
@@ -591,7 +595,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`glow-${i}`} style={{
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              top: cellCenterPx(note.fret),
               width: 60,
               height: 30,
               borderRadius: '50%',
@@ -612,7 +616,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             <div key={`playing-${i}`} style={{
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              top: cellCenterPx(note.fret),
               width: 32,
               height: 12,
               borderRadius: 6,
@@ -629,7 +633,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (dragNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(dragNote.fret, viewStart, viewCells)}%`,
+            top: cellCenterPx(dragNote.fret),
             width: 28,
             height: 10,
             borderRadius: 5,
@@ -646,7 +650,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(hover.fret, viewStart, viewCells)}%`,
+            top: cellCenterPx(hover.fret),
             width: 28,
             height: 10,
             borderRadius: 5,
@@ -662,7 +666,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hoveredNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
-            top: `${cellCenterPercent(hoveredNote.fret, viewStart, viewCells)}%`,
+            top: cellCenterPx(hoveredNote.fret),
             width: 28,
             height: 10,
             borderRadius: 5,
@@ -673,6 +677,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             zIndex: 10,
           }} />
         )}
+      </div>
       </div>
     </div>
   );

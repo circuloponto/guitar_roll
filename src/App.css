@@ -111,8 +111,18 @@
   letter-spacing: 1px;
 }
 
-.fretboard {
+.fretboard-scroll {
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+
+.fretboard-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.fretboard {
   position: relative;
   overflow: hidden;
   cursor: pointer;
@@ -246,13 +256,16 @@
 .timeline-body {
   flex: 1;
   position: relative;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: auto;
+  scrollbar-width: none;
+}
+
+.timeline-body::-webkit-scrollbar {
+  display: none;
 }
 
 .timeline-grid {
   position: relative;
-  height: 100%;
   min-width: 100%;
 }
 
@@ -375,15 +388,21 @@
   border-right: 1px solid #333;
 }
 
-.piano-roll {
+.piano-roll-scroll {
   width: 64px;
   min-width: 64px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #e8e8e8;
   border-right: 1px solid #333;
+}
+
+.piano-roll-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.piano-roll-inner {
+  position: relative;
 }
 
 .piano-key {

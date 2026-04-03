@@ -72,6 +72,7 @@ function App() {
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
+  const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
   const [loop, setLoop] = useState(false);
@@ -448,6 +449,8 @@ function App() {
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
+          verticalScroll={verticalScroll}
+          setVerticalScroll={setVerticalScroll}
         />
         <Timeline
           notes={notes}
@@ -472,6 +475,8 @@ function App() {
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
+          verticalScroll={verticalScroll}
+          setVerticalScroll={setVerticalScroll}
         />
       </div>
 
