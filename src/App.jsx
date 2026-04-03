@@ -68,6 +68,7 @@ function App() {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
   const [freeMode, setFreeMode] = useState(false);
+  const [timelineZoom, setTimelineZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
@@ -471,6 +472,8 @@ function App() {
           setNotesDrag={setNotesDrag}
           commitDrag={commitDrag}
           freeMode={freeMode}
+          timelineZoom={timelineZoom}
+          setTimelineZoom={setTimelineZoom}
           currentBeat={currentBeat}
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}

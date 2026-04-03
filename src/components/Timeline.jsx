@@ -29,6 +29,7 @@ function pitchRowTopPx(pitchRow) {
 
 export default function Timeline({
   notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
+  timelineZoom = 1, setTimelineZoom,
   currentBeat, selectedBeat, setSelectedBeat,
   playing, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
@@ -38,7 +39,10 @@ export default function Timeline({
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
-  const gridWidth = totalCols * CELL_WIDTH;
+  const [headerScrollLeft, setHeaderScrollLeft] = useState(0);
+  const cellWidth = CELL_WIDTH * timelineZoom;
+  const barWidth = cellWidth * SUBDIVISIONS;
+  const gridWidth = totalCols * cellWidth;
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
   const [dragPreview, setDragPreview] = useState(null);
@@ -56,7 +60,7 @@ export default function Timeline({
     }
     const rect = bodyRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
-    const col = Math.floor(x / CELL_WIDTH);
+    const col = Math.floor(x / cellWidth);
     if (col >= 0 && col < totalCols) {
       setSelectedBeat(col);
     }
@@ -101,7 +105,7 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
       const dx = moveE.clientX - draggingRef.current.startX;
-      const dBeats = dx / CELL_WIDTH;
+      const dBeats = dx / cellWidth;
       const { affectedIndices, startDurations } = draggingRef.current;
 
       setNotesDrag(prev => prev.map((n, i) => {
@@ -176,7 +180,7 @@ export default function Timeline({
       if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       d.didMove = true;
 
-      const deltaBeat = dx / CELL_WIDTH;
+      const deltaBeat = dx / cellWidth;
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
@@ -235,7 +239,7 @@ export default function Timeline({
     const rect = headerRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
     const x = e.clientX - rect.left + scrollLeft;
-    const startCol = Math.floor(x / CELL_WIDTH);
+    const startCol = Math.floor(x / cellWidth);
 
     if (startCol < 0 || startCol >= totalCols) return;
 
@@ -246,7 +250,7 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!loopDragRef.current) return;
       const mx = moveE.clientX - rect.left + scrollLeft;
-      const col = Math.max(0, Math.min(totalCols, Math.round(mx / CELL_WIDTH)));
+      const col = Math.max(0, Math.min(totalCols, Math.round(mx / cellWidth)));
       const anchor = loopDragRef.current.startCol;
 
       if (col >= anchor) {
@@ -304,8 +308,8 @@ export default function Timeline({
       // Select notes that overlap the marquee
       const selected = new Set();
       notes.forEach((note, i) => {
-        const noteLeft = note.beat * CELL_WIDTH;
-        const noteRight = noteLeft + (note.duration || 1) * CELL_WIDTH;
+        const noteLeft = note.beat * cellWidth;
+        const noteRight = noteLeft + (note.duration || 1) * cellWidth;
         const noteTop = rowTopPx(note.stringIndex, note.fret);
         const noteBottom = noteTop + ROW_HEIGHT;
 
@@ -359,10 +363,29 @@ export default function Timeline({
     }
   }, [hoveredNote]);
 
+  // Ctrl+scroll zoom — use document-level to prevent browser zoom
+  useEffect(() => {
+    const handleWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      // Only handle if the mouse is over the timeline body
+      if (!bodyRef.current) return;
+      const rect = bodyRef.current.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top || e.clientY > rect.bottom) return;
+      e.preventDefault();
+      setTimelineZoom(z => {
+        const newZ = z * (1 - e.deltaY * 0.002);
+        return Math.max(0.2, Math.min(4, newZ));
+      });
+    };
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    return () => document.removeEventListener('wheel', handleWheel);
+  }, [setTimelineZoom]);
+
   // Auto-scroll to playhead during playback
   useEffect(() => {
     if (playing && bodyRef.current && currentBeat !== null) {
-      const playheadX = currentBeat * CELL_WIDTH;
+      const playheadX = currentBeat * cellWidth;
       const container = bodyRef.current;
       const scrollLeft = container.scrollLeft;
       const visibleWidth = container.clientWidth;
@@ -373,8 +396,8 @@ export default function Timeline({
     }
   }, [currentBeat, playing]);
 
-  const loopLeftPx = loopStart * CELL_WIDTH;
-  const loopWidthPx = (loopEnd - loopStart) * CELL_WIDTH;
+  const loopLeftPx = loopStart * cellWidth;
+  const loopWidthPx = (loopEnd - loopStart) * cellWidth;
 
   // Build piano roll rows from unique pitches (top = highest, bottom = lowest)
   const pianoRows = [];
@@ -393,19 +416,21 @@ export default function Timeline({
       <div style={{ display: 'flex' }}>
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
-          {loop && <div
-            className="loop-region-header"
-            style={{ left: loopLeftPx, width: loopWidthPx }}
-          />}
-          {Array.from({ length: NUM_BARS }, (_, i) => (
-            <div
-              key={i}
-              className="bar-number"
-              style={{ left: i * BAR_WIDTH }}
-            >
-              {i + 1}
-            </div>
-          ))}
+          <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth }}>
+            {loop && <div
+              className="loop-region-header"
+              style={{ left: loopLeftPx, width: loopWidthPx }}
+            />}
+            {Array.from({ length: NUM_BARS }, (_, i) => (
+              <div
+                key={i}
+                className="bar-number"
+                style={{ left: i * barWidth }}
+              >
+                {i + 1}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -449,7 +474,7 @@ export default function Timeline({
           ref={bodyRef}
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
-          onScroll={(e) => setVerticalScroll(e.target.scrollTop)}
+          onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
           style={{ flex: 1 }}
         >
         <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
@@ -508,7 +533,7 @@ export default function Timeline({
             <div
               key={`col-${i}`}
               className={`grid-col ${i % SUBDIVISIONS === 0 ? 'bar-line' : ''}`}
-              style={{ left: i * CELL_WIDTH }}
+              style={{ left: i * cellWidth }}
             />
           ))}
 
@@ -516,7 +541,7 @@ export default function Timeline({
           {selectedBeat !== null && (
             <div
               className="timeline-selected-col"
-              style={{ left: selectedBeat * CELL_WIDTH, width: CELL_WIDTH }}
+              style={{ left: selectedBeat * cellWidth, width: cellWidth }}
             />
           )}
 
@@ -526,12 +551,12 @@ export default function Timeline({
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
-            const noteWidth = duration * CELL_WIDTH - 2;
+            const noteWidth = duration * cellWidth - 2;
             const color = getNoteColor(note.stringIndex, note.fret);
             return (
               <div key={`blur-${i}`} style={{
                 position: 'absolute',
-                left: note.beat * CELL_WIDTH + 1,
+                left: note.beat * cellWidth + 1,
                 top: topPx,
                 width: noteWidth,
                 height: ROW_HEIGHT,
@@ -552,7 +577,7 @@ export default function Timeline({
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
-            const noteWidth = duration * CELL_WIDTH - 2;
+            const noteWidth = duration * cellWidth - 2;
             const isPlaying = playing && currentBeat !== null &&
               currentBeat >= note.beat && currentBeat < note.beat + duration;
             const color = getNoteColor(note.stringIndex, note.fret);
@@ -562,7 +587,7 @@ export default function Timeline({
                 key={i}
                 className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
-                  left: note.beat * CELL_WIDTH + 1,
+                  left: note.beat * cellWidth + 1,
                   top: topPx,
                   width: noteWidth,
                   height: ROW_HEIGHT,
@@ -595,13 +620,13 @@ export default function Timeline({
             const newBeat = Math.max(0, Math.min(totalCols - (note.duration || 1), note.beat + dragPreview.deltaBeat));
             const topPct = pitchRowTopPx(newPitchRow);
             const duration = note.duration || 1;
-            const noteWidth = duration * CELL_WIDTH - 2;
+            const noteWidth = duration * cellWidth - 2;
             return (
               <div
                 key={`preview-${idx}`}
                 className="timeline-note"
                 style={{
-                  left: newBeat * CELL_WIDTH + 1,
+                  left: newBeat * cellWidth + 1,
                   backgroundColor: getNoteColor(combo.stringIndex, combo.fret),
                   top: topPct,
                   width: noteWidth,
@@ -629,7 +654,7 @@ export default function Timeline({
 
           {/* Playhead */}
           {currentBeat !== null && playing && (
-            <div className="playhead" style={{ left: currentBeat * CELL_WIDTH }} />
+            <div className="playhead" style={{ left: currentBeat * cellWidth }} />
           )}
         </div>
       </div>
