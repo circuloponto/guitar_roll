@@ -320,7 +320,6 @@ export default function Timeline({
 
   // Marquee selection on grid background
   const handleGridMouseDown = useCallback((e) => {
-    if (playing) return;
     if (e.target.closest('.timeline-note')) return;
     if (e.button !== 0) return;
 
