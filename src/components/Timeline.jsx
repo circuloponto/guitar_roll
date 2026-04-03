@@ -420,7 +420,7 @@ export default function Timeline({
   return (
     <div className="timeline-container">
       {/* Header row: piano spacer + bar numbers */}
-      <div style={{ display: 'flex' }}>
+      <div style={{ display: 'flex', flexShrink: 0 }}>
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
           <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth, height: '100%' }}>

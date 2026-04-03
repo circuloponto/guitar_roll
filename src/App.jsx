@@ -301,7 +301,7 @@ function App() {
 
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
-    const regionStart = isLoop ? loopStartRef.current : selectedBeatRef.current;
+    const regionStart = isLoop ? loopStartRef.current : Math.floor(selectedBeatRef.current);
     const regionEnd = isLoop ? loopEndRef.current : NUM_BARS * SUBDIVISIONS;
     const regionDuration = regionEnd - regionStart;
 
@@ -350,9 +350,10 @@ function App() {
         const beat = rStart + beatInRegion;
 
         currentNotes.forEach(note => {
-          if (note.beat === beat) {
+          if (note.beat >= beat && note.beat < beat + 1) {
+            const offset = (note.beat - beat) * secPerBeat;
             const noteDur = (note.duration || 1) * secPerBeat;
-            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime, noteDur);
+            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur);
           }
         });
 

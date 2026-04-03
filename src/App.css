@@ -11,6 +11,7 @@
   padding: 8px 16px;
   border-bottom: 1px solid #333;
   background: #111;
+  flex-shrink: 0;
 }
 
 .toolbar h1 {
@@ -196,6 +197,7 @@
 
 .timeline-header {
   height: 30px;
+  min-height: 30px;
   border-bottom: 1px solid #333;
   position: relative;
   background: #111;
