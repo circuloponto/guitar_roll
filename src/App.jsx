@@ -83,11 +83,13 @@ function App() {
   const loopRef = useRef(false);
   const loopStartRef = useRef(0);
   const loopEndRef = useRef(NUM_BARS * SUBDIVISIONS);
+  const selectedBeatRef = useRef(selectedBeat);
   const animFrameRef = useRef(null);
 
   // Keep refs in sync
   bpmRef.current = bpm;
   metronomeRef.current = metronome;
+  selectedBeatRef.current = selectedBeat;
   loopRef.current = loop;
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
@@ -159,6 +161,9 @@ function App() {
       }
       if (e.key === 'f' || e.key === 'F') {
         setFreeMode(m => !m);
+      }
+      if (e.key === 'c' || e.key === 'C') {
+        setLoop(l => !l);
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedNotesRef.current.size > 0) {
@@ -272,8 +277,9 @@ function App() {
     if (notesRef.current.length === 0) return;
 
     const ctx = getAudioContext();
-    const regionStart = loopStartRef.current;
-    const regionEnd = loopEndRef.current;
+    const isLoop = loopRef.current;
+    const regionStart = isLoop ? loopStartRef.current : selectedBeatRef.current;
+    const regionEnd = isLoop ? loopEndRef.current : NUM_BARS * SUBDIVISIONS;
     const regionDuration = regionEnd - regionStart;
 
     if (regionDuration <= 0) return;
@@ -281,19 +287,19 @@ function App() {
     playingRef.current = true;
     setPlaying(true);
 
+    const rStart = regionStart;
+    const rEnd = regionEnd;
+    const rDuration = regionDuration;
     const startTime = ctx.currentTime + 0.05;
     const lookahead = 0.1;
-    let nextBeatIndex = 0; // counts subdivisions from start, independent of tempo
-    let nextBeatTime = startTime; // when the next beat is scheduled to play
+    let nextBeatIndex = 0;
+    let nextBeatTime = startTime;
 
     const animate = () => {
       if (!playingRef.current) return;
 
       const now = ctx.currentTime;
       const secPerBeat = 60 / bpmRef.current / SUBDIVISIONS;
-      const rStart = loopStartRef.current;
-      const rEnd = loopEndRef.current;
-      const rDuration = rEnd - rStart;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
@@ -359,13 +365,6 @@ function App() {
           {playing ? '⏹ Stop' : '▶ Play'}
         </button>
         <button
-          className={`tool-btn ${loop ? 'active' : ''}`}
-          onClick={() => setLoop(l => !l)}
-          title="Loop playback"
-        >
-          ⟳ Loop
-        </button>
-        <button
           className={`tool-btn ${metronome ? 'active' : ''}`}
           onClick={() => setMetronome(m => !m)}
           title="Metronome"
@@ -425,8 +424,8 @@ function App() {
           </button>
         ))}
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: freeMode ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ fontSize: '12px', color: (freeMode || loop) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{loop ? 'LOOP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       <div className="main-area">

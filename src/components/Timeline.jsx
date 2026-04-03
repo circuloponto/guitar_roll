@@ -373,10 +373,10 @@ export default function Timeline({
       <div style={{ display: 'flex' }}>
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
-          <div
+          {loop && <div
             className="loop-region-header"
             style={{ left: loopLeftPx, width: loopWidthPx }}
-          />
+          />}
           {Array.from({ length: NUM_BARS }, (_, i) => (
             <div
               key={i}
@@ -425,22 +425,24 @@ export default function Timeline({
         >
         <div className="timeline-grid" style={{ width: gridWidth }}>
           {/* Loop region highlight in grid */}
-          <div
-            className="loop-region-grid"
-            style={{ left: loopLeftPx, width: loopWidthPx }}
-          />
+          {loop && <>
+            <div
+              className="loop-region-grid"
+              style={{ left: loopLeftPx, width: loopWidthPx }}
+            />
 
-          {/* Dimmed areas outside loop */}
-          {loopStart > 0 && (
-            <div className="loop-dim" style={{ left: 0, width: loopLeftPx }} />
-          )}
-          {loopEnd < totalCols && (
-            <div className="loop-dim" style={{ left: loopLeftPx + loopWidthPx, right: 0 }} />
-          )}
+            {/* Dimmed areas outside loop */}
+            {loopStart > 0 && (
+              <div className="loop-dim" style={{ left: 0, width: loopLeftPx }} />
+            )}
+            {loopEnd < totalCols && (
+              <div className="loop-dim" style={{ left: loopLeftPx + loopWidthPx, right: 0 }} />
+            )}
 
-          {/* Loop boundary lines */}
-          <div className="loop-boundary" style={{ left: loopLeftPx }} />
-          <div className="loop-boundary" style={{ left: loopLeftPx + loopWidthPx }} />
+            {/* Loop boundary lines */}
+            <div className="loop-boundary" style={{ left: loopLeftPx }} />
+            <div className="loop-boundary" style={{ left: loopLeftPx + loopWidthPx }} />
+          </>}
 
           {/* Octave separator lines at each C note */}
           {pianoRows.filter(r => r.isC).map(r => (
