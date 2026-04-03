@@ -60,11 +60,18 @@ export default function Timeline({
     }
     const rect = bodyRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
-    const col = Math.floor(x / cellWidth);
-    if (col >= 0 && col < totalCols) {
-      setSelectedBeat(col);
+    if (freeMode) {
+      const beat = x / cellWidth;
+      if (beat >= 0 && beat < totalCols) {
+        setSelectedBeat(beat);
+      }
+    } else {
+      const col = Math.floor(x / cellWidth);
+      if (col >= 0 && col < totalCols) {
+        setSelectedBeat(col);
+      }
     }
-  }, [setSelectedBeat, setSelectedNotes, playing]);
+  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
     if (e.shiftKey) {
@@ -416,7 +423,7 @@ export default function Timeline({
       <div style={{ display: 'flex' }}>
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
-          <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth }}>
+          <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth, height: '100%' }}>
             {loop && <div
               className="loop-region-header"
               style={{ left: loopLeftPx, width: loopWidthPx }}
@@ -430,6 +437,36 @@ export default function Timeline({
                 {i + 1}
               </div>
             ))}
+            {/* Selected beat indicator in header — draggable */}
+            {selectedBeat !== null && !playing && (
+              <div
+                className="header-beat-marker"
+                style={{ left: selectedBeat * cellWidth, cursor: 'ew-resize' }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  const headerRect = headerRef.current.getBoundingClientRect();
+                  const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
+
+                  const handleMove = (moveE) => {
+                    const x = moveE.clientX - headerRect.left + scrollLeft;
+                    const beat = freeMode ? x / cellWidth : Math.floor(x / cellWidth);
+                    const clamped = Math.max(0, Math.min(totalCols - 1, beat));
+                    setSelectedBeat(clamped);
+                  };
+                  const handleUp = () => {
+                    window.removeEventListener('mousemove', handleMove);
+                    window.removeEventListener('mouseup', handleUp);
+                  };
+                  window.addEventListener('mousemove', handleMove);
+                  window.addEventListener('mouseup', handleUp);
+                }}
+              />
+            )}
+            {/* Playhead in header */}
+            {currentBeat !== null && playing && (
+              <div className="header-playhead" style={{ left: currentBeat * cellWidth }} />
+            )}
           </div>
         </div>
       </div>
@@ -539,10 +576,17 @@ export default function Timeline({
 
           {/* Selected beat highlight */}
           {selectedBeat !== null && (
-            <div
-              className="timeline-selected-col"
-              style={{ left: selectedBeat * cellWidth, width: cellWidth }}
-            />
+            freeMode && selectedBeat % 1 !== 0 ? (
+              <div
+                className="timeline-selected-line"
+                style={{ left: selectedBeat * cellWidth }}
+              />
+            ) : (
+              <div
+                className="timeline-selected-col"
+                style={{ left: Math.floor(selectedBeat) * cellWidth, width: cellWidth }}
+              />
+            )
           )}
 
           {/* Note blur glows */}
