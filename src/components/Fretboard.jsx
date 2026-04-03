@@ -325,6 +325,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               width: Math.max(1, thickness * 0.5),
               background: '#ddd',
               transform: 'translateX(-50%)',
+              zIndex: 1,
             }} />
           );
         })}
@@ -365,10 +366,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               borderRadius: '50%',
               background: color,
               filter: 'blur(10px)',
-              opacity: 0.6,
+              opacity: 0.7,
               transform: 'translate(-50%, -50%)',
               pointerEvents: 'none',
-              zIndex: 4,
+              zIndex: 5,
             }} />
           );
         })}
@@ -388,14 +389,14 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
               top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
-              width: 28,
-              height: 10,
-              borderRadius: 5,
+              width: 32,
+              height: 12,
+              borderRadius: 6,
               background: color,
               boxShadow: isPlaying ? `0 0 10px 3px ${color}` : 'none',
-              transform: 'translate(-50%, -50%) rotate(-35deg)',
+              transform: 'translate(-50%, -50%) rotate(-50deg)',
               pointerEvents: 'none',
-              zIndex: 5,
+              zIndex: 7,
             }} />
           );
         })}
@@ -545,6 +546,44 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           </div>
         )}
 
+        {/* Solid mask behind playing notes to hide string lines */}
+        {playingNotes.map((note, i) => (
+          <div key={`mask-${i}`} style={{
+            position: 'absolute',
+            left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+            top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+            width: 38,
+            height: 18,
+            borderRadius: 9,
+            background: '#000',
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
+            pointerEvents: 'none',
+            zIndex: 2,
+          }} />
+        ))}
+
+        {/* Solid mask behind active notes to hide string lines */}
+        {activeNotes.map((note, i) => {
+          const isDragging = dragStartRef.current &&
+            note.stringIndex === dragStartRef.current.stringIndex &&
+            note.fret === dragStartRef.current.fret;
+          if (isDragging) return null;
+          return (
+            <div key={`amask-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
+              width: 34,
+              height: 16,
+              borderRadius: 8,
+              background: '#000',
+              transform: 'translate(-50%, -50%) rotate(-50deg)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }} />
+          );
+        })}
+
         {/* Playing notes glow background */}
         {playingNotes.map((note, i) => {
           const color = getNoteColor(note.stringIndex, note.fret);
@@ -558,10 +597,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               borderRadius: '50%',
               background: color,
               filter: 'blur(14px)',
-              opacity: 0.7,
+              opacity: 0.8,
               transform: 'translate(-50%, -50%)',
               pointerEvents: 'none',
-              zIndex: 3,
+              zIndex: 5,
             }} />
           );
         })}
@@ -574,15 +613,14 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               position: 'absolute',
               left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
               top: `${cellCenterPercent(note.fret, viewStart, viewCells)}%`,
-              width: 28,
-              height: 10,
-              borderRadius: 5,
+              width: 32,
+              height: 12,
+              borderRadius: 6,
               background: getNoteColor(note.stringIndex, note.fret),
               boxShadow: `0 0 10px 3px ${getNoteColor(note.stringIndex, note.fret)}`,
-              opacity: 0.7,
-              transform: 'translate(-50%, -50%) rotate(-35deg)',
+              transform: 'translate(-50%, -50%) rotate(-50deg)',
               pointerEvents: 'none',
-              zIndex: 4,
+              zIndex: 6,
             }} />
           ))}
 
@@ -597,7 +635,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             borderRadius: 5,
             background: getNoteColor(dragNote.stringIndex, dragNote.fret),
             opacity: 0.8,
-            transform: 'translate(-50%, -50%) rotate(-35deg)',
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
             pointerEvents: 'none',
             zIndex: 11,
           }} />
@@ -613,7 +651,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             height: 10,
             borderRadius: 5,
             background: '#fff',
-            transform: 'translate(-50%, -50%) rotate(-35deg)',
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
             pointerEvents: 'none',
             zIndex: 10,
           }} />
@@ -630,7 +668,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             borderRadius: 5,
             background: getNoteColor(hoveredNote.stringIndex, hoveredNote.fret),
             opacity: 0.6,
-            transform: 'translate(-50%, -50%) rotate(-35deg)',
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
             pointerEvents: 'none',
             zIndex: 10,
           }} />
