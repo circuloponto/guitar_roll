@@ -16,6 +16,7 @@ function defaultSession() {
     synesthesia: [],
     noteDuration: 1,
     metronome: false,
+    barSubdivisions: Array(NUM_BARS).fill(SUBDIVISIONS),
   };
 }
 
@@ -30,6 +31,7 @@ export function getSessionState(appState) {
     synesthesia: appState.synesthesia,
     noteDuration: appState.noteDuration,
     metronome: appState.metronome,
+    barSubdivisions: appState.barSubdivisions,
     activeColorScheme: appState.activeColorScheme || null,
     colorSchemes: listColorSchemes(),
   };

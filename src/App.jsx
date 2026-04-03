@@ -3,6 +3,7 @@ import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
+import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
 import SettingsModal from './components/SettingsModal';
 import './App.css';
@@ -75,9 +76,12 @@ function App() {
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
+  const [barSubdivisions, setBarSubdivisions] = useState(defaultBarSubdivisions);
+  const barSubsRef = useRef(barSubdivisions);
+  barSubsRef.current = barSubdivisions;
   const [loop, setLoop] = useState(false);
   const [loopStart, setLoopStart] = useState(0);
-  const [loopEnd, setLoopEnd] = useState(NUM_BARS * SUBDIVISIONS);
+  const [loopEnd, setLoopEnd] = useState(totalColumns(defaultBarSubdivisions()));
   const playingRef = useRef(false);
   const bpmRef = useRef(bpm);
   const metronomeRef = useRef(metronome);
@@ -118,6 +122,7 @@ function App() {
     if (data.noteDuration !== undefined) setNoteDuration(data.noteDuration);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
+    if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
     if (data.colorSchemes) {
       Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
         saveColorScheme(name, scheme);
@@ -134,7 +139,7 @@ function App() {
     }
   }, []);
 
-  const totalBeats = NUM_BARS * SUBDIVISIONS;
+  const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
   const [noteJump, setNoteJump] = useState(false);
   const noteJumpRef = useRef(false);
@@ -301,8 +306,10 @@ function App() {
 
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
+    const barSubs = barSubsRef.current;
+    const totalCols = totalColumns(barSubs);
     const regionStart = isLoop ? loopStartRef.current : Math.floor(selectedBeatRef.current);
-    const regionEnd = isLoop ? loopEndRef.current : NUM_BARS * SUBDIVISIONS;
+    const regionEnd = isLoop ? loopEndRef.current : totalCols;
     const regionDuration = regionEnd - regionStart;
 
     if (regionDuration <= 0) return;
@@ -322,13 +329,15 @@ function App() {
       if (!playingRef.current) return;
 
       const now = ctx.currentTime;
-      const secPerBeat = 60 / bpmRef.current / SUBDIVISIONS;
+      const bs = barSubsRef.current;
+      const bpm = bpmRef.current;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
-      // Update playhead position based on next scheduled beat
-      const playheadTime = now;
-      const beatsSinceLastScheduled = (playheadTime - (nextBeatTime - secPerBeat)) / secPerBeat;
+      // Compute current column's duration for playhead interpolation
+      const currentBeatAbs = rStart + (nextBeatIndex > 0 ? (nextBeatIndex - 1) % rDuration : 0);
+      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, totalColumns(bs) - 1), bs, bpm);
+      const beatsSinceLastScheduled = (now - (nextBeatTime - currentColDur)) / currentColDur;
       const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
       const playheadBeat = rStart + (playheadBeatIndex % rDuration);
 
@@ -348,22 +357,27 @@ function App() {
 
         const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
+        const colDur = colDurationAtBeat(Math.min(beat, totalColumns(bs) - 1), bs, bpm);
 
         currentNotes.forEach(note => {
           if (note.beat >= beat && note.beat < beat + 1) {
-            const offset = (note.beat - beat) * secPerBeat;
-            const noteDur = (note.duration || 1) * secPerBeat;
+            const offset = (note.beat - beat) * colDur;
+            const noteDur = (note.duration || 1) * colDur;
             playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur);
           }
         });
 
-        if (metronomeRef.current && beat % SUBDIVISIONS === 0) {
-          const isDownbeat = beat % (SUBDIVISIONS * 4) === 0;
-          playClickAtTime(nextBeatTime, isDownbeat);
+        // Metronome on bar starts
+        if (metronomeRef.current) {
+          const starts = barStartBeats(bs);
+          if (starts.includes(beat)) {
+            const isDownbeat = beat === 0;
+            playClickAtTime(nextBeatTime, isDownbeat);
+          }
         }
 
         nextBeatIndex++;
-        nextBeatTime += secPerBeat;
+        nextBeatTime += colDur;
       }
 
       animFrameRef.current = requestAnimationFrame(animate);
@@ -474,6 +488,8 @@ function App() {
           commitDrag={commitDrag}
           freeMode={freeMode}
           timelineZoom={timelineZoom}
+          barSubdivisions={barSubdivisions}
+          setBarSubdivisions={setBarSubdivisions}
           setTimelineZoom={setTimelineZoom}
           currentBeat={currentBeat}
           selectedBeat={selectedBeat}
@@ -502,7 +518,7 @@ function App() {
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            noteDuration, metronome,
+            noteDuration, metronome, barSubdivisions,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}

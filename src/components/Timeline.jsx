@@ -1,17 +1,16 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
 import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
-  CELL_WIDTH, BAR_WIDTH
+  CELL_WIDTH
 } from '../utils/constants';
 import { getNoteName, playNote } from '../utils/audio';
 import {
   TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi,
   midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
 } from '../utils/pitchMap';
+import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart } from '../utils/barLayout';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
-
-const totalCols = NUM_BARS * SUBDIVISIONS;
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
 const totalRows = TOTAL_PITCH_ROWS;
 const ROW_HEIGHT = 20; // pixels per pitch row
@@ -30,6 +29,7 @@ function pitchRowTopPx(pitchRow) {
 export default function Timeline({
   notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   timelineZoom = 1, setTimelineZoom,
+  barSubdivisions, setBarSubdivisions,
   currentBeat, selectedBeat, setSelectedBeat,
   playing, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
@@ -41,14 +41,16 @@ export default function Timeline({
   const headerRef = useRef(null);
   const [headerScrollLeft, setHeaderScrollLeft] = useState(0);
   const cellWidth = CELL_WIDTH * timelineZoom;
-  const barWidth = cellWidth * SUBDIVISIONS;
+  const totalCols = totalColumns(barSubdivisions);
   const gridWidth = totalCols * cellWidth;
+  const starts = barStartBeats(barSubdivisions);
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
   const [dragPreview, setDragPreview] = useState(null);
   const loopDragRef = useRef(null);
   const marqueeRef = useRef(null);
   const marqueeDidDragRef = useRef(false);
+  const [subdivMenu, setSubdivMenu] = useState(null); // { barIndex, x, y }
   const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
 
   const handleClick = useCallback((e) => {
@@ -422,21 +424,35 @@ export default function Timeline({
       {/* Header row: piano spacer + bar numbers */}
       <div style={{ display: 'flex', flexShrink: 0 }}>
         <div className="piano-spacer" />
-        <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}>
+        <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const rect = headerRef.current.getBoundingClientRect();
+            const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
+            const x = e.clientX - rect.left + scrollLeft;
+            const beat = Math.floor(x / cellWidth);
+            const { barIndex } = beatToBar(beat, barSubdivisions);
+            setSubdivMenu({ barIndex, x: e.clientX, y: e.clientY });
+          }}
+        >
           <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth, height: '100%' }}>
             {loop && <div
               className="loop-region-header"
               style={{ left: loopLeftPx, width: loopWidthPx }}
             />}
-            {Array.from({ length: NUM_BARS }, (_, i) => (
-              <div
-                key={i}
-                className="bar-number"
-                style={{ left: i * barWidth }}
-              >
-                {i + 1}
-              </div>
-            ))}
+            {/* Beat labels and bar lines */}
+            {Array.from({ length: totalCols }, (_, i) => {
+              const isBar = starts.includes(i);
+              return (
+                <div
+                  key={i}
+                  className={`bar-number ${isBar ? 'bar-start' : ''}`}
+                  style={{ left: i * cellWidth }}
+                >
+                  {beatLabel(i, barSubdivisions)}
+                </div>
+              );
+            })}
             {/* Selected beat indicator in header — draggable */}
             {selectedBeat !== null && !playing && (
               <div
@@ -569,7 +585,7 @@ export default function Timeline({
           {Array.from({ length: totalCols }, (_, i) => (
             <div
               key={`col-${i}`}
-              className={`grid-col ${i % SUBDIVISIONS === 0 ? 'bar-line' : ''}`}
+              className={`grid-col ${starts.includes(i) ? 'bar-line' : ''}`}
               style={{ left: i * cellWidth }}
             />
           ))}
@@ -703,6 +719,36 @@ export default function Timeline({
         </div>
       </div>
       </div>
+
+      {/* Subdivision context menu */}
+      {subdivMenu && (
+        <div className="subdiv-menu-overlay" onClick={() => setSubdivMenu(null)}>
+          <div
+            className="subdiv-menu"
+            style={{ left: subdivMenu.x, top: subdivMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="subdiv-menu-title">Bar {subdivMenu.barIndex + 1} divisions</div>
+            {[2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+              <button
+                key={n}
+                className={`subdiv-menu-item ${barSubdivisions[subdivMenu.barIndex] === n ? 'active' : ''}`}
+                onClick={() => {
+                  const barIdx = subdivMenu.barIndex;
+                  setBarSubdivisions(prev => {
+                    const next = [...prev];
+                    next[barIdx] = n;
+                    return next;
+                  });
+                  setSubdivMenu(null);
+                }}
+              >
+                {n} beats
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
