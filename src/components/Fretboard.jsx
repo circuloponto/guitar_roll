@@ -270,14 +270,26 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         onMouseUp={handleMouseUp}
         onMouseLeave={() => { setHover(null); setHoveredNote(null); if (!durationDragRef.current && !moveDragRef.current) { dragStartRef.current = null; didDragRef.current = false; setDragNote(null); } }}
       >
+        {/* Open fret area background */}
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          height: FRET_HEIGHT,
+          background: '#1a1a1a',
+          borderBottom: 'none',
+        }} />
+
         {/* Nut - horizontal line between fret 0 and fret 1 */}
         <div style={{
           position: 'absolute',
-          left: `${PADDING_LEFT - 1}%`,
-          right: `${PADDING_RIGHT - 1}%`,
-          top: cellTopPx(1),
-          height: 4,
-          background: '#ccc',
+          left: `${PADDING_LEFT - 2}%`,
+          right: `${PADDING_RIGHT - 2}%`,
+          top: cellTopPx(1) - 2,
+          height: 5,
+          background: '#d4c9a8',
+          borderRadius: 2,
           zIndex: 2,
         }} />
 
@@ -307,21 +319,36 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           );
         })}
 
-        {/* Strings - vertical lines */}
+        {/* Strings - vertical lines (thicker in open area) */}
         {Array.from({ length: NUM_STRINGS }, (_, i) => {
           const leftPercent = PADDING_LEFT + (i / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT);
           const thickness = NUM_STRINGS - i;
+          const nutTop = cellTopPx(1);
           return (
-            <div key={`string-${i}`} style={{
-              position: 'absolute',
-              left: `${leftPercent}%`,
-              top: 0,
-              bottom: 0,
-              width: Math.max(1, thickness * 0.5),
-              background: '#ddd',
-              transform: 'translateX(-50%)',
-              zIndex: 1,
-            }} />
+            <div key={`string-${i}`}>
+              {/* Open area string (thicker) */}
+              <div style={{
+                position: 'absolute',
+                left: `${leftPercent}%`,
+                top: 0,
+                height: nutTop,
+                width: Math.max(3, thickness * 1.2),
+                background: '#ccc',
+                transform: 'translateX(-50%)',
+                zIndex: 1,
+              }} />
+              {/* Fretted area string */}
+              <div style={{
+                position: 'absolute',
+                left: `${leftPercent}%`,
+                top: nutTop,
+                bottom: 0,
+                width: Math.max(1, thickness * 0.5),
+                background: '#ddd',
+                transform: 'translateX(-50%)',
+                zIndex: 1,
+              }} />
+            </div>
           );
         })}
 
