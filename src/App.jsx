@@ -317,13 +317,13 @@ function App() {
     playingRef.current = true;
     setPlaying(true);
 
-    const rStart = regionStart;
-    const rEnd = regionEnd;
-    const rDuration = regionDuration;
+    const initialStart = regionStart;
     const startTime = ctx.currentTime + 0.05;
     const lookahead = 0.1;
     let nextBeatIndex = 0;
     let nextBeatTime = startTime;
+    let prevRStart = initialStart;
+    let prevRDuration = regionDuration;
 
     const animate = () => {
       if (!playingRef.current) return;
@@ -331,12 +331,25 @@ function App() {
       const now = ctx.currentTime;
       const bs = barSubsRef.current;
       const bpm = bpmRef.current;
+      const tc = totalColumns(bs);
+
+      // Read live loop region
+      const rStart = loopRef.current ? loopStartRef.current : initialStart;
+      const rEnd = loopRef.current ? loopEndRef.current : tc;
+      const rDuration = rEnd - rStart;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
+      // If loop region changed, adjust nextBeatIndex to stay in range
+      if (rStart !== prevRStart || rDuration !== prevRDuration) {
+        nextBeatIndex = nextBeatIndex % rDuration;
+        prevRStart = rStart;
+        prevRDuration = rDuration;
+      }
+
       // Compute current column's duration for playhead interpolation
       const currentBeatAbs = rStart + (nextBeatIndex > 0 ? (nextBeatIndex - 1) % rDuration : 0);
-      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, totalColumns(bs) - 1), bs, bpm);
+      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, tc - 1), bs, bpm);
       const beatsSinceLastScheduled = (now - (nextBeatTime - currentColDur)) / currentColDur;
       const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
       const playheadBeat = rStart + (playheadBeatIndex % rDuration);
@@ -357,7 +370,7 @@ function App() {
 
         const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
-        const colDur = colDurationAtBeat(Math.min(beat, totalColumns(bs) - 1), bs, bpm);
+        const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm);
 
         currentNotes.forEach(note => {
           if (note.beat >= beat && note.beat < beat + 1) {
@@ -369,8 +382,8 @@ function App() {
 
         // Metronome on bar starts
         if (metronomeRef.current) {
-          const starts = barStartBeats(bs);
-          if (starts.includes(beat)) {
+          const bStarts = barStartBeats(bs);
+          if (bStarts.includes(beat)) {
             const isDownbeat = beat === 0;
             playClickAtTime(nextBeatTime, isDownbeat);
           }

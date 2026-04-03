@@ -245,29 +245,66 @@ export default function Timeline({
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
+    if (e.button !== 0) return; // left click only
     const rect = headerRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
     const x = e.clientX - rect.left + scrollLeft;
-    const startCol = Math.floor(x / cellWidth);
 
-    if (startCol < 0 || startCol >= totalCols) return;
+    if (!loop) return; // only handle loop drags when loop is on
 
-    loopDragRef.current = { startCol };
-    setLoopStart(startCol);
-    setLoopEnd(startCol + 1);
+    const edgeThreshold = Math.max(8, cellWidth * 0.5);
+    const loopLeftX = loopStart * cellWidth;
+    const loopRightX = loopEnd * cellWidth;
+    const isNearLeft = Math.abs(x - loopLeftX) < edgeThreshold;
+    const isNearRight = Math.abs(x - loopRightX) < edgeThreshold;
+    const isInside = x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold;
+    const loopLen = loopEnd - loopStart;
+
+    if (isNearLeft) {
+      loopDragRef.current = { mode: 'left', fixedEnd: loopEnd };
+    } else if (isNearRight) {
+      loopDragRef.current = { mode: 'right', fixedStart: loopStart };
+    } else if (isInside) {
+      loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen };
+    } else {
+      // Click outside loop — create new selection
+      const startCol = Math.floor(x / cellWidth);
+      if (startCol < 0 || startCol >= totalCols) return;
+      loopDragRef.current = { mode: 'new', startCol };
+      setLoopStart(startCol);
+      setLoopEnd(startCol + 1);
+    }
+
+    e.preventDefault();
 
     const handleMouseMove = (moveE) => {
       if (!loopDragRef.current) return;
-      const mx = moveE.clientX - rect.left + scrollLeft;
+      const mx = moveE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
       const col = Math.max(0, Math.min(totalCols, Math.round(mx / cellWidth)));
-      const anchor = loopDragRef.current.startCol;
+      const d = loopDragRef.current;
 
-      if (col >= anchor) {
-        setLoopStart(anchor);
-        setLoopEnd(Math.max(col, anchor + 1));
+      if (d.mode === 'left') {
+        setLoopStart(Math.min(col, d.fixedEnd - 1));
+      } else if (d.mode === 'right') {
+        setLoopEnd(Math.max(col, d.fixedStart + 1));
+      } else if (d.mode === 'move') {
+        const dx = mx - d.startX;
+        const deltaCols = Math.round(dx / cellWidth);
+        let newStart = d.origStart + deltaCols;
+        let newEnd = d.origEnd + deltaCols;
+        if (newStart < 0) { newStart = 0; newEnd = d.loopLen; }
+        if (newEnd > totalCols) { newEnd = totalCols; newStart = totalCols - d.loopLen; }
+        setLoopStart(newStart);
+        setLoopEnd(newEnd);
       } else {
-        setLoopStart(col);
-        setLoopEnd(anchor + 1);
+        const anchor = d.startCol;
+        if (col >= anchor) {
+          setLoopStart(anchor);
+          setLoopEnd(Math.max(col, anchor + 1));
+        } else {
+          setLoopStart(col);
+          setLoopEnd(anchor + 1);
+        }
       }
     };
 
@@ -279,7 +316,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [setLoopStart, setLoopEnd]);
+  }, [setLoopStart, setLoopEnd, loop, loopStart, loopEnd, cellWidth, totalCols]);
 
   // Marquee selection on grid background
   const handleGridMouseDown = useCallback((e) => {
@@ -425,6 +462,22 @@ export default function Timeline({
       <div style={{ display: 'flex', flexShrink: 0 }}>
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}
+          onMouseMove={(e) => {
+            if (!loop || loopDragRef.current) return;
+            const rect = headerRef.current.getBoundingClientRect();
+            const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
+            const x = e.clientX - rect.left + scrollLeft;
+            const edgeThreshold = Math.max(8, cellWidth * 0.5);
+            const loopLeftX = loopStart * cellWidth;
+            const loopRightX = loopEnd * cellWidth;
+            if (Math.abs(x - loopLeftX) < edgeThreshold || Math.abs(x - loopRightX) < edgeThreshold) {
+              headerRef.current.style.cursor = 'ew-resize';
+            } else if (x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold) {
+              headerRef.current.style.cursor = 'grab';
+            } else {
+              headerRef.current.style.cursor = 'crosshair';
+            }
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             const rect = headerRef.current.getBoundingClientRect();
