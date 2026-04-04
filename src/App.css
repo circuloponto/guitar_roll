@@ -14,10 +14,26 @@
   flex-shrink: 0;
 }
 
-.toolbar h1 {
+.project-name {
   font-size: 16px;
   font-weight: 600;
   margin-right: auto;
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  width: 160px;
+}
+
+.project-name:hover {
+  background: #2a2a2a;
+}
+
+.project-name:focus {
+  outline: none;
+  background: #2a2a2a;
+  border: 1px solid #3498db;
 }
 
 .play-btn {

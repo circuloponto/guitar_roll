@@ -60,6 +60,7 @@ function App() {
     const next = redoStackRef.current.pop();
     setNotesTracked(() => next);
   }, [setNotesTracked]);
+  const [projectName, setProjectName] = useState('Guitar Roll');
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
@@ -139,6 +140,7 @@ function App() {
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
     if (data.timeSignature !== undefined) setTimeSignature(data.timeSignature);
+    if (data.projectName !== undefined) setProjectName(data.projectName);
     if (data.colorSchemes) {
       Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
         saveColorScheme(name, scheme);
@@ -480,7 +482,12 @@ function App() {
   return (
     <div className="app">
       <div className="toolbar">
-        <h1>Guitar Roll</h1>
+        <input
+          className="project-name"
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          spellCheck={false}
+        />
         <button
           className={`play-btn ${playing ? 'playing' : ''}`}
           onClick={handlePlay}
@@ -679,7 +686,7 @@ function App() {
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
+            projectName, noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}

@@ -22,6 +22,7 @@ function defaultSession() {
 
 export function getSessionState(appState) {
   return {
+    projectName: appState.projectName,
     notes: appState.notes,
     bpm: appState.bpm,
     loop: appState.loop,
