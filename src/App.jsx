@@ -95,7 +95,7 @@ function App() {
   const metronomeRef = useRef(metronome);
   const loopRef = useRef(false);
   const loopStartRef = useRef(0);
-  const loopEndRef = useRef(NUM_BARS * SUBDIVISIONS);
+  const loopEndRef = useRef(totalColumns(defaultBarSubdivisions()));
   const selectedBeatRef = useRef(selectedBeat);
   const animFrameRef = useRef(null);
 
@@ -504,11 +504,11 @@ function App() {
             const [num, den] = e.target.value.split('/').map(Number);
             setTimeSignature([num, den]);
             setBarSubdivisions(prev => {
-              const newSubs = Array(NUM_BARS).fill(num);
+              const newSubs = Array(prev.length).fill(num);
               // Remap notes for all bars that changed
               let remapped = notesRef.current;
               const oldStarts = barStartBeats(prev);
-              for (let i = 0; i < NUM_BARS; i++) {
+              for (let i = 0; i < prev.length; i++) {
                 if (prev[i] !== num) {
                   remapped = remapNotes(remapped, prev, newSubs, i);
                   // After remapping bar i, update prev for subsequent bars
@@ -533,6 +533,29 @@ function App() {
           <option value="9/8">9/8</option>
           <option value="12/8">12/8</option>
         </select>
+        <span style={{ fontSize: '12px', color: '#888', marginLeft: 8, marginRight: 4 }}>Bars:</span>
+        <input
+          type="number"
+          className="bpm-input"
+          value={barSubdivisions.length}
+          min={1}
+          max={128}
+          onChange={(e) => {
+            const newCount = Math.max(1, Math.min(128, Number(e.target.value) || 1));
+            setBarSubdivisions(prev => {
+              if (newCount > prev.length) {
+                // Add bars with current time signature
+                return [...prev, ...Array(newCount - prev.length).fill(timeSignature[0])];
+              } else if (newCount < prev.length) {
+                // Remove bars from the end, delete notes in removed bars
+                const tc = totalColumns(prev.slice(0, newCount));
+                setNotesTracked(notesRef.current.filter(n => n.beat < tc));
+                return prev.slice(0, newCount);
+              }
+              return prev;
+            });
+          }}
+        />
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
         <input
@@ -598,6 +621,7 @@ function App() {
           saveSnapshot={saveSnapshot}
           commitDrag={commitDrag}
           freeMode={freeMode}
+          totalBeats={totalBeats}
           activeNotes={playing ? [] : notes.filter(n => selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1))}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))

@@ -81,7 +81,7 @@ export function xToBeat(x, barSubs, cellWidth, snap = true) {
 
 // Total grid width in pixels (all bars same width)
 export function gridTotalWidth(barSubs, cellWidth) {
-  return NUM_BARS * barPixelWidth(cellWidth);
+  return barSubs.length * barPixelWidth(cellWidth);
 }
 
 // Get the pixel width for a note's duration

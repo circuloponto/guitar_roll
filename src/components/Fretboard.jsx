@@ -1,9 +1,9 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, NUM_BARS, SUBDIVISIONS } from '../utils/constants';
+import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
 import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
 
-const MAX_DURATION = NUM_BARS * SUBDIVISIONS;
+// totalBeats passed as prop (totalBeats)
 
 const PADDING_LEFT = 12;
 const PADDING_RIGHT = 8;
@@ -23,7 +23,7 @@ function cellCenterPx(cell) {
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -126,8 +126,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const dBeats = dx / CELL_WIDTH;
           const rawDuration = d.startDuration + dBeats;
           const newDuration = isFree
-            ? Math.max(0.1, Math.min(MAX_DURATION - d.noteBeat, rawDuration))
-            : Math.max(1, Math.min(MAX_DURATION - d.noteBeat, Math.round(rawDuration)));
+            ? Math.max(0.1, Math.min(totalBeats - d.noteBeat, rawDuration))
+            : Math.max(1, Math.min(totalBeats - d.noteBeat, Math.round(rawDuration)));
           setDurationDrag({ stringIndex: d.stringIndex, fret: d.fret, duration: newDuration });
           onDurationChange(d.stringIndex, d.fret, newDuration);
         };
@@ -170,8 +170,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const dBeats = dx / CELL_WIDTH;
           const rawBeat = d.startBeat + dBeats;
           const newBeat = isFree
-            ? Math.max(0, Math.min(MAX_DURATION - (d.noteDuration || 1), rawBeat))
-            : Math.max(0, Math.min(MAX_DURATION - (d.noteDuration || 1), Math.round(rawBeat)));
+            ? Math.max(0, Math.min(totalBeats - (d.noteDuration || 1), rawBeat))
+            : Math.max(0, Math.min(totalBeats - (d.noteDuration || 1), Math.round(rawBeat)));
           if (newBeat !== d.currentBeat) {
             onBeatChange(d.stringIndex, d.fret, d.currentBeat, newBeat);
             d.currentBeat = newBeat;
@@ -503,7 +503,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const bar = Math.floor(beat / SUBDIVISIONS) + 1;
           const beatInBar = freeMode ? (beat % SUBDIVISIONS + 1).toFixed(1) : (beat % SUBDIVISIONS) + 1;
           const label = `${bar}.${beatInBar}`;
-          const fillPercent = Math.min(100, (beat / (MAX_DURATION - 1)) * 100);
+          const fillPercent = Math.min(100, (beat / (totalBeats - 1)) * 100);
           const size = 64;
           const strokeWidth = 6;
           const radius = (size - strokeWidth) / 2;
