@@ -36,6 +36,7 @@ export default function Timeline({
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
   verticalScroll, setVerticalScroll,
+  eraserMode = false,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -140,8 +141,23 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode]);
 
+  const handleNoteContextMenu = useCallback((e, noteIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setNotes(prev => prev.filter((_, i) => i !== noteIndex));
+    setSelectedNotes(prev => {
+      if (!prev.has(noteIndex)) return prev;
+      const next = new Set();
+      prev.forEach(i => {
+        if (i < noteIndex) next.add(i);
+        else if (i > noteIndex) next.add(i - 1);
+      });
+      return next;
+    });
+  }, [setNotes, setSelectedNotes]);
+
   const handleNoteDragStart = useCallback((e, noteIndex) => {
-    if (e.shiftKey) return;
+    if (e.shiftKey || e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     const note = notes[noteIndex];
@@ -432,6 +448,15 @@ export default function Timeline({
     };
 
     const handleMouseUp = () => {
+      // In eraser mode, delete all notes that were selected by the marquee
+      if (eraserMode && marqueeRef.current && marqueeRef.current.didMove) {
+        setSelectedNotes(prev => {
+          if (prev.size > 0) {
+            setNotes(old => old.filter((_, i) => !prev.has(i)));
+          }
+          return new Set();
+        });
+      }
       marqueeRef.current = null;
       setMarquee(null);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -440,7 +465,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes]);
+  }, [playing, notes, setSelectedNotes, eraserMode, setNotes]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -639,7 +664,7 @@ export default function Timeline({
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
-          style={{ flex: 1 }}
+          style={{ flex: 1, cursor: eraserMode ? 'crosshair' : undefined }}
         >
         <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
           {/* Loop region highlight in grid */}
@@ -768,6 +793,7 @@ export default function Timeline({
                 }}
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}
+                onContextMenu={(e) => handleNoteContextMenu(e, i)}
                 onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
                 {getNoteName(note.stringIndex, note.fret)}
@@ -815,7 +841,7 @@ export default function Timeline({
 
           {/* Marquee selection rectangle */}
           {marquee && (
-            <div className="marquee-rect" style={{
+            <div className={`marquee-rect ${eraserMode ? 'eraser' : ''}`} style={{
               left: marquee.x1,
               top: marquee.y1,
               width: marquee.x2 - marquee.x1,

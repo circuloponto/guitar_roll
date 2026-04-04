@@ -97,6 +97,7 @@ function App() {
   const [metronome, setMetronome] = useState(false);
   const clipboardRef = useRef([]);
   const [freeMode, setFreeMode] = useState(false);
+  const [eraserMode, setEraserMode] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
@@ -520,6 +521,13 @@ function App() {
           Metronome
         </button>
         <button
+          className={`tool-btn ${eraserMode ? 'active' : ''}`}
+          onClick={() => setEraserMode(m => !m)}
+          title="Eraser: drag to select and delete notes"
+        >
+          Eraser
+        </button>
+        <button
           className="tool-btn"
           onClick={() => setShowSettings(true)}
           title="Settings, colors, save/load"
@@ -699,6 +707,7 @@ function App() {
           setHoveredNote={setHoveredNote}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
+          eraserMode={eraserMode}
         />
       </div>
 
