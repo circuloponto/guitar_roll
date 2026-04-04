@@ -66,6 +66,10 @@ function App() {
   const [baseNoteDuration, setBaseNoteDuration] = useState(1);
   const [tuplet, setTuplet] = useState(1);
   const noteDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration * (tuplet - 1) / tuplet;
+  const noteDurationRef = useRef(noteDuration);
+  noteDurationRef.current = noteDuration;
+  const tupletRef = useRef(tuplet);
+  tupletRef.current = tuplet;
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
@@ -175,7 +179,8 @@ function App() {
             return prev.length > 0 ? prev[prev.length - 1] : b;
           });
         } else {
-          setSelectedBeat(b => Math.max(0, b - 1));
+          const step = tupletRef.current > 1 ? noteDurationRef.current : 1;
+          setSelectedBeat(b => Math.max(0, b - step));
         }
       }
       if (matchesHotkey(e, hk.nextBeat)) {
@@ -188,7 +193,8 @@ function App() {
             return next.length > 0 ? next[0] : b;
           });
         } else {
-          setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
+          const step = tupletRef.current > 1 ? noteDurationRef.current : 1;
+          setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
         }
       }
       if (matchesHotkey(e, hk.playStop)) {
