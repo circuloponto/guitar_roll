@@ -84,7 +84,7 @@ function App() {
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [baseNoteDuration, setBaseNoteDuration] = useState(1);
   const [tuplet, setTuplet] = useState(1);
-  const noteDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration * (tuplet - 1) / tuplet;
+  const noteDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration / tuplet;
   const noteDurationRef = useRef(noteDuration);
   noteDurationRef.current = noteDuration;
   const tupletRef = useRef(tuplet);
