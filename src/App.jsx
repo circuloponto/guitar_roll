@@ -293,19 +293,14 @@ function App() {
     }
   }, []);
 
-  const handlePlay = useCallback(() => {
-    if (playing) {
-      stopPlayback();
-      return;
-    }
-
+  const startPlayback = useCallback((fromBeat) => {
     if (notesRef.current.length === 0) return;
 
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
     const barSubs = barSubsRef.current;
     const totalCols = totalColumns(barSubs);
-    const regionStart = isLoop ? loopStartRef.current : Math.floor(selectedBeatRef.current);
+    const regionStart = fromBeat;
     const regionEnd = isLoop ? loopEndRef.current : totalCols;
     const regionDuration = regionEnd - regionStart;
 
@@ -321,6 +316,7 @@ function App() {
     let nextBeatTime = startTime;
     let prevRStart = initialStart;
     let prevRDuration = regionDuration;
+    let firstPass = true; // use initialStart for the first pass, loop boundaries after
 
     const animate = () => {
       if (!playingRef.current) return;
@@ -330,18 +326,35 @@ function App() {
       const bpm = bpmRef.current;
       const tc = totalColumns(bs);
 
-      // Read live loop region
-      const rStart = loopRef.current ? loopStartRef.current : initialStart;
-      const rEnd = loopRef.current ? loopEndRef.current : tc;
+      // Read live loop region — use initialStart on first pass
+      let rStart, rEnd;
+      if (firstPass) {
+        rStart = initialStart;
+        rEnd = loopRef.current ? loopEndRef.current : tc;
+      } else {
+        rStart = loopRef.current ? loopStartRef.current : initialStart;
+        rEnd = loopRef.current ? loopEndRef.current : tc;
+      }
       const rDuration = rEnd - rStart;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
       // If loop region changed, adjust nextBeatIndex to stay in range
       if (rStart !== prevRStart || rDuration !== prevRDuration) {
-        nextBeatIndex = nextBeatIndex % rDuration;
+        if (!firstPass) nextBeatIndex = nextBeatIndex % rDuration;
         prevRStart = rStart;
         prevRDuration = rDuration;
+      }
+
+      // Check if first pass is done (reached end of region)
+      if (firstPass && nextBeatIndex >= rDuration) {
+        if (loopRef.current) {
+          firstPass = false;
+          nextBeatIndex = 0;
+          // Switch to full loop region
+          prevRStart = loopStartRef.current;
+          prevRDuration = loopEndRef.current - loopStartRef.current;
+        }
       }
 
       // Compute current column's duration for playhead interpolation
@@ -394,8 +407,28 @@ function App() {
     };
 
     animFrameRef.current = requestAnimationFrame(animate);
-  }, [playing, stopPlayback]);
-  handlePlayRef.current = handlePlay;
+  }, [stopPlayback]);
+
+  // Play button: from start of loop or start of timeline
+  const handlePlay = useCallback(() => {
+    if (playing) {
+      stopPlayback();
+      return;
+    }
+    const isLoop = loopRef.current;
+    startPlayback(isLoop ? loopStartRef.current : 0);
+  }, [playing, stopPlayback, startPlayback]);
+
+  // Spacebar: from playhead position
+  const handlePlayFromHead = useCallback(() => {
+    if (playing) {
+      stopPlayback();
+      return;
+    }
+    startPlayback(Math.floor(selectedBeatRef.current));
+  }, [playing, stopPlayback, startPlayback]);
+
+  handlePlayRef.current = handlePlayFromHead;
 
   const handleClear = useCallback(() => {
     setNotes([]);
