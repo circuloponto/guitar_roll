@@ -63,7 +63,9 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
-  const [noteDuration, setNoteDuration] = useState(1);
+  const [baseNoteDuration, setBaseNoteDuration] = useState(1);
+  const [tuplet, setTuplet] = useState(1);
+  const noteDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration * (tuplet - 1) / tuplet;
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
@@ -123,7 +125,7 @@ function App() {
     if (data.loopEnd !== undefined) setLoopEnd(data.loopEnd);
     if (data.stringColors !== undefined) setStringColors(data.stringColors);
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
-    if (data.noteDuration !== undefined) setNoteDuration(data.noteDuration);
+    if (data.noteDuration !== undefined) setBaseNoteDuration(data.noteDuration);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
@@ -254,11 +256,13 @@ function App() {
     });
   }, [selectedBeat]);
 
-  const handleSetDuration = useCallback((value) => {
-    setNoteDuration(value);
+  const handleSetDuration = useCallback((base, tup) => {
+    setBaseNoteDuration(base);
+    setTuplet(tup);
+    const dur = tup <= 1 ? base : base * (tup - 1) / tup;
     if (selectedNotes.size > 0) {
       setNotes(prev => prev.map((n, i) =>
-        selectedNotes.has(i) ? { ...n, duration: value } : n
+        selectedNotes.has(i) ? { ...n, duration: dur } : n
       ));
     }
   }, [selectedNotes]);
@@ -489,22 +493,34 @@ function App() {
         </button>
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Duration:</span>
-        {[
-          { value: 1, label: '1/16' },
-          { value: 2, label: '1/8' },
-          { value: 4, label: '1/4' },
-          { value: 8, label: '1/2' },
-          { value: 16, label: '1/1' },
-        ].map(d => (
-          <button
-            key={d.value}
-            className={`tool-btn ${noteDuration === d.value ? 'active' : ''}`}
-            onClick={() => handleSetDuration(d.value)}
-            title={`${d.label} note`}
-          >
-            {d.label}
-          </button>
-        ))}
+        <select
+          className="duration-select"
+          value={baseNoteDuration}
+          onChange={(e) => handleSetDuration(Number(e.target.value), tuplet)}
+        >
+          <option value={1}>1/16</option>
+          <option value={2}>1/8</option>
+          <option value={4}>1/4</option>
+          <option value={8}>1/2</option>
+          <option value={16}>1/1</option>
+        </select>
+        <span style={{ fontSize: '12px', color: '#888', marginLeft: 8, marginRight: 4 }}>Tuplet:</span>
+        <input
+          type="number"
+          className="tuplet-input"
+          value={tuplet}
+          min={1}
+          max={15}
+          onChange={(e) => {
+            const val = Math.max(1, Math.min(15, Number(e.target.value) || 1));
+            handleSetDuration(baseNoteDuration, val);
+          }}
+        />
+        {tuplet > 1 && (
+          <span style={{ fontSize: '11px', color: '#e67e22', marginLeft: 4 }}>
+            = {noteDuration.toFixed(2)} beats
+          </span>
+        )}
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: (freeMode || noteJump) ? '#e67e22' : '#888' }}>
           {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
@@ -571,7 +587,7 @@ function App() {
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            noteDuration, metronome, barSubdivisions,
+            noteDuration: baseNoteDuration, metronome, barSubdivisions,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}

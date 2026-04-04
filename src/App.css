@@ -77,6 +77,37 @@
   border-color: #3498db;
 }
 
+.duration-select {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.duration-select:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.tuplet-input {
+  width: 40px;
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 5px 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.tuplet-input:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
 .toolbar-separator {
   width: 1px;
   height: 20px;
