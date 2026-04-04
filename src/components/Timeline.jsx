@@ -297,7 +297,9 @@ export default function Timeline({
       d.didMove = true;
 
       if (d.mode === 'left') {
-        setLoopStart(Math.min(col, d.fixedEnd - 1));
+        const newStart = Math.min(col, d.fixedEnd - 1);
+        setLoopStart(newStart);
+        setSelectedBeat(newStart);
         setLoop(true);
       } else if (d.mode === 'right') {
         setLoopEnd(Math.max(col, d.fixedStart + 1));
@@ -316,22 +318,29 @@ export default function Timeline({
         if (col >= anchor) {
           setLoopStart(anchor);
           setLoopEnd(Math.max(col, anchor + 1));
+          d.lastCol = col;
         } else {
           setLoopStart(col);
           setLoopEnd(anchor + 1);
+          d.lastCol = col;
         }
         setLoop(true);
       }
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (upE) => {
       const d = loopDragRef.current;
       if (d) {
         if (d.mode === 'new' && !d.didMove) {
-          // Just a click with no drag — enable loop with 1-beat selection
-          setLoop(true);
+          // Just a click with no drag — move playhead here, don't create loop
+          const ux = upE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
+          const beat = xToBeat(ux, barSubdivisions, cellWidth, !freeMode);
+          setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
+          setLoop(false);
         } else if (d.mode === 'new' && d.didMove) {
           setLoop(true);
+          // Move playhead to start of new loop
+          setSelectedBeat(Math.min(d.startCol, d.lastCol));
         } else if (d.mode === 'move' && !d.didMove) {
           // Click inside loop without moving — remove loop
           setLoop(false);
@@ -344,7 +353,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [setLoopStart, setLoopEnd, setLoop, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions]);
+  }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode]);
 
   // Marquee selection on grid background
   const handleGridMouseDown = useCallback((e) => {
