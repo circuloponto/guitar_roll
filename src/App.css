@@ -95,6 +95,7 @@
   width: 350px;
   min-width: 350px;
   border-right: 1px solid #333;
+  margin-right: 35px;
   display: flex;
   flex-direction: column;
 }
