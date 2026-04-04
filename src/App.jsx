@@ -190,9 +190,6 @@ function App() {
       if (e.key === 'f' || e.key === 'F') {
         setFreeMode(m => !m);
       }
-      if (e.key === 'c' || e.key === 'C') {
-        setLoop(l => !l);
-      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
@@ -468,8 +465,8 @@ function App() {
           </button>
         ))}
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: (freeMode || loop || noteJump) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{loop ? 'LOOP ' : ''}{noteJump ? 'JUMP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ fontSize: '12px', color: (freeMode || noteJump) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       <div className="main-area">
@@ -514,6 +511,7 @@ function App() {
           setLoopStart={setLoopStart}
           setLoopEnd={setLoopEnd}
           loop={loop}
+          setLoop={setLoop}
           selectedNotes={selectedNotes}
           setSelectedNotes={setSelectedNotes}
           stringColors={stringColors}

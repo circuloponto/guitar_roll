@@ -32,7 +32,7 @@ export default function Timeline({
   barSubdivisions, setBarSubdivisions,
   currentBeat, selectedBeat, setSelectedBeat,
   playing, onDeleteNote,
-  loopStart, loopEnd, setLoopStart, setLoopEnd, loop,
+  loopStart, loopEnd, setLoopStart, setLoopEnd, loop, setLoop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
   verticalScroll, setVerticalScroll,
@@ -249,32 +249,40 @@ export default function Timeline({
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
-    if (e.button !== 0) return; // left click only
+    if (e.button !== 0) return;
     const rect = headerRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
     const x = e.clientX - rect.left + scrollLeft;
 
-    if (!loop) return; // only handle loop drags when loop is on
-
     const edgeThreshold = Math.max(8, cellWidth * 0.5);
     const loopLeftX = beatToX(loopStart, barSubdivisions, cellWidth);
     const loopRightX = beatToX(loopEnd, barSubdivisions, cellWidth);
-    const isNearLeft = Math.abs(x - loopLeftX) < edgeThreshold;
-    const isNearRight = Math.abs(x - loopRightX) < edgeThreshold;
-    const isInside = x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold;
-    const loopLen = loopEnd - loopStart;
 
-    if (isNearLeft) {
-      loopDragRef.current = { mode: 'left', fixedEnd: loopEnd };
-    } else if (isNearRight) {
-      loopDragRef.current = { mode: 'right', fixedStart: loopStart };
-    } else if (isInside) {
-      loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen };
+    if (loop) {
+      const isNearLeft = Math.abs(x - loopLeftX) < edgeThreshold;
+      const isNearRight = Math.abs(x - loopRightX) < edgeThreshold;
+      const isInside = x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold;
+
+      if (isNearLeft) {
+        loopDragRef.current = { mode: 'left', fixedEnd: loopEnd };
+      } else if (isNearRight) {
+        loopDragRef.current = { mode: 'right', fixedStart: loopStart };
+      } else if (isInside) {
+        // Click inside — will remove loop on mouseup if no drag
+        loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen: loopEnd - loopStart, didMove: false };
+      } else {
+        // Click outside existing loop — create new
+        const startCol = xToBeat(x, barSubdivisions, cellWidth, true);
+        if (startCol < 0 || startCol >= totalCols) return;
+        loopDragRef.current = { mode: 'new', startCol, didMove: false };
+        setLoopStart(startCol);
+        setLoopEnd(startCol + 1);
+      }
     } else {
-      // Click outside loop — create new selection
+      // No loop — create new
       const startCol = xToBeat(x, barSubdivisions, cellWidth, true);
       if (startCol < 0 || startCol >= totalCols) return;
-      loopDragRef.current = { mode: 'new', startCol };
+      loopDragRef.current = { mode: 'new', startCol, didMove: false };
       setLoopStart(startCol);
       setLoopEnd(startCol + 1);
     }
@@ -286,11 +294,14 @@ export default function Timeline({
       const mx = moveE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
       const col = Math.max(0, Math.min(totalCols, Math.round(xToBeat(mx, barSubdivisions, cellWidth, false))));
       const d = loopDragRef.current;
+      d.didMove = true;
 
       if (d.mode === 'left') {
         setLoopStart(Math.min(col, d.fixedEnd - 1));
+        setLoop(true);
       } else if (d.mode === 'right') {
         setLoopEnd(Math.max(col, d.fixedStart + 1));
+        setLoop(true);
       } else if (d.mode === 'move') {
         const newStartBeat = xToBeat(beatToX(d.origStart, barSubdivisions, cellWidth) + (mx - d.startX), barSubdivisions, cellWidth, true);
         const deltaCols = newStartBeat - d.origStart;
@@ -309,10 +320,23 @@ export default function Timeline({
           setLoopStart(col);
           setLoopEnd(anchor + 1);
         }
+        setLoop(true);
       }
     };
 
     const handleMouseUp = () => {
+      const d = loopDragRef.current;
+      if (d) {
+        if (d.mode === 'new' && !d.didMove) {
+          // Just a click with no drag — enable loop with 1-beat selection
+          setLoop(true);
+        } else if (d.mode === 'new' && d.didMove) {
+          setLoop(true);
+        } else if (d.mode === 'move' && !d.didMove) {
+          // Click inside loop without moving — remove loop
+          setLoop(false);
+        }
+      }
       loopDragRef.current = null;
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -320,7 +344,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [setLoopStart, setLoopEnd, loop, loopStart, loopEnd, cellWidth, totalCols]);
+  }, [setLoopStart, setLoopEnd, setLoop, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions]);
 
   // Marquee selection on grid background
   const handleGridMouseDown = useCallback((e) => {
