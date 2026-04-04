@@ -8,7 +8,7 @@ import {
   TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi,
   midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
 } from '../utils/pitchMap';
-import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart } from '../utils/barLayout';
+import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth } from '../utils/barLayout';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -42,7 +42,7 @@ export default function Timeline({
   const [headerScrollLeft, setHeaderScrollLeft] = useState(0);
   const cellWidth = CELL_WIDTH * timelineZoom;
   const totalCols = totalColumns(barSubdivisions);
-  const gridWidth = totalCols * cellWidth;
+  const gridWidth = gridTotalWidth(barSubdivisions, cellWidth);
   const starts = barStartBeats(barSubdivisions);
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
@@ -63,12 +63,12 @@ export default function Timeline({
     const rect = bodyRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
     if (freeMode) {
-      const beat = x / cellWidth;
+      const beat = xToBeat(x, barSubdivisions, cellWidth, false);
       if (beat >= 0 && beat < totalCols) {
         setSelectedBeat(beat);
       }
     } else {
-      const col = Math.floor(x / cellWidth);
+      const col = xToBeat(x, barSubdivisions, cellWidth, true);
       if (col >= 0 && col < totalCols) {
         setSelectedBeat(col);
       }
@@ -114,8 +114,10 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
       const dx = moveE.clientX - draggingRef.current.startX;
-      const dBeats = dx / cellWidth;
       const { affectedIndices, startDurations } = draggingRef.current;
+      const noteBarIdx = beatToBar(notes[draggingRef.current.noteIndex].beat, barSubdivisions).barIndex;
+      const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
+      const dBeats = dx / cw;
 
       setNotesDrag(prev => prev.map((n, i) => {
         if (!affectedIndices.includes(i)) return n;
@@ -189,7 +191,9 @@ export default function Timeline({
       if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       d.didMove = true;
 
-      const deltaBeat = dx / cellWidth;
+      const anchorBarIdx = beatToBar(d.startBeat, barSubdivisions).barIndex;
+      const anchorCw = colWidth(anchorBarIdx, barSubdivisions, cellWidth);
+      const deltaBeat = dx / anchorCw;
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = moveE.clientY - d.gridTop + scrollTop;
@@ -253,8 +257,8 @@ export default function Timeline({
     if (!loop) return; // only handle loop drags when loop is on
 
     const edgeThreshold = Math.max(8, cellWidth * 0.5);
-    const loopLeftX = loopStart * cellWidth;
-    const loopRightX = loopEnd * cellWidth;
+    const loopLeftX = beatToX(loopStart, barSubdivisions, cellWidth);
+    const loopRightX = beatToX(loopEnd, barSubdivisions, cellWidth);
     const isNearLeft = Math.abs(x - loopLeftX) < edgeThreshold;
     const isNearRight = Math.abs(x - loopRightX) < edgeThreshold;
     const isInside = x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold;
@@ -268,7 +272,7 @@ export default function Timeline({
       loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen };
     } else {
       // Click outside loop — create new selection
-      const startCol = Math.floor(x / cellWidth);
+      const startCol = xToBeat(x, barSubdivisions, cellWidth, true);
       if (startCol < 0 || startCol >= totalCols) return;
       loopDragRef.current = { mode: 'new', startCol };
       setLoopStart(startCol);
@@ -280,7 +284,7 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!loopDragRef.current) return;
       const mx = moveE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
-      const col = Math.max(0, Math.min(totalCols, Math.round(mx / cellWidth)));
+      const col = Math.max(0, Math.min(totalCols, Math.round(xToBeat(mx, barSubdivisions, cellWidth, false))));
       const d = loopDragRef.current;
 
       if (d.mode === 'left') {
@@ -288,8 +292,8 @@ export default function Timeline({
       } else if (d.mode === 'right') {
         setLoopEnd(Math.max(col, d.fixedStart + 1));
       } else if (d.mode === 'move') {
-        const dx = mx - d.startX;
-        const deltaCols = Math.round(dx / cellWidth);
+        const newStartBeat = xToBeat(beatToX(d.origStart, barSubdivisions, cellWidth) + (mx - d.startX), barSubdivisions, cellWidth, true);
+        const deltaCols = newStartBeat - d.origStart;
         let newStart = d.origStart + deltaCols;
         let newEnd = d.origEnd + deltaCols;
         if (newStart < 0) { newStart = 0; newEnd = d.loopLen; }
@@ -353,8 +357,8 @@ export default function Timeline({
       // Select notes that overlap the marquee
       const selected = new Set();
       notes.forEach((note, i) => {
-        const noteLeft = note.beat * cellWidth;
-        const noteRight = noteLeft + (note.duration || 1) * cellWidth;
+        const noteLeft = beatToX(note.beat, barSubdivisions, cellWidth);
+        const noteRight = noteLeft + durationToWidth(note.beat, note.duration || 1, barSubdivisions, cellWidth);
         const noteTop = rowTopPx(note.stringIndex, note.fret);
         const noteBottom = noteTop + ROW_HEIGHT;
 
@@ -430,7 +434,7 @@ export default function Timeline({
   // Auto-scroll to playhead during playback
   useEffect(() => {
     if (playing && bodyRef.current && currentBeat !== null) {
-      const playheadX = currentBeat * cellWidth;
+      const playheadX = beatToX(currentBeat, barSubdivisions, cellWidth);
       const container = bodyRef.current;
       const scrollLeft = container.scrollLeft;
       const visibleWidth = container.clientWidth;
@@ -441,8 +445,8 @@ export default function Timeline({
     }
   }, [currentBeat, playing]);
 
-  const loopLeftPx = loopStart * cellWidth;
-  const loopWidthPx = (loopEnd - loopStart) * cellWidth;
+  const loopLeftPx = beatToX(loopStart, barSubdivisions, cellWidth);
+  const loopWidthPx = beatToX(loopEnd, barSubdivisions, cellWidth) - loopLeftPx;
 
   // Build piano roll rows from unique pitches (top = highest, bottom = lowest)
   const pianoRows = [];
@@ -467,8 +471,8 @@ export default function Timeline({
             const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
             const x = e.clientX - rect.left + scrollLeft;
             const edgeThreshold = Math.max(8, cellWidth * 0.5);
-            const loopLeftX = loopStart * cellWidth;
-            const loopRightX = loopEnd * cellWidth;
+            const loopLeftX = beatToX(loopStart, barSubdivisions, cellWidth);
+            const loopRightX = beatToX(loopEnd, barSubdivisions, cellWidth);
             if (Math.abs(x - loopLeftX) < edgeThreshold || Math.abs(x - loopRightX) < edgeThreshold) {
               headerRef.current.style.cursor = 'ew-resize';
             } else if (x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold) {
@@ -482,7 +486,7 @@ export default function Timeline({
             const rect = headerRef.current.getBoundingClientRect();
             const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
             const x = e.clientX - rect.left + scrollLeft;
-            const beat = Math.floor(x / cellWidth);
+            const beat = xToBeat(x, barSubdivisions, cellWidth, true);
             const { barIndex } = beatToBar(beat, barSubdivisions);
             setSubdivMenu({ barIndex, x: e.clientX, y: e.clientY });
           }}
@@ -499,7 +503,7 @@ export default function Timeline({
                 <div
                   key={i}
                   className={`bar-number ${isBar ? 'bar-start' : ''}`}
-                  style={{ left: i * cellWidth }}
+                  style={{ left: beatToX(i, barSubdivisions, cellWidth) }}
                 >
                   {beatLabel(i, barSubdivisions)}
                 </div>
@@ -509,7 +513,7 @@ export default function Timeline({
             {selectedBeat !== null && !playing && (
               <div
                 className="header-beat-marker"
-                style={{ left: selectedBeat * cellWidth, cursor: 'ew-resize' }}
+                style={{ left: beatToX(selectedBeat, barSubdivisions, cellWidth), cursor: 'ew-resize' }}
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -518,7 +522,7 @@ export default function Timeline({
 
                   const handleMove = (moveE) => {
                     const x = moveE.clientX - headerRect.left + scrollLeft;
-                    const beat = freeMode ? x / cellWidth : Math.floor(x / cellWidth);
+                    const beat = xToBeat(x, barSubdivisions, cellWidth, !freeMode);
                     const clamped = Math.max(0, Math.min(totalCols - 1, beat));
                     setSelectedBeat(clamped);
                   };
@@ -533,7 +537,7 @@ export default function Timeline({
             )}
             {/* Playhead in header */}
             {currentBeat !== null && playing && (
-              <div className="header-playhead" style={{ left: currentBeat * cellWidth }} />
+              <div className="header-playhead" style={{ left: beatToX(currentBeat, barSubdivisions, cellWidth) }} />
             )}
           </div>
         </div>
@@ -638,7 +642,7 @@ export default function Timeline({
             <div
               key={`col-${i}`}
               className={`grid-col ${starts.includes(i) ? 'bar-line' : ''}`}
-              style={{ left: i * cellWidth }}
+              style={{ left: beatToX(i, barSubdivisions, cellWidth) }}
             />
           ))}
 
@@ -647,12 +651,12 @@ export default function Timeline({
             freeMode && selectedBeat % 1 !== 0 ? (
               <div
                 className="timeline-selected-line"
-                style={{ left: selectedBeat * cellWidth }}
+                style={{ left: beatToX(selectedBeat, barSubdivisions, cellWidth) }}
               />
             ) : (
               <div
                 className="timeline-selected-col"
-                style={{ left: Math.floor(selectedBeat) * cellWidth, width: cellWidth }}
+                style={{ left: beatToX(Math.floor(selectedBeat), barSubdivisions, cellWidth), width: colWidth(beatToBar(Math.floor(selectedBeat), barSubdivisions).barIndex, barSubdivisions, cellWidth) }}
               />
             )
           )}
@@ -663,12 +667,12 @@ export default function Timeline({
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
-            const noteWidth = duration * cellWidth - 2;
+            const noteWidth = durationToWidth(note.beat, duration, barSubdivisions, cellWidth) - 2;
             const color = getNoteColor(note.stringIndex, note.fret);
             return (
               <div key={`blur-${i}`} style={{
                 position: 'absolute',
-                left: note.beat * cellWidth + 1,
+                left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                 top: topPx,
                 width: noteWidth,
                 height: ROW_HEIGHT,
@@ -689,7 +693,7 @@ export default function Timeline({
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
-            const noteWidth = duration * cellWidth - 2;
+            const noteWidth = durationToWidth(note.beat, duration, barSubdivisions, cellWidth) - 2;
             const isPlaying = playing && currentBeat !== null &&
               currentBeat >= note.beat && currentBeat < note.beat + duration;
             const color = getNoteColor(note.stringIndex, note.fret);
@@ -699,7 +703,7 @@ export default function Timeline({
                 key={i}
                 className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
                 style={{
-                  left: note.beat * cellWidth + 1,
+                  left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                   top: topPx,
                   width: noteWidth,
                   height: ROW_HEIGHT,
@@ -732,13 +736,13 @@ export default function Timeline({
             const newBeat = Math.max(0, Math.min(totalCols - (note.duration || 1), note.beat + dragPreview.deltaBeat));
             const topPct = pitchRowTopPx(newPitchRow);
             const duration = note.duration || 1;
-            const noteWidth = duration * cellWidth - 2;
+            const noteWidth = durationToWidth(newBeat, duration, barSubdivisions, cellWidth) - 2;
             return (
               <div
                 key={`preview-${idx}`}
                 className="timeline-note"
                 style={{
-                  left: newBeat * cellWidth + 1,
+                  left: beatToX(newBeat, barSubdivisions, cellWidth) + 1,
                   backgroundColor: getNoteColor(combo.stringIndex, combo.fret),
                   top: topPct,
                   width: noteWidth,
@@ -766,7 +770,7 @@ export default function Timeline({
 
           {/* Playhead */}
           {currentBeat !== null && playing && (
-            <div className="playhead" style={{ left: currentBeat * cellWidth }} />
+            <div className="playhead" style={{ left: beatToX(currentBeat, barSubdivisions, cellWidth) }} />
           )}
         </div>
       </div>
@@ -787,11 +791,17 @@ export default function Timeline({
                 className={`subdiv-menu-item ${barSubdivisions[subdivMenu.barIndex] === n ? 'active' : ''}`}
                 onClick={() => {
                   const barIdx = subdivMenu.barIndex;
-                  setBarSubdivisions(prev => {
-                    const next = [...prev];
-                    next[barIdx] = n;
-                    return next;
-                  });
+                  const oldSubs = barSubdivisions;
+                  const newSubs = [...oldSubs];
+                  newSubs[barIdx] = n;
+                  const shift = n - oldSubs[barIdx];
+                  const oldStarts = barStartBeats(oldSubs);
+                  const barEnd = oldStarts[barIdx] + oldSubs[barIdx];
+                  setBarSubdivisions(newSubs);
+                  setNotes(prev => remapNotes(prev, oldSubs, newSubs, barIdx));
+                  // Shift loop boundaries if they're after the changed bar
+                  if (loopStart >= barEnd) setLoopStart(s => s + shift);
+                  if (loopEnd >= barEnd) setLoopEnd(s => s + shift);
                   setSubdivMenu(null);
                 }}
               >

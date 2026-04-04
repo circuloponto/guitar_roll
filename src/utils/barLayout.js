@@ -31,14 +31,62 @@ export function beatToBar(beat, barSubs) {
   return { barIndex: barSubs.length - 1, subIndex: barSubs[barSubs.length - 1] - 1 };
 }
 
-// Convert a beat to pixel X position
-export function beatToX(beat, barSubs, cellWidth) {
-  return beat * cellWidth;
+// Fixed bar pixel width (all bars same visual width)
+function barPixelWidth(cellWidth) {
+  return SUBDIVISIONS * cellWidth;
 }
 
-// Convert pixel X to beat (fractional for free mode)
-export function xToBeat(x, barSubs, cellWidth) {
-  return x / cellWidth;
+// Get pixel width of a single column in a given bar
+export function colWidth(barIndex, barSubs, cellWidth) {
+  return barPixelWidth(cellWidth) / barSubs[barIndex];
+}
+
+// Convert a beat to pixel X position (variable column widths)
+export function beatToX(beat, barSubs, cellWidth) {
+  const bpw = barPixelWidth(cellWidth);
+  let x = 0;
+  let remaining = beat;
+
+  for (let i = 0; i < barSubs.length; i++) {
+    if (remaining <= barSubs[i]) {
+      x += (remaining / barSubs[i]) * bpw;
+      break;
+    }
+    x += bpw;
+    remaining -= barSubs[i];
+  }
+
+  return x;
+}
+
+// Convert pixel X to beat (variable column widths, fractional for free mode)
+export function xToBeat(x, barSubs, cellWidth, snap = true) {
+  const bpw = barPixelWidth(cellWidth);
+  let remaining = x;
+  let beat = 0;
+
+  for (let i = 0; i < barSubs.length; i++) {
+    if (remaining <= bpw) {
+      const fraction = remaining / bpw;
+      const rawBeat = fraction * barSubs[i];
+      beat += snap ? Math.floor(rawBeat) : rawBeat;
+      break;
+    }
+    remaining -= bpw;
+    beat += barSubs[i];
+  }
+
+  return beat;
+}
+
+// Total grid width in pixels (all bars same width)
+export function gridTotalWidth(barSubs, cellWidth) {
+  return NUM_BARS * barPixelWidth(cellWidth);
+}
+
+// Get the pixel width for a note's duration
+export function durationToWidth(beat, duration, barSubs, cellWidth) {
+  return beatToX(beat + duration, barSubs, cellWidth) - beatToX(beat, barSubs, cellWidth);
 }
 
 // Get the beat label for a given beat index: "1", "1.1", "1.2", etc.
