@@ -6,6 +6,8 @@ import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
 import { loadHotkeys, matchesHotkey } from './utils/hotkeys';
+import { getMidiNote } from './utils/pitchMap';
+import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import './App.css';
 
@@ -98,6 +100,8 @@ function App() {
   const clipboardRef = useRef([]);
   const [freeMode, setFreeMode] = useState(false);
   const [eraserMode, setEraserMode] = useState(false);
+  const [fingeringMode, setFingeringMode] = useState(false);
+  const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
@@ -233,11 +237,60 @@ function App() {
       if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
       }
+      if (matchesHotkey(e, hk.fingeringMode)) {
+        fingeringModeRef.current = !fingeringModeRef.current;
+        setFingeringMode(fingeringModeRef.current);
+      }
       if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
           setNotes(prev => prev.filter((_, i) => !selectedNotesRef.current.has(i)));
           setSelectedNotes(new Set());
+        }
+      }
+      // Fingering: shift selected notes to adjacent string, same pitch (only in fingering mode)
+      if (fingeringModeRef.current && (matchesHotkey(e, hk.fingerUp) || matchesHotkey(e, hk.fingerDown))) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          const dir = matchesHotkey(e, hk.fingerUp) ? -1 : 1;
+          const MAX_FRET_SPAN = 4;
+          setNotes(prev => {
+            // Collect selected notes with their indices
+            const selected = [];
+            prev.forEach((n, i) => {
+              if (selectedNotesRef.current.has(i)) selected.push({ note: n, idx: i });
+            });
+            // Sort by string in movement direction so we assign strings without conflicts
+            selected.sort((a, b) => dir * (a.note.stringIndex - b.note.stringIndex));
+
+            const usedStrings = new Set();
+            const placements = []; // { idx, stringIndex, fret }
+
+            for (const { note, idx } of selected) {
+              const midi = getMidiNote(note.stringIndex, note.fret);
+              let placed = false;
+              for (let step = 1; step < NUM_STRINGS; step++) {
+                const s = ((note.stringIndex + dir * step) % NUM_STRINGS + NUM_STRINGS) % NUM_STRINGS;
+                if (usedStrings.has(s)) continue;
+                const fret = midi - getMidiNote(s, 0);
+                if (fret < 0 || fret > NUM_FRETS) continue;
+                // Check fret span with already placed notes
+                const allFrets = placements.map(p => p.fret).concat(fret);
+                if (Math.max(...allFrets) - Math.min(...allFrets) > MAX_FRET_SPAN) continue;
+                placements.push({ idx, stringIndex: s, fret });
+                usedStrings.add(s);
+                placed = true;
+                break;
+              }
+              if (!placed) return prev; // abort entire move if any note can't be placed
+            }
+
+            const placementMap = new Map(placements.map(p => [p.idx, p]));
+            return prev.map((n, i) => {
+              const p = placementMap.get(i);
+              return p ? { ...n, stringIndex: p.stringIndex, fret: p.fret } : n;
+            });
+          });
         }
       }
       if (matchesHotkey(e, hk.copy)) {
@@ -650,8 +703,8 @@ function App() {
           </span>
         )}
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: (freeMode || noteJump) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ fontSize: '12px', color: (freeMode || noteJump || fingeringMode) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       <div className="main-area">
@@ -673,6 +726,11 @@ function App() {
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
+          fingeringMode={fingeringMode}
+          notes={notes}
+          selectedBeat={selectedBeat}
+          selectedNotes={selectedNotes}
+          setSelectedNotes={setSelectedNotes}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           hotkeys={hotkeys}

@@ -23,7 +23,7 @@ function cellCenterPx(cell) {
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -223,13 +223,32 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const result = getStringAndFret(e);
     if (result) {
       playNote(result.stringIndex, result.fret);
-      if (adjacentMode) {
+      if (fingeringMode) {
+        // In fingering mode, clicking toggles selection of matching notes at current beat
+        const matchingIndices = [];
+        notes.forEach((n, i) => {
+          if (n.stringIndex === result.stringIndex && n.fret === result.fret &&
+              selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)) {
+            matchingIndices.push(i);
+          }
+        });
+        if (matchingIndices.length > 0) {
+          setSelectedNotes(prev => {
+            const next = new Set(prev);
+            matchingIndices.forEach(i => {
+              if (next.has(i)) next.delete(i);
+              else next.add(i);
+            });
+            return next;
+          });
+        }
+      } else if (adjacentMode) {
         onAdjacentClick(result.stringIndex, result.fret);
       } else {
         onNoteClick(result.stringIndex, result.fret);
       }
     }
-  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode]);
+  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode, fingeringMode, notes, selectedBeat, setSelectedNotes]);
 
 
   // Auto-scroll fretboard to show hovered note (from piano roll — only when local hover is null)
@@ -440,6 +459,30 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               transform: 'translate(-50%, -50%) rotate(-50deg)',
               pointerEvents: 'none',
               zIndex: 7,
+            }} />
+          );
+        })}
+
+        {/* Fingering mode selection outlines */}
+        {fingeringMode && selectedNotes && selectedNotes.size > 0 && activeNotes.map((note, i) => {
+          const noteIdx = notes.findIndex(n =>
+            n.stringIndex === note.stringIndex && n.fret === note.fret &&
+            selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)
+          );
+          if (noteIdx < 0 || !selectedNotes.has(noteIdx)) return null;
+          return (
+            <div key={`sel-${i}`} style={{
+              position: 'absolute',
+              left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+              top: cellCenterPx(note.fret),
+              width: 38,
+              height: 18,
+              borderRadius: 8,
+              border: '2px solid #fff',
+              background: 'transparent',
+              transform: 'translate(-50%, -50%) rotate(-50deg)',
+              pointerEvents: 'none',
+              zIndex: 8,
             }} />
           );
         })}
