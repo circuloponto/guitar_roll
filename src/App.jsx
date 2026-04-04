@@ -24,13 +24,31 @@ function App() {
     });
   }, []);
 
+  // Snapshot helpers for undo/redo (capture notes + time signature + bar subdivisions)
+  const takeSnapshot = useCallback(() => ({
+    notes: notesRef.current,
+    timeSignature: timeSigRef.current,
+    barSubdivisions: barSubsRef.current,
+  }), []);
+
+  const restoreSnapshot = useCallback((snap) => {
+    // Legacy: plain array means notes-only snapshot
+    if (Array.isArray(snap)) {
+      setNotesTracked(() => snap);
+      return;
+    }
+    setNotesTracked(() => snap.notes);
+    setTimeSignature(snap.timeSignature);
+    setBarSubdivisions(snap.barSubdivisions);
+  }, [setNotesTracked]);
+
   // setNotes: pushes undo, for one-shot operations (click to add/remove, etc.)
   const setNotes = useCallback((updater) => {
-    undoStackRef.current.push(notesRef.current);
+    undoStackRef.current.push(takeSnapshot());
     if (undoStackRef.current.length > 200) undoStackRef.current.shift();
     redoStackRef.current = [];
     setNotesTracked(updater);
-  }, [setNotesTracked]);
+  }, [setNotesTracked, takeSnapshot]);
 
   // setNotesDrag: no undo push, for continuous drag updates
   const setNotesDrag = useCallback((updater) => {
@@ -39,27 +57,27 @@ function App() {
 
   // saveSnapshot: push undo once before a drag starts
   const saveSnapshot = useCallback(() => {
-    undoStackRef.current.push(notesRef.current);
+    undoStackRef.current.push(takeSnapshot());
     if (undoStackRef.current.length > 200) undoStackRef.current.shift();
     redoStackRef.current = [];
-  }, []);
+  }, [takeSnapshot]);
 
   // commitDrag: no-op
   const commitDrag = useCallback(() => {}, []);
 
   const undo = useCallback(() => {
     if (undoStackRef.current.length === 0) return;
-    redoStackRef.current.push(notesRef.current);
+    redoStackRef.current.push(takeSnapshot());
     const prev = undoStackRef.current.pop();
-    setNotesTracked(() => prev);
-  }, [setNotesTracked]);
+    restoreSnapshot(prev);
+  }, [takeSnapshot, restoreSnapshot]);
 
   const redo = useCallback(() => {
     if (redoStackRef.current.length === 0) return;
-    undoStackRef.current.push(notesRef.current);
+    undoStackRef.current.push(takeSnapshot());
     const next = redoStackRef.current.pop();
-    setNotesTracked(() => next);
-  }, [setNotesTracked]);
+    restoreSnapshot(next);
+  }, [takeSnapshot, restoreSnapshot]);
   const [projectName, setProjectName] = useState('Guitar Roll');
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
@@ -515,6 +533,10 @@ function App() {
           value={`${timeSignature[0]}/${timeSignature[1]}`}
           onChange={(e) => {
             const [num, den] = e.target.value.split('/').map(Number);
+            // Push undo snapshot before changing time signature
+            undoStackRef.current.push(takeSnapshot());
+            if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+            redoStackRef.current = [];
             setTimeSignature([num, den]);
             setBarSubdivisions(prev => {
               const newSubs = Array(prev.length).fill(num);
