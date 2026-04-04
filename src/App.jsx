@@ -69,8 +69,10 @@ function App() {
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
+  const [timeSignature, setTimeSignature] = useState([4, 4]); // [numerator, denominator]
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
+  const clipboardRef = useRef([]);
   const [freeMode, setFreeMode] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
@@ -97,9 +99,12 @@ function App() {
   const selectedBeatRef = useRef(selectedBeat);
   const animFrameRef = useRef(null);
 
+  const timeSigRef = useRef(timeSignature);
+
   // Keep refs in sync
   bpmRef.current = bpm;
   metronomeRef.current = metronome;
+  timeSigRef.current = timeSignature;
   selectedBeatRef.current = selectedBeat;
   loopRef.current = loop;
   loopStartRef.current = loopStart;
@@ -129,6 +134,7 @@ function App() {
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
+    if (data.timeSignature !== undefined) setTimeSignature(data.timeSignature);
     if (data.colorSchemes) {
       Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
         saveColorScheme(name, scheme);
@@ -205,6 +211,24 @@ function App() {
           e.preventDefault();
           setNotes(prev => prev.filter((_, i) => !selectedNotesRef.current.has(i)));
           setSelectedNotes(new Set());
+        }
+      }
+      if (matchesHotkey(e, hk.copy)) {
+        e.preventDefault();
+        if (selectedNotesRef.current.size > 0) {
+          const selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
+          const minBeat = Math.min(...selected.map(n => n.beat));
+          clipboardRef.current = selected.map(n => ({ ...n, beat: n.beat - minBeat }));
+        }
+      }
+      if (matchesHotkey(e, hk.paste)) {
+        e.preventDefault();
+        if (clipboardRef.current.length > 0) {
+          const pasteAt = selectedBeatRef.current;
+          const newNotes = clipboardRef.current.map(n => ({ ...n, beat: n.beat + pasteAt }));
+          const baseIdx = notesRef.current.length;
+          setNotes(prev => [...prev, ...newNotes]);
+          setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
         }
       }
     };
@@ -371,7 +395,7 @@ function App() {
 
       // Compute current column's duration for playhead interpolation
       const currentBeatAbs = rStart + (nextBeatIndex > 0 ? (nextBeatIndex - 1) % rDuration : 0);
-      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, tc - 1), bs, bpm);
+      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, tc - 1), bs, bpm, timeSigRef.current[1]);
       const beatsSinceLastScheduled = (now - (nextBeatTime - currentColDur)) / currentColDur;
       const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
       const playheadBeat = rStart + (playheadBeatIndex % rDuration);
@@ -392,7 +416,7 @@ function App() {
 
         const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
-        const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm);
+        const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm, timeSigRef.current[1]);
 
         currentNotes.forEach(note => {
           if (note.beat >= beat && note.beat < beat + 1) {
@@ -471,6 +495,44 @@ function App() {
         >
           Settings
         </button>
+        <span className="toolbar-separator" />
+        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Time:</span>
+        <select
+          className="duration-select"
+          value={`${timeSignature[0]}/${timeSignature[1]}`}
+          onChange={(e) => {
+            const [num, den] = e.target.value.split('/').map(Number);
+            setTimeSignature([num, den]);
+            setBarSubdivisions(prev => {
+              const newSubs = Array(NUM_BARS).fill(num);
+              // Remap notes for all bars that changed
+              let remapped = notesRef.current;
+              const oldStarts = barStartBeats(prev);
+              for (let i = 0; i < NUM_BARS; i++) {
+                if (prev[i] !== num) {
+                  remapped = remapNotes(remapped, prev, newSubs, i);
+                  // After remapping bar i, update prev for subsequent bars
+                  prev = [...prev];
+                  prev[i] = num;
+                }
+              }
+              setNotesTracked(remapped);
+              return newSubs;
+            });
+          }}
+        >
+          <option value="2/4">2/4</option>
+          <option value="3/4">3/4</option>
+          <option value="4/4">4/4</option>
+          <option value="5/4">5/4</option>
+          <option value="6/4">6/4</option>
+          <option value="7/4">7/4</option>
+          <option value="3/8">3/8</option>
+          <option value="6/8">6/8</option>
+          <option value="7/8">7/8</option>
+          <option value="9/8">9/8</option>
+          <option value="12/8">12/8</option>
+        </select>
         <span className="toolbar-separator" />
         <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
         <input
@@ -587,7 +649,7 @@ function App() {
           appState={{
             notes, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            noteDuration: baseNoteDuration, metronome, barSubdivisions,
+            noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}

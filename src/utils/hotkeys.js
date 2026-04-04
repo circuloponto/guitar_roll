@@ -13,6 +13,8 @@ const DEFAULT_HOTKEYS = {
   undo: { label: 'Undo', description: 'Undo last action', key: 'z', modifiers: { ctrl: true } },
   redo: { label: 'Redo', description: 'Redo last undone action', key: 'y', modifiers: { ctrl: true } },
   redoAlt: { label: 'Redo (Alt)', description: 'Redo last undone action', key: 'z', modifiers: { ctrl: true, shift: true } },
+  copy: { label: 'Copy', description: 'Copy selected notes', key: 'c', modifiers: { ctrl: true } },
+  paste: { label: 'Paste', description: 'Paste notes at playhead', key: 'v', modifiers: { ctrl: true } },
   playStop: { label: 'Play / Stop', description: 'Toggle playback from playhead', key: ' ' },
   prevBeat: { label: 'Previous Beat', description: 'Move playhead left', key: 'ArrowLeft' },
   nextBeat: { label: 'Next Beat', description: 'Move playhead right', key: 'ArrowRight' },

@@ -129,28 +129,21 @@ export function remapNotes(notes, oldBarSubs, newBarSubs, changedBarIndex) {
   });
 }
 
+// Bar duration in seconds based on BPM and time signature denominator
+// BPM always refers to quarter notes. denominator adjusts subdivision duration.
+// barDuration = (numerator / denominator) * (60 / bpm) * 4/4 simplified:
+// Each subdivision = (4 / denominator) * (60 / bpm) / 1 beat
+function subdivDuration(bpm, denominator = 4) {
+  return (60 / bpm) * (4 / denominator);
+}
+
 // Get time in seconds for a given beat position
-export function beatToTime(beat, barSubs, bpm) {
-  const barDuration = 60 / bpm; // each bar = one beat at BPM
-  let time = 0;
-  let remaining = beat;
-
-  for (let i = 0; i < barSubs.length; i++) {
-    const colDuration = barDuration / barSubs[i];
-    if (remaining <= barSubs[i]) {
-      time += remaining * colDuration;
-      break;
-    }
-    time += barDuration;
-    remaining -= barSubs[i];
-  }
-
-  return time;
+export function beatToTime(beat, barSubs, bpm, denominator = 4) {
+  const colDur = subdivDuration(bpm, denominator);
+  return beat * colDur;
 }
 
 // Get the duration in seconds of one column at a specific beat
-export function colDurationAtBeat(beat, barSubs, bpm) {
-  const { barIndex } = beatToBar(beat, barSubs);
-  const barDuration = 60 / bpm;
-  return barDuration / barSubs[barIndex];
+export function colDurationAtBeat(beat, barSubs, bpm, denominator = 4) {
+  return subdivDuration(bpm, denominator);
 }

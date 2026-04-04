@@ -147,7 +147,6 @@ export default function Timeline({
     const note = notes[noteIndex];
     const rect = bodyRef.current.getBoundingClientRect();
     const gridTop = rect.top;
-
     // Determine which notes are being dragged
     const isSelected = selectedNotes.has(noteIndex);
     const affectedIndices = isSelected && selectedNotes.size > 1 ? [...selectedNotes] : [noteIndex];
@@ -178,6 +177,7 @@ export default function Timeline({
       affectedIndices,
       deltaBeat: 0,
       deltaRow: 0,
+      isDuplicate: e.altKey,
     });
 
     const isFree = freeMode;
@@ -213,10 +213,12 @@ export default function Timeline({
 
       d.lastDeltaBeat = deltaBeat;
       d.lastDeltaRow = deltaRow;
+      d.isDuplicate = moveE.altKey;
       setDragPreview({
         affectedIndices: d.affectedIndices,
         deltaBeat,
         deltaRow,
+        isDuplicate: moveE.altKey,
       });
     };
 
@@ -224,18 +226,38 @@ export default function Timeline({
       const d = noteDragRef.current;
       if (d && d.didMove) {
         const { affectedIndices, startPositions, lastDeltaBeat, lastDeltaRow } = d;
-        setNotes(old => old.map((n, i) => {
-          if (!affectedIndices.includes(i)) return n;
-          const start = startPositions.get(i);
-          const oldPitchRow = noteToPitchRow(start.stringIndex, start.fret);
-          const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + lastDeltaRow));
-          const newMidi = pitchRowToMidi(newPitchRow);
-          const combo = closestComboForPitch(newMidi, start.stringIndex);
-          if (!combo) return n;
-          const rawBeat = start.beat + lastDeltaBeat;
-          const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
-          return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
-        }));
+        if (d.isDuplicate) {
+          // Duplicate: keep originals, add copies at new positions
+          setNotes(old => {
+            const copies = affectedIndices.map(i => {
+              const n = old[i];
+              const start = startPositions.get(i);
+              const oldPitchRow = noteToPitchRow(start.stringIndex, start.fret);
+              const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + lastDeltaRow));
+              const newMidi = pitchRowToMidi(newPitchRow);
+              const combo = closestComboForPitch(newMidi, start.stringIndex);
+              if (!combo) return null;
+              const rawBeat = start.beat + lastDeltaBeat;
+              const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
+              return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
+            }).filter(Boolean);
+            return [...old, ...copies];
+          });
+        } else {
+          // Move: update existing notes
+          setNotes(old => old.map((n, i) => {
+            if (!affectedIndices.includes(i)) return n;
+            const start = startPositions.get(i);
+            const oldPitchRow = noteToPitchRow(start.stringIndex, start.fret);
+            const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + lastDeltaRow));
+            const newMidi = pitchRowToMidi(newPitchRow);
+            const combo = closestComboForPitch(newMidi, start.stringIndex);
+            if (!combo) return n;
+            const rawBeat = start.beat + lastDeltaBeat;
+            const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
+            return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
+          }));
+        }
       }
       setDragPreview(null);
       noteDragRef.current = null;
@@ -696,7 +718,7 @@ export default function Timeline({
 
           {/* Note blur glows */}
           {notes.map((note, i) => {
-            const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
+            const isDragging = dragPreview && !dragPreview.isDuplicate && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
@@ -722,7 +744,7 @@ export default function Timeline({
 
           {/* Notes */}
           {notes.map((note, i) => {
-            const isDragging = dragPreview && dragPreview.affectedIndices.includes(i);
+            const isDragging = dragPreview && !dragPreview.isDuplicate && dragPreview.affectedIndices.includes(i);
             if (isDragging) return null;
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
