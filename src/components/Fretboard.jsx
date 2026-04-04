@@ -248,6 +248,26 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
   }, [hoveredNote, hover]);
 
+  // Auto-scroll fretboard to show playing notes during playback
+  useEffect(() => {
+    if (!playingNotes.length || !scrollRef.current) return;
+    let minFret = Infinity, maxFret = -Infinity;
+    for (const n of playingNotes) {
+      if (n.fret < minFret) minFret = n.fret;
+      if (n.fret > maxFret) maxFret = n.fret;
+    }
+    const regionTop = cellTopPx(minFret);
+    const regionBottom = cellTopPx(maxFret) + FRET_HEIGHT;
+    const container = scrollRef.current;
+    const viewTop = container.scrollTop;
+    const viewBottom = viewTop + container.clientHeight;
+
+    if (regionTop < viewTop || regionBottom > viewBottom) {
+      const center = (regionTop + regionBottom) / 2;
+      container.scrollTo({ top: center - container.clientHeight / 2, behavior: 'smooth' });
+    }
+  }, [playingNotes]);
+
 
   const noteName = hover ? getNoteName(hover.stringIndex, hover.fret) : null;
 
