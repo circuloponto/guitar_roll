@@ -546,6 +546,90 @@
   background: #4488cc;
 }
 
+/* Hotkeys */
+.hotkeys-list {
+  max-height: 350px;
+  overflow-y: auto;
+}
+
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #222;
+}
+
+.hotkey-row.conflict {
+  background: rgba(231, 76, 60, 0.1);
+  border-color: #e74c3c;
+}
+
+.hotkey-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hotkey-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #ddd;
+}
+
+.hotkey-desc {
+  font-size: 11px;
+  color: #666;
+}
+
+.hotkey-key {
+  background: #2a2a2a;
+  color: #ccc;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-family: monospace;
+  cursor: pointer;
+  min-width: 80px;
+  text-align: center;
+}
+
+.hotkey-key:hover {
+  border-color: #3498db;
+  color: #fff;
+}
+
+.hotkey-key.recording {
+  border-color: #e67e22;
+  color: #e67e22;
+  animation: pulse-border 1s infinite;
+}
+
+.hotkey-key.fixed {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.hotkey-conflicts {
+  margin-bottom: 12px;
+}
+
+.hotkey-conflict {
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid #e74c3c;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #e74c3c;
+  margin-bottom: 4px;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-color: #e67e22; }
+  50% { border-color: #555; }
+}
+
 /* Subdivision Menu */
 .subdiv-menu-overlay {
   position: fixed;

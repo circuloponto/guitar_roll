@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, NUM_BARS, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
+import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
 
 const MAX_DURATION = NUM_BARS * SUBDIVISIONS;
 
@@ -22,7 +23,7 @@ function cellCenterPx(cell) {
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -37,13 +38,17 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const [moveDrag, setMoveDrag] = useState(null); // { stringIndex, fret, beat }
   const moveDragRef = useRef(null);
 
+  const hotkeysRef = useRef(hotkeys);
+  hotkeysRef.current = hotkeys;
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
-      if (e.key === 'l' || e.key === 'L') { setDurationMode(m => !m); setMoveMode(false); setAdjacentMode(false); }
-      if (e.key === 'm' || e.key === 'M') { setMoveMode(m => !m); setDurationMode(false); setAdjacentMode(false); }
-      if (e.key === 'a' || e.key === 'A') { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
-      if (e.key === 'Escape') { setDurationMode(false); setMoveMode(false); setAdjacentMode(false); }
+      const hk = hotkeysRef.current;
+      if (matchesHotkey(e, hk.durationMode)) { setDurationMode(m => !m); setMoveMode(false); setAdjacentMode(false); }
+      if (matchesHotkey(e, hk.moveMode)) { setMoveMode(m => !m); setDurationMode(false); setAdjacentMode(false); }
+      if (matchesHotkey(e, hk.adjacentMode)) { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
+      if (matchesHotkey(e, hk.escape)) { setDurationMode(false); setMoveMode(false); setAdjacentMode(false); }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
@@ -249,9 +254,9 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   return (
     <div className="fretboard-container">
       <div className="fretboard-note-box">
-        {durationMode ? <span style={{ color: '#3498db' }}>Duration Mode (L)</span>
-          : moveMode ? <span style={{ color: '#e67e22' }}>Move Mode (M)</span>
-          : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode (A)</span>
+        {durationMode ? <span style={{ color: '#3498db' }}>Duration Mode ({hotkeys ? formatHotkey(hotkeys.durationMode) : 'L'})</span>
+          : moveMode ? <span style={{ color: '#e67e22' }}>Move Mode ({hotkeys ? formatHotkey(hotkeys.moveMode) : 'M'})</span>
+          : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode ({hotkeys ? formatHotkey(hotkeys.adjacentMode) : 'A'})</span>
           : noteName || '\u00A0'}
       </div>
       <div

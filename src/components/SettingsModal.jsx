@@ -4,6 +4,10 @@ import {
   listSessions, saveSession, loadSession, deleteSession,
   exportToFile, importFromFile, stateToUrl, getSessionState,
 } from '../utils/storage';
+import {
+  loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
+  findConflicts, EDITABLE_HOTKEYS,
+} from '../utils/hotkeys';
 
 // Editable hex input that allows free typing and applies on valid hex
 function HexInput({ value, onChange }) {
@@ -45,8 +49,8 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose }) {
-  const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange }) {
+  const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [schemes, setSchemes] = useState(listColorSchemes);
   const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
   const [sessions, setSessions] = useState(listSessions);
@@ -70,6 +74,13 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
       <div className="settings-overlay" onClick={onClose}>
         <div className="settings-popup" onClick={e => e.stopPropagation()}>
           <h2 className="settings-title">Settings</h2>
+
+          <div className="settings-section">
+            <h3>Keyboard Shortcuts</h3>
+            <button className="settings-btn" onClick={() => setPage('hotkeys')}>
+              Manage Hotkeys
+            </button>
+          </div>
 
           <div className="settings-section">
             <h3>Color Schemes</h3>
@@ -321,5 +332,120 @@ export default function SettingsModal({ appState, onApplyState, onClose }) {
     );
   }
 
+  // --- Hotkeys page ---
+  if (page === 'hotkeys') {
+    return <HotkeysPage onBack={() => setPage('main')} onClose={onClose} onHotkeysChange={onHotkeysChange} />;
+  }
+
   return null;
+}
+
+function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
+  const [hotkeys, setHotkeys] = useState(loadHotkeys);
+  const [recording, setRecording] = useState(null); // hotkey id being recorded
+  const conflicts = findConflicts(hotkeys);
+
+  const handleRecord = (id) => {
+    setRecording(id);
+  };
+
+  useEffect(() => {
+    if (!recording) return;
+    const handler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Ignore lone modifier keys
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+
+      const newKey = {
+        ...hotkeys[recording],
+        key: e.key,
+        modifiers: (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) ? {
+          ctrl: e.ctrlKey || e.metaKey || undefined,
+          shift: e.shiftKey || undefined,
+          alt: e.altKey || undefined,
+        } : undefined,
+      };
+
+      const updated = { ...hotkeys, [recording]: newKey };
+      setHotkeys(updated);
+      saveHotkeys(updated);
+      if (onHotkeysChange) onHotkeysChange(updated);
+      setRecording(null);
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [recording, hotkeys, onHotkeysChange]);
+
+  const handleReset = () => {
+    const defaults = getDefaultHotkeys();
+    setHotkeys(defaults);
+    saveHotkeys(defaults);
+    if (onHotkeysChange) onHotkeysChange(defaults);
+  };
+
+  return (
+    <div className="settings-overlay" onClick={onClose}>
+      <div className="settings-popup settings-popup-wide" onClick={e => e.stopPropagation()}>
+        <h2 className="settings-title">Keyboard Shortcuts</h2>
+
+        {conflicts.length > 0 && (
+          <div className="hotkey-conflicts">
+            {conflicts.map((c, i) => (
+              <div key={i} className="hotkey-conflict">
+                Conflict: "{c.label1}" and "{c.label2}" share the same key
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="hotkeys-list">
+          {EDITABLE_HOTKEYS.map(id => {
+            const hk = hotkeys[id];
+            if (!hk) return null;
+            const isRecording = recording === id;
+            const hasConflict = conflicts.some(c => c.id1 === id || c.id2 === id);
+            return (
+              <div key={id} className={`hotkey-row ${hasConflict ? 'conflict' : ''}`}>
+                <div className="hotkey-info">
+                  <span className="hotkey-label">{hk.label}</span>
+                  <span className="hotkey-desc">{hk.description}</span>
+                </div>
+                <button
+                  className={`hotkey-key ${isRecording ? 'recording' : ''}`}
+                  onClick={() => handleRecord(id)}
+                >
+                  {isRecording ? 'Press a key...' : formatHotkey(hk)}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Non-editable shortcuts */}
+        <div className="settings-section" style={{ marginTop: 12 }}>
+          <h3>Fixed Shortcuts</h3>
+          <div className="hotkey-row">
+            <div className="hotkey-info">
+              <span className="hotkey-label">Undo</span>
+            </div>
+            <span className="hotkey-key fixed">Ctrl + Z</span>
+          </div>
+          <div className="hotkey-row">
+            <div className="hotkey-info">
+              <span className="hotkey-label">Redo</span>
+            </div>
+            <span className="hotkey-key fixed">Ctrl + Y / Ctrl + Shift + Z</span>
+          </div>
+        </div>
+
+        <div className="settings-row-btns" style={{ marginTop: 12 }}>
+          <button className="settings-btn" onClick={handleReset}>Reset to Defaults</button>
+        </div>
+
+        <button className="settings-btn settings-back" onClick={onBack}>Back</button>
+      </div>
+    </div>
+  );
 }

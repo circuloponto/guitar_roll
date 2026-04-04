@@ -5,6 +5,7 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
+import { loadHotkeys, matchesHotkey } from './utils/hotkeys';
 import SettingsModal from './components/SettingsModal';
 import './App.css';
 
@@ -72,6 +73,9 @@ function App() {
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
+  const [hotkeys, setHotkeys] = useState(loadHotkeys);
+  const hotkeysRef = useRef(hotkeys);
+  hotkeysRef.current = hotkeys;
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
@@ -146,11 +150,16 @@ function App() {
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
-      if (e.key === 'n' || e.key === 'N') { noteJumpRef.current = !noteJumpRef.current; setNoteJump(noteJumpRef.current); return; }
-      if (e.key === 'ArrowLeft') {
+      const hk = hotkeysRef.current;
+
+      if (matchesHotkey(e, hk.noteJump)) {
+        noteJumpRef.current = !noteJumpRef.current;
+        setNoteJump(noteJumpRef.current);
+        return;
+      }
+      if (matchesHotkey(e, hk.prevBeat)) {
         e.preventDefault();
         if (noteJumpRef.current) {
-          // Jump to previous note beat
           const currentNotes = notesRef.current;
           setSelectedBeat(b => {
             const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
@@ -161,10 +170,9 @@ function App() {
           setSelectedBeat(b => Math.max(0, b - 1));
         }
       }
-      if (e.key === 'ArrowRight') {
+      if (matchesHotkey(e, hk.nextBeat)) {
         e.preventDefault();
         if (noteJumpRef.current) {
-          // Jump to next note beat
           const currentNotes = notesRef.current;
           setSelectedBeat(b => {
             const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
@@ -175,22 +183,22 @@ function App() {
           setSelectedBeat(b => Math.min(totalBeats - 1, b + 1));
         }
       }
-      if (e.key === ' ') {
+      if (matchesHotkey(e, hk.playStop)) {
         e.preventDefault();
         handlePlayRef.current();
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      if (matchesHotkey(e, hk.undo)) {
         e.preventDefault();
         undo();
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      if (matchesHotkey(e, hk.redo) || matchesHotkey(e, hk.redoAlt)) {
         e.preventDefault();
         redo();
       }
-      if (e.key === 'f' || e.key === 'F') {
+      if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
       }
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
           setNotes(prev => prev.filter((_, i) => !selectedNotesRef.current.has(i)));
@@ -522,6 +530,7 @@ function App() {
           setHoveredNote={setHoveredNote}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
+          hotkeys={hotkeys}
         />
         <Timeline
           notes={notes}
@@ -566,6 +575,7 @@ function App() {
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
+          onHotkeysChange={setHotkeys}
         />
       )}
     </div>
