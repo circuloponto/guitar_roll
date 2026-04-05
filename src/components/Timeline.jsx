@@ -37,6 +37,10 @@ export default function Timeline({
   hoveredNote, setHoveredNote,
   verticalScroll, setVerticalScroll,
   eraserMode = false,
+  noteDuration = 1,
+  snapUnit = 1,
+  tuplet = 1,
+  onResizeDuration,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -111,6 +115,7 @@ export default function Timeline({
     };
     saveSnapshot();
     const isFree = freeMode;
+    const snap = snapUnit;
 
     const handleMouseMove = (moveE) => {
       if (!draggingRef.current) return;
@@ -120,18 +125,26 @@ export default function Timeline({
       const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
       const dBeats = dx / cw;
 
+      const primaryBase = startDurations.get(draggingRef.current.noteIndex);
+      const primaryRaw = primaryBase + dBeats;
+      draggingRef.current.lastDuration = isFree ? Math.max(0.1, primaryRaw) : Math.max(snap, Math.round(primaryRaw / snap) * snap);
+
       setNotesDrag(prev => prev.map((n, i) => {
         if (!affectedIndices.includes(i)) return n;
         const baseDuration = startDurations.get(i);
         const rawDuration = baseDuration + dBeats;
-        let newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(1, Math.round(rawDuration));
+        let newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(snap, Math.round(rawDuration / snap) * snap);
         const maxDuration = totalCols - n.beat;
         return { ...n, duration: Math.min(newDuration, maxDuration) };
       }));
     };
 
     const handleMouseUp = () => {
+      const finalDur = draggingRef.current?.lastDuration;
       commitDrag();
+      if (finalDur != null && onResizeDuration) {
+        onResizeDuration(finalDur);
+      }
       setTimeout(() => { draggingRef.current = null; }, 0);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -139,7 +152,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode]);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, onResizeDuration]);
 
   const handleNoteContextMenu = useCallback((e, noteIndex) => {
     e.preventDefault();
@@ -504,7 +517,7 @@ export default function Timeline({
       e.preventDefault();
       setTimelineZoom(z => {
         const newZ = z * (1 - e.deltaY * 0.002);
-        return Math.max(0.2, Math.min(4, newZ));
+        return Math.max(0.2, Math.min(10, newZ));
       });
     };
     document.addEventListener('wheel', handleWheel, { passive: false });
@@ -726,12 +739,32 @@ export default function Timeline({
             />
           ))}
 
+          {/* Tuplet subdivision lines */}
+          {tuplet > 1 && Array.from({ length: totalCols }, (_, beat) => {
+            const lines = [];
+            for (let t = 1; t < tuplet; t++) {
+              const subBeat = beat + (t / tuplet);
+              if (subBeat >= totalCols) break;
+              lines.push(
+                <div
+                  key={`tup-${beat}-${t}`}
+                  className="grid-col tuplet-line"
+                  style={{ left: beatToX(subBeat, barSubdivisions, cellWidth) }}
+                />
+              );
+            }
+            return lines;
+          })}
+
           {/* Selected beat highlight */}
           {selectedBeat !== null && (
-            freeMode && selectedBeat % 1 !== 0 ? (
+            (freeMode && selectedBeat % 1 !== 0) || (tuplet > 1) ? (
               <div
-                className="timeline-selected-line"
-                style={{ left: beatToX(selectedBeat, barSubdivisions, cellWidth) }}
+                className="timeline-selected-col"
+                style={{
+                  left: beatToX(selectedBeat, barSubdivisions, cellWidth),
+                  width: durationToWidth(selectedBeat, noteDuration, barSubdivisions, cellWidth),
+                }}
               />
             ) : (
               <div
@@ -739,6 +772,19 @@ export default function Timeline({
                 style={{ left: beatToX(Math.floor(selectedBeat), barSubdivisions, cellWidth), width: colWidth(beatToBar(Math.floor(selectedBeat), barSubdivisions).barIndex, barSubdivisions, cellWidth) }}
               />
             )
+          )}
+
+          {/* Duration preview on hovered row */}
+          {hoveredNote && selectedBeat !== null && !playing && (
+            <div
+              className="duration-preview"
+              style={{
+                left: beatToX(selectedBeat, barSubdivisions, cellWidth),
+                top: rowTopPx(hoveredNote.stringIndex, hoveredNote.fret),
+                width: durationToWidth(selectedBeat, noteDuration, barSubdivisions, cellWidth),
+                height: ROW_HEIGHT,
+              }}
+            />
           )}
 
           {/* Note blur glows */}

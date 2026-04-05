@@ -9,6 +9,7 @@ import { loadHotkeys, matchesHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
+import DurationPicker from './components/DurationPicker';
 import './App.css';
 
 function App() {
@@ -86,7 +87,9 @@ function App() {
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [baseNoteDuration, setBaseNoteDuration] = useState(1);
   const [tuplet, setTuplet] = useState(1);
-  const noteDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration / tuplet;
+  const [durationOverride, setDurationOverride] = useState(null);
+  const computedDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration / tuplet;
+  const noteDuration = durationOverride != null ? durationOverride : computedDuration;
   const noteDurationRef = useRef(noteDuration);
   noteDurationRef.current = noteDuration;
   const tupletRef = useRef(tuplet);
@@ -235,6 +238,14 @@ function App() {
         e.preventDefault();
         redo();
       }
+      if (matchesHotkey(e, hk.zoomIn)) {
+        e.preventDefault();
+        setTimelineZoom(z => Math.min(10, z * 1.25));
+      }
+      if (matchesHotkey(e, hk.zoomOut)) {
+        e.preventDefault();
+        setTimelineZoom(z => Math.max(0.2, z / 1.25));
+      }
       if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
       }
@@ -364,13 +375,15 @@ function App() {
   const handleSetDuration = useCallback((base, tup) => {
     setBaseNoteDuration(base);
     setTuplet(tup);
-    const dur = tup <= 1 ? base : base * (tup - 1) / tup;
+    setDurationOverride(null);
+    const dur = tup <= 1 ? base : base / tup;
     if (selectedNotes.size > 0) {
       setNotes(prev => prev.map((n, i) =>
         selectedNotes.has(i) ? { ...n, duration: dur } : n
       ));
     }
   }, [selectedNotes]);
+
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
     setNotesDrag(prev => prev.map(n =>
@@ -686,35 +699,13 @@ function App() {
           Clear
         </button>
         <span className="toolbar-separator" />
-        <span className="toolbar-label">Dur:</span>
-        <select
-          className="duration-select"
-          value={baseNoteDuration}
-          onChange={(e) => handleSetDuration(Number(e.target.value), tuplet)}
-        >
-          <option value={1}>1/16</option>
-          <option value={2}>1/8</option>
-          <option value={4}>1/4</option>
-          <option value={8}>1/2</option>
-          <option value={16}>1/1</option>
-        </select>
-        <span className="toolbar-label">Tup:</span>
-        <input
-          type="number"
-          className="tuplet-input"
-          value={tuplet}
-          min={1}
-          max={15}
-          onChange={(e) => {
-            const val = Math.max(1, Math.min(15, Number(e.target.value) || 1));
-            handleSetDuration(baseNoteDuration, val);
-          }}
+        <DurationPicker
+          baseNoteDuration={baseNoteDuration}
+          tuplet={tuplet}
+          noteDuration={noteDuration}
+          durationOverride={durationOverride}
+          onChange={handleSetDuration}
         />
-        {tuplet > 1 && (
-          <span style={{ fontSize: '11px', color: '#e67e22', marginLeft: 4 }}>
-            = {noteDuration.toFixed(2)} beats
-          </span>
-        )}
       </div>
       <div className="status-bar">
         <span style={{ color: (freeMode || noteJump || fingeringMode) ? '#e67e22' : '#888' }}>
@@ -815,6 +806,10 @@ function App() {
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           eraserMode={eraserMode}
+          noteDuration={noteDuration}
+          snapUnit={computedDuration}
+          tuplet={tuplet}
+          onResizeDuration={setDurationOverride}
         />
       </div>
 
