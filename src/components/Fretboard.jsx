@@ -38,6 +38,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const [adjacentMode, setAdjacentMode] = useState(false);
   const [moveDrag, setMoveDrag] = useState(null); // { stringIndex, fret, beat }
   const moveDragRef = useRef(null);
+  const [fretMarquee, setFretMarquee] = useState(null); // { x1, y1, x2, y2 } in px
+  const fretMarqueeRef = useRef(null);
 
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
@@ -113,6 +115,63 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const activeNote = activeNotes.find(
       n => n.stringIndex === result.stringIndex && n.fret === result.fret
     );
+
+    // Fingering mode marquee: drag on empty space to select active notes in region
+    if (fingeringMode && !activeNote) {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const startX = e.clientX - rect.left;
+      const startY = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0);
+      fretMarqueeRef.current = { startX, startY, didMove: false };
+      setSelectedNotes(new Set());
+
+      const handleMarqueeMove = (moveE) => {
+        if (!fretMarqueeRef.current) return;
+        const mx = moveE.clientX - rect.left;
+        const my = moveE.clientY - rect.top + (scrollRef.current?.scrollTop || 0);
+        const dx = mx - fretMarqueeRef.current.startX;
+        const dy = my - fretMarqueeRef.current.startY;
+        if (!fretMarqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+        fretMarqueeRef.current.didMove = true;
+
+        const x1 = Math.min(fretMarqueeRef.current.startX, mx);
+        const y1 = Math.min(fretMarqueeRef.current.startY, my);
+        const x2 = Math.max(fretMarqueeRef.current.startX, mx);
+        const y2 = Math.max(fretMarqueeRef.current.startY, my);
+        setFretMarquee({ x1, y1, x2, y2 });
+
+        // Select active notes whose fretboard position falls within the marquee
+        const selected = new Set();
+        const containerW = container.clientWidth;
+        const usableW = containerW * (100 - PADDING_LEFT - PADDING_RIGHT) / 100;
+        const leftPx = containerW * PADDING_LEFT / 100;
+        activeNotes.forEach(note => {
+          const noteX = leftPx + (note.stringIndex / (NUM_STRINGS - 1)) * usableW;
+          const noteY = cellCenterPx(note.fret);
+          if (noteX >= x1 && noteX <= x2 && noteY >= y1 && noteY <= y2) {
+            const idx = notes.findIndex(n =>
+              n.stringIndex === note.stringIndex && n.fret === note.fret &&
+              selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)
+            );
+            if (idx >= 0) selected.add(idx);
+          }
+        });
+        setSelectedNotes(selected);
+      };
+
+      const handleMarqueeUp = () => {
+        fretMarqueeRef.current = null;
+        setFretMarquee(null);
+        window.removeEventListener('mousemove', handleMarqueeMove);
+        window.removeEventListener('mouseup', handleMarqueeUp);
+      };
+
+      window.addEventListener('mousemove', handleMarqueeMove);
+      window.addEventListener('mouseup', handleMarqueeUp);
+      e.preventDefault();
+      return;
+    }
 
     if (durationMode) {
       if (activeNote) {
@@ -210,7 +269,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, setSelectedNotes]);
 
   const handleMouseUp = useCallback((e) => {
     // Block all other interactions in modifier modes (except adjacent)
@@ -254,7 +313,9 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             return next;
           });
         }
-      } else if (adjacentMode) {
+        return;
+      }
+      if (adjacentMode) {
         onAdjacentClick(result.stringIndex, result.fret);
       } else {
         onNoteClick(result.stringIndex, result.fret);
@@ -475,8 +536,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           );
         })}
 
-        {/* Fingering mode selection outlines */}
-        {fingeringMode && selectedNotes && selectedNotes.size > 0 && activeNotes.map((note, i) => {
+        {/* Selection outlines */}
+        {selectedNotes && selectedNotes.size > 0 && activeNotes.map((note, i) => {
           const noteIdx = notes.findIndex(n =>
             n.stringIndex === note.stringIndex && n.fret === note.fret &&
             selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)
@@ -498,6 +559,21 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             }} />
           );
         })}
+
+        {/* Fretboard marquee */}
+        {fretMarquee && (
+          <div style={{
+            position: 'absolute',
+            left: fretMarquee.x1,
+            top: fretMarquee.y1,
+            width: fretMarquee.x2 - fretMarquee.x1,
+            height: fretMarquee.y2 - fretMarquee.y1,
+            border: '1px solid rgba(100, 160, 255, 0.8)',
+            background: 'rgba(100, 160, 255, 0.1)',
+            pointerEvents: 'none',
+            zIndex: 25,
+          }} />
+        )}
 
         {/* Duration drag indicator - circular gauge */}
         {durationDrag && (() => {

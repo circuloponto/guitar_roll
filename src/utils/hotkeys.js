@@ -27,6 +27,7 @@ const DEFAULT_HOTKEYS = {
   fingerDown: { label: 'Finger Down', description: 'Move selected notes to lower string (same pitch)', key: 'ArrowDown' },
   zoomWheel: { label: 'Zoom (Scroll)', description: 'Scroll to zoom timeline', key: 'Wheel', modifiers: { ctrl: true }, wheel: true },
   velocityWheel: { label: 'Velocity (Scroll)', description: 'Scroll to adjust note velocity', key: 'Wheel', modifiers: { shift: true }, wheel: true },
+  cheatSheet: { label: 'Cheat Sheet', description: 'Show/hide keyboard shortcuts', key: '?' },
   escape: { label: 'Escape', description: 'Cancel current mode', key: 'Escape' },
 };
 

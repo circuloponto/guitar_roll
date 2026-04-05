@@ -5,7 +5,7 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
-import { loadHotkeys, matchesHotkey } from './utils/hotkeys';
+import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
@@ -115,6 +115,7 @@ function App() {
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
+  const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
@@ -257,6 +258,9 @@ function App() {
       }
       if (matchesHotkey(e, hk.machineGunMode)) {
         setMachineGunMode(m => !m);
+      }
+      if (e.key === '?') {
+        setShowCheatSheet(s => !s);
       }
       if (matchesHotkey(e, hk.fingeringMode)) {
         fingeringModeRef.current = !fingeringModeRef.current;
@@ -835,6 +839,44 @@ function App() {
           onResizeDuration={setDurationOverride}
         />
       </div>
+
+      {/* Cheat Sheet Overlay */}
+      {showCheatSheet && (
+        <div className="cheatsheet-overlay" onClick={() => setShowCheatSheet(false)}>
+          <div className="cheatsheet" onClick={(e) => e.stopPropagation()}>
+            <h2 className="cheatsheet-title">Keyboard Shortcuts</h2>
+            <div className="cheatsheet-grid">
+              {Object.entries(hotkeys).filter(([, h]) => !h.wheel).map(([id, h]) => (
+                <div key={id} className="cheatsheet-row">
+                  <span className="cheatsheet-key">{formatHotkey(h)}</span>
+                  <span className="cheatsheet-desc">{h.label}</span>
+                </div>
+              ))}
+              <div className="cheatsheet-row">
+                <span className="cheatsheet-key">Shift + Click</span>
+                <span className="cheatsheet-desc">Multi-select notes</span>
+              </div>
+              <div className="cheatsheet-row">
+                <span className="cheatsheet-key">Right Click</span>
+                <span className="cheatsheet-desc">Delete note</span>
+              </div>
+              <div className="cheatsheet-row">
+                <span className="cheatsheet-key">Alt + Drag</span>
+                <span className="cheatsheet-desc">Duplicate notes</span>
+              </div>
+              {Object.entries(hotkeys).filter(([, h]) => h.wheel).map(([id, h]) => (
+                <div key={id} className="cheatsheet-row">
+                  <span className="cheatsheet-key">{formatHotkey(h)}</span>
+                  <span className="cheatsheet-desc">{h.label}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 12, color: '#666', fontSize: 11 }}>
+              Press <b>?</b> or click outside to close
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {showSettings && (
