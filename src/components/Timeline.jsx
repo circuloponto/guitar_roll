@@ -737,7 +737,12 @@ export default function Timeline({
                     height: ROW_HEIGHT,
                     borderTop: row.isC ? '1px solid #555' : undefined,
                   }}
-                  onMouseEnter={() => repCombo && setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret })}
+                  onMouseEnter={() => {
+                    if (repCombo) {
+                      setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
+                      playNote(repCombo.stringIndex, repCombo.fret, 0.15);
+                    }
+                  }}
                 >
                   <span className="piano-key-label">{row.name}</span>
                 </div>
@@ -916,6 +921,7 @@ export default function Timeline({
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
                 onClick={(e) => handleNoteClick(e, i)}
                 onContextMenu={(e) => handleNoteContextMenu(e, i)}
+                onMouseEnter={() => playNote(note.stringIndex, note.fret, 0.15)}
                 onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
                 {getNoteName(note.stringIndex, note.fret)}

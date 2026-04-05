@@ -27,6 +27,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const lastPreviewRef = useRef(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
   const dragStartRef = useRef(null); // tracks mousedown position to distinguish click vs drag
   const didDragRef = useRef(false);
@@ -81,6 +82,17 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const pos = getStringAndFret(e);
     setHover(pos);
     setHoveredNote(pos);
+
+    // Preview sound on hover (only when position changes)
+    if (pos) {
+      const key = `${pos.stringIndex}_${pos.fret}`;
+      if (lastPreviewRef.current !== key) {
+        lastPreviewRef.current = key;
+        playNote(pos.stringIndex, pos.fret, 0.15);
+      }
+    } else {
+      lastPreviewRef.current = null;
+    }
 
     // Skip note-move drag in modifier modes
     if (durationMode || moveMode) return;
