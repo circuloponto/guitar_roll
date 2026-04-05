@@ -963,6 +963,11 @@
   gap: 4px 16px;
 }
 
+/* Mobile action bar — hidden on desktop */
+.mobile-actions {
+  display: none;
+}
+
 /* ===== Responsive / Mobile ===== */
 @media (max-width: 768px) {
   .toolbar {
@@ -1041,6 +1046,54 @@
 
   .settings-popup-wide {
     min-width: unset;
+  }
+
+  .mobile-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #181818;
+    border-bottom: 1px solid #333;
+    overflow-x: auto;
+    flex-shrink: 0;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-actions button {
+    background: #2a2a2a;
+    color: #fff;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: center;
+  }
+
+  .mobile-actions button:active {
+    background: #444;
+  }
+
+  .mobile-actions button.active {
+    background: #2980b9;
+    border-color: #3498db;
+  }
+
+  .mobile-actions-sep {
+    width: 1px;
+    height: 20px;
+    background: #444;
+    flex-shrink: 0;
+    margin: 0 2px;
   }
 }
 

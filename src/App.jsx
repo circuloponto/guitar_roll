@@ -707,6 +707,41 @@ function App() {
           {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
+      {/* Mobile action bar */}
+      <div className="mobile-actions">
+        <button onClick={undo} title="Undo">↩</button>
+        <button onClick={redo} title="Redo">↪</button>
+        <button onClick={() => {
+          if (selectedNotes.size > 0) {
+            setNotes(prev => prev.filter((_, i) => !selectedNotes.has(i)));
+            setSelectedNotes(new Set());
+          }
+        }} title="Delete">🗑</button>
+        <span className="mobile-actions-sep" />
+        <button onClick={() => setSelectedBeat(b => Math.max(0, b - 1))} title="Prev beat">◀</button>
+        <button onClick={() => setSelectedBeat(b => Math.min(totalBeats - 1, b + 1))} title="Next beat">▶</button>
+        <span className="mobile-actions-sep" />
+        <button onClick={() => {
+          if (selectedNotes.size > 0) {
+            const sel = notes.filter((_, i) => selectedNotes.has(i));
+            const minBeat = Math.min(...sel.map(n => n.beat));
+            clipboardRef.current = sel.map(n => ({ ...n, beat: n.beat - minBeat }));
+          }
+        }} title="Copy">Copy</button>
+        <button onClick={() => {
+          if (clipboardRef.current.length > 0) {
+            const pasteAt = selectedBeat;
+            const newNotes = clipboardRef.current.map(n => ({ ...n, beat: n.beat + pasteAt }));
+            const baseIdx = notes.length;
+            setNotes(prev => [...prev, ...newNotes]);
+            setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
+          }
+        }} title="Paste">Paste</button>
+        <span className="mobile-actions-sep" />
+        <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
+        <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
+        <button className={noteJump ? 'active' : ''} onClick={() => { noteJumpRef.current = !noteJumpRef.current; setNoteJump(noteJumpRef.current); }}>Jump</button>
+      </div>
       <div className="main-area">
         <Fretboard
           onNoteClick={handleFretClick}
