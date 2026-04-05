@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName } from './utils/audio';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, setInstrument, getInstrument } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
@@ -98,6 +98,7 @@ function App() {
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [metronome, setMetronome] = useState(false);
   const clipboardRef = useRef([]);
+  const [instrument, setInstrumentState] = useState(getInstrument());
   const [freeMode, setFreeMode] = useState(false);
   const [eraserMode, setEraserMode] = useState(false);
   const [fingeringMode, setFingeringMode] = useState(false);
@@ -580,6 +581,20 @@ function App() {
         >
           Eraser
         </button>
+        <span className="toolbar-separator" />
+        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Instrument:</span>
+        <select
+          className="duration-select"
+          value={instrument}
+          onChange={(e) => {
+            setInstrument(e.target.value);
+            setInstrumentState(e.target.value);
+          }}
+        >
+          {Object.entries(INSTRUMENTS).map(([id, inst]) => (
+            <option key={id} value={id}>{inst.label}</option>
+          ))}
+        </select>
         <button
           className="tool-btn"
           onClick={() => setShowSettings(true)}
