@@ -10,26 +10,60 @@ import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import DurationPicker from './components/DurationPicker';
+import TrackStrip from './components/TrackStrip';
 import './App.css';
 
-function App() {
-  const [notes, setNotesRaw] = useState([]);
-  const notesRef = useRef(notes);
-  const undoStackRef = useRef([]);
-  const redoStackRef = useRef([]);
+function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
+  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false };
+}
 
-  // Wrap setNotesRaw to keep notesRef always current
-  const setNotesTracked = useCallback((updater) => {
-    setNotesRaw(prev => {
+function getPlayableTracks(tracks) {
+  const anySolo = tracks.some(t => t.solo);
+  return tracks.filter(t => {
+    if (t.muted) return false;
+    if (anySolo && !t.solo) return false;
+    return true;
+  });
+}
+
+function App() {
+  // === Track state ===
+  const [tracks, setTracksRaw] = useState(() => [createDefaultTrack()]);
+  const tracksRef = useRef(tracks);
+  const [activeTrackId, setActiveTrackId] = useState(() => tracks[0]?.id);
+  const activeTrackIdRef = useRef(activeTrackId);
+  activeTrackIdRef.current = activeTrackId;
+
+  const setTracksTracked = useCallback((updater) => {
+    setTracksRaw(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      notesRef.current = next;
+      tracksRef.current = next;
       return next;
     });
   }, []);
 
-  // Snapshot helpers for undo/redo (capture notes + time signature + bar subdivisions)
+  // Derived: active track's notes
+  const activeTrack = tracks.find(t => t.id === activeTrackId) || tracks[0];
+  const notes = activeTrack ? activeTrack.notes : [];
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+
+  // Helper: update only the active track's notes
+  const setActiveNotes = useCallback((updater) => {
+    setTracksTracked(prev => prev.map(t => {
+      if (t.id !== activeTrackIdRef.current) return t;
+      const newNotes = typeof updater === 'function' ? updater(t.notes) : updater;
+      return { ...t, notes: newNotes };
+    }));
+  }, [setTracksTracked]);
+
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+
+  // Snapshot helpers for undo/redo
   const takeSnapshot = useCallback(() => ({
-    notes: notesRef.current,
+    tracks: JSON.parse(JSON.stringify(tracksRef.current)),
+    activeTrackId: activeTrackIdRef.current,
     timeSignature: timeSigRef.current,
     barSubdivisions: barSubsRef.current,
   }), []);
@@ -37,26 +71,37 @@ function App() {
   const restoreSnapshot = useCallback((snap) => {
     // Legacy: plain array means notes-only snapshot
     if (Array.isArray(snap)) {
-      setNotesTracked(() => snap);
+      setActiveNotes(() => snap);
       return;
     }
-    setNotesTracked(() => snap.notes);
-    setTimeSignature(snap.timeSignature);
-    setBarSubdivisions(snap.barSubdivisions);
-  }, [setNotesTracked]);
+    // Legacy: snapshot with .notes but no .tracks
+    if (snap.notes && !snap.tracks) {
+      setActiveNotes(() => snap.notes);
+      if (snap.timeSignature) setTimeSignature(snap.timeSignature);
+      if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
+      return;
+    }
+    setTracksTracked(() => snap.tracks);
+    if (snap.activeTrackId) {
+      activeTrackIdRef.current = snap.activeTrackId;
+      setActiveTrackId(snap.activeTrackId);
+    }
+    if (snap.timeSignature) setTimeSignature(snap.timeSignature);
+    if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
+  }, [setTracksTracked, setActiveNotes]);
 
-  // setNotes: pushes undo, for one-shot operations (click to add/remove, etc.)
+  // setNotes: pushes undo, for one-shot operations
   const setNotes = useCallback((updater) => {
     undoStackRef.current.push(takeSnapshot());
     if (undoStackRef.current.length > 200) undoStackRef.current.shift();
     redoStackRef.current = [];
-    setNotesTracked(updater);
-  }, [setNotesTracked, takeSnapshot]);
+    setActiveNotes(updater);
+  }, [setActiveNotes, takeSnapshot]);
 
   // setNotesDrag: no undo push, for continuous drag updates
   const setNotesDrag = useCallback((updater) => {
-    setNotesTracked(updater);
-  }, [setNotesTracked]);
+    setActiveNotes(updater);
+  }, [setActiveNotes]);
 
   // saveSnapshot: push undo once before a drag starts
   const saveSnapshot = useCallback(() => {
@@ -81,6 +126,18 @@ function App() {
     const next = redoStackRef.current.pop();
     restoreSnapshot(next);
   }, [takeSnapshot, restoreSnapshot]);
+
+  // Switch active track
+  const switchTrack = useCallback((trackId) => {
+    setActiveTrackId(trackId);
+    activeTrackIdRef.current = trackId;
+    setSelectedNotes(new Set());
+    const track = tracksRef.current.find(t => t.id === trackId);
+    if (track) {
+      setInstrument(track.instrument);
+      setInstrumentState(track.instrument);
+    }
+  }, []);
   const [projectName, setProjectName] = useState('Guitar Roll');
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
@@ -158,7 +215,17 @@ function App() {
 
   // Apply partial state from settings/load/URL
   const applyState = useCallback((data) => {
-    if (data.notes !== undefined) setNotesTracked(data.notes);
+    if (data.tracks !== undefined) {
+      setTracksTracked(data.tracks);
+      const firstId = data.tracks[0]?.id;
+      if (firstId) { setActiveTrackId(firstId); activeTrackIdRef.current = firstId; }
+    } else if (data.notes !== undefined) {
+      // Legacy: wrap flat notes into a single track
+      setTracksTracked(prev => {
+        const track = prev[0] || createDefaultTrack();
+        return [{ ...track, notes: data.notes }];
+      });
+    }
     if (data.bpm !== undefined) setBpm(data.bpm);
     if (data.loop !== undefined) setLoop(data.loop);
     if (data.loopStart !== undefined) setLoopStart(data.loopStart);
@@ -176,7 +243,7 @@ function App() {
         saveColorScheme(name, scheme);
       });
     }
-  }, [setNotesTracked]);
+  }, [setTracksTracked]);
 
   // Load from URL on mount
   useEffect(() => {
@@ -437,7 +504,8 @@ function App() {
   }, []);
 
   const startPlayback = useCallback((fromBeat) => {
-    if (notesRef.current.length === 0) return;
+    const playable = getPlayableTracks(tracksRef.current);
+    if (playable.every(t => t.notes.length === 0)) return;
 
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
@@ -516,7 +584,7 @@ function App() {
 
       // Schedule upcoming beats
       const scheduleEnd = now + lookahead;
-      const currentNotes = notesRef.current;
+      const currentPlayable = getPlayableTracks(tracksRef.current);
 
       while (nextBeatTime <= scheduleEnd) {
         if (!loopRef.current && nextBeatIndex >= rDuration) break;
@@ -525,12 +593,14 @@ function App() {
         const beat = rStart + beatInRegion;
         const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm, timeSigRef.current[1]);
 
-        currentNotes.forEach(note => {
-          if (note.beat >= beat && note.beat < beat + 1) {
-            const offset = (note.beat - beat) * colDur;
-            const noteDur = (note.duration || 1) * colDur;
-            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8);
-          }
+        currentPlayable.forEach(track => {
+          track.notes.forEach(note => {
+            if (note.beat >= beat && note.beat < beat + 1) {
+              const offset = (note.beat - beat) * colDur;
+              const noteDur = (note.duration || 1) * colDur;
+              playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8, track.instrument, track.volume);
+            }
+          });
         });
 
         // Metronome on bar starts
@@ -578,6 +648,54 @@ function App() {
     setSelectedNotes(new Set());
   }, []);
 
+  // Track management
+  const handleAddTrack = useCallback(() => {
+    const num = tracksRef.current.length + 1;
+    const newTrack = createDefaultTrack(`Track ${num}`);
+    setTracksTracked(prev => [...prev, newTrack]);
+    switchTrack(newTrack.id);
+  }, [setTracksTracked, switchTrack]);
+
+  const handleDeleteTrack = useCallback((trackId) => {
+    setTracksTracked(prev => {
+      if (prev.length <= 1) return prev;
+      const filtered = prev.filter(t => t.id !== trackId);
+      if (activeTrackIdRef.current === trackId) {
+        const newActive = filtered[0].id;
+        activeTrackIdRef.current = newActive;
+        setActiveTrackId(newActive);
+        setSelectedNotes(new Set());
+        setInstrument(filtered[0].instrument);
+        setInstrumentState(filtered[0].instrument);
+      }
+      return filtered;
+    });
+  }, [setTracksTracked]);
+
+  const handleToggleMute = useCallback((trackId) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, muted: !t.muted } : t
+    ));
+  }, [setTracksTracked]);
+
+  const handleToggleSolo = useCallback((trackId) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, solo: !t.solo } : t
+    ));
+  }, [setTracksTracked]);
+
+  const handleSetTrackVolume = useCallback((trackId, volume) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, volume } : t
+    ));
+  }, [setTracksTracked]);
+
+  const handleRenameTrack = useCallback((trackId, name) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, name } : t
+    ));
+  }, [setTracksTracked]);
+
   return (
     <div className="app">
       <div className="toolbar">
@@ -610,11 +728,15 @@ function App() {
         <span className="toolbar-label">Inst:</span>
         <select
           className="duration-select"
-          value={instrument}
+          value={activeTrack?.instrument || instrument}
           title="Instrument"
           onChange={(e) => {
-            setInstrument(e.target.value);
-            setInstrumentState(e.target.value);
+            const inst = e.target.value;
+            setInstrument(inst);
+            setInstrumentState(inst);
+            setTracksTracked(prev => prev.map(t =>
+              t.id === activeTrackId ? { ...t, instrument: inst } : t
+            ));
           }}
         >
           {Object.entries(INSTRUMENTS).map(([id, inst]) => (
@@ -653,7 +775,7 @@ function App() {
                   prev[i] = num;
                 }
               }
-              setNotesTracked(remapped);
+              setActiveNotes(remapped);
               return newSubs;
             });
           }}
@@ -686,7 +808,7 @@ function App() {
               } else if (newCount < prev.length) {
                 // Remove bars from the end, delete notes in removed bars
                 const tc = totalColumns(prev.slice(0, newCount));
-                setNotesTracked(notesRef.current.filter(n => n.beat < tc));
+                setActiveNotes(notesRef.current.filter(n => n.beat < tc));
                 return prev.slice(0, newCount);
               }
               return prev;
@@ -720,6 +842,17 @@ function App() {
           onChange={handleSetDuration}
         />
       </div>
+      <TrackStrip
+        tracks={tracks}
+        activeTrackId={activeTrackId}
+        onSwitchTrack={switchTrack}
+        onToggleMute={handleToggleMute}
+        onToggleSolo={handleToggleSolo}
+        onSetVolume={handleSetTrackVolume}
+        onAddTrack={handleAddTrack}
+        onDeleteTrack={handleDeleteTrack}
+        onRenameTrack={handleRenameTrack}
+      />
       <div className="status-bar">
         <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
           {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
@@ -784,7 +917,7 @@ function App() {
           totalBeats={totalBeats}
           activeNotes={playing ? [] : notes.filter(n => selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1))}
           playingNotes={playing && currentBeat !== null
-            ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
+            ? getPlayableTracks(tracks).flatMap(t => t.notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1)))
             : []}
           stringColors={stringColors}
           getNoteColor={getNoteColor}
@@ -801,6 +934,9 @@ function App() {
         />
         <Timeline
           notes={notes}
+          backgroundNotes={tracks.filter(t => t.id !== activeTrackId && !t.muted).flatMap(t =>
+            t.notes.map(n => ({ ...n, _trackColor: '#888' }))
+          )}
           setNotes={setNotes}
           saveSnapshot={saveSnapshot}
           setNotesDrag={setNotesDrag}
@@ -882,7 +1018,7 @@ function App() {
       {showSettings && (
         <SettingsModal
           appState={{
-            notes, bpm, loop, loopStart, loopEnd,
+            tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
             projectName, noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
           }}

@@ -311,7 +311,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 <span className="settings-date">
                   {sessions[name].savedAt ? new Date(sessions[name].savedAt).toLocaleDateString() : ''}
                 </span>
-                <span className="settings-date">{sessions[name].notes?.length || 0} notes</span>
+                <span className="settings-date">{sessions[name].tracks ? sessions[name].tracks.reduce((s, t) => s + (t.notes?.length || 0), 0) : (sessions[name].notes?.length || 0)} notes</span>
                 <div className="scheme-actions">
                   <button className="settings-btn-sm" onClick={() => {
                     const data = loadSession(name);

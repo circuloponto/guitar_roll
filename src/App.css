@@ -139,6 +139,144 @@
   margin: 0 2px;
 }
 
+/* Track Strip */
+.track-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 8px;
+  background: #0d0d0d;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+
+.track-strip::-webkit-scrollbar { display: none; }
+
+.track-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.track-tab:hover { background: #222; }
+
+.track-tab.active {
+  background: #1e2a3a;
+  border-color: #3498db;
+}
+
+.track-tab.muted { opacity: 0.5; }
+
+.track-tab-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.track-name {
+  font-size: 11px;
+  font-weight: bold;
+  color: #ddd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70px;
+}
+
+.track-name-input {
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  background: #111;
+  border: 1px solid #3498db;
+  border-radius: 2px;
+  padding: 0 3px;
+  width: 60px;
+  outline: none;
+}
+
+.track-inst {
+  font-size: 9px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.track-tab-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.track-btn {
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid #444;
+  border-radius: 2px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: bold;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.track-btn:hover { color: #fff; }
+.track-btn.active-red { background: #5a1a1a; color: #e74c3c; border-color: #e74c3c; }
+.track-btn.active-yellow { background: #4a3a1a; color: #f1c40f; border-color: #f1c40f; }
+.track-delete { color: #666; }
+.track-delete:hover { color: #e74c3c; }
+
+.track-volume {
+  width: 40px;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #333;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.track-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3498db;
+  cursor: pointer;
+}
+
+.track-volume::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3498db;
+  border: none;
+  cursor: pointer;
+}
+
+.track-add-btn {
+  background: #1a1a1a;
+  color: #888;
+  border: 1px dashed #444;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.track-add-btn:hover { color: #fff; border-color: #888; }
+
 /* Duration Picker */
 .duration-picker {
   position: relative;

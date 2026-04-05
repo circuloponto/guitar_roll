@@ -414,31 +414,34 @@ const SYNTH_MAP = {
   'pluck': synthPluck,
 };
 
-function playSynth(ctx, freq, startTime, duration, gain) {
-  const fn = SYNTH_MAP[currentInstrument];
+function playSynth(ctx, freq, startTime, duration, gain, instrument) {
+  const inst = instrument || currentInstrument;
+  const fn = SYNTH_MAP[inst];
   if (fn) fn(ctx, freq, startTime, duration, gain);
 }
 
-export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8) {
+export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8, instrument, volume = 1) {
   const ctx = getAudioContext();
-  const gain = 0.3 * velocity;
-  if (currentInstrument === 'drums') {
+  const inst = instrument || currentInstrument;
+  const gain = 0.3 * velocity * volume;
+  if (inst === 'drums') {
     synthDrum(ctx, stringIndex, ctx.currentTime, gain);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
-  playSynth(ctx, freq, ctx.currentTime, duration, gain);
+  playSynth(ctx, freq, ctx.currentTime, duration, gain, inst);
 }
 
-export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, velocity = 0.8) {
+export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, velocity = 0.8, instrument, volume = 1) {
   const ctx = getAudioContext();
-  const gain = 0.3 * velocity;
-  if (currentInstrument === 'drums') {
+  const inst = instrument || currentInstrument;
+  const gain = 0.3 * velocity * volume;
+  if (inst === 'drums') {
     synthDrum(ctx, stringIndex, startTime, gain);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
-  playSynth(ctx, freq, startTime, duration, gain);
+  playSynth(ctx, freq, startTime, duration, gain, inst);
 }
 
 export function playClickAtTime(time, accent = false) {

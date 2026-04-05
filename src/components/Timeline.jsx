@@ -28,7 +28,7 @@ function pitchRowTopPx(pitchRow) {
 }
 
 export default function Timeline({
-  notes, setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
+  notes, backgroundNotes = [], setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   timelineZoom = 1, setTimelineZoom,
   barSubdivisions, setBarSubdivisions,
   currentBeat, selectedBeat, setSelectedBeat,
@@ -915,6 +915,31 @@ export default function Timeline({
               }}
             />
           )}
+
+          {/* Background track notes (dimmed, non-interactive) */}
+          {backgroundNotes.map((note, i) => {
+            const topPx = rowTopPx(note.stringIndex, note.fret);
+            const duration = note.duration || 1;
+            const noteWidth = durationToWidth(note.beat, duration, barSubdivisions, cellWidth) - 2;
+            return (
+              <div
+                key={`bg-${i}`}
+                className="timeline-note background"
+                style={{
+                  left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
+                  top: topPx,
+                  width: noteWidth,
+                  height: ROW_HEIGHT,
+                  minHeight: 4,
+                  backgroundColor: note._trackColor || '#888',
+                  opacity: 0.2,
+                  pointerEvents: 'none',
+                }}
+              >
+                {getNoteName(note.stringIndex, note.fret)}
+              </div>
+            );
+          })}
 
           {/* Note blur glows */}
           {notes.map((note, i) => {
