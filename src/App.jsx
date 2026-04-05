@@ -226,6 +226,10 @@ function App() {
           setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
         }
       }
+      if (matchesHotkey(e, hk.returnToStart)) {
+        e.preventDefault();
+        setSelectedBeat(0);
+      }
       if (matchesHotkey(e, hk.playStop)) {
         e.preventDefault();
         handlePlayRef.current();

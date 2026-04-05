@@ -16,6 +16,7 @@ const DEFAULT_HOTKEYS = {
   copy: { label: 'Copy', description: 'Copy selected notes', key: 'c', modifiers: { ctrl: true } },
   paste: { label: 'Paste', description: 'Paste notes at playhead', key: 'v', modifiers: { ctrl: true } },
   playStop: { label: 'Play / Stop', description: 'Toggle playback from playhead', key: ' ' },
+  returnToStart: { label: 'Return to Start', description: 'Move playhead to beginning', key: 'Enter' },
   prevBeat: { label: 'Previous Beat', description: 'Move playhead left', key: 'ArrowLeft' },
   nextBeat: { label: 'Next Beat', description: 'Move playhead right', key: 'ArrowRight' },
   zoomIn: { label: 'Zoom In', description: 'Zoom into timeline', key: '=', modifiers: { ctrl: true } },
