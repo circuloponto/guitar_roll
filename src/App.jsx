@@ -581,11 +581,11 @@ function App() {
         >
           Eraser
         </button>
-        <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Instrument:</span>
+        <span className="toolbar-label">Inst:</span>
         <select
           className="duration-select"
           value={instrument}
+          title="Instrument"
           onChange={(e) => {
             setInstrument(e.target.value);
             setInstrumentState(e.target.value);
@@ -598,12 +598,12 @@ function App() {
         <button
           className="tool-btn"
           onClick={() => setShowSettings(true)}
-          title="Settings, colors, save/load"
+          title="Settings"
         >
           Settings
         </button>
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Time:</span>
+        <span className="toolbar-label">Time:</span>
         <select
           className="duration-select"
           value={`${timeSignature[0]}/${timeSignature[1]}`}
@@ -644,7 +644,7 @@ function App() {
           <option value="9/8">9/8</option>
           <option value="12/8">12/8</option>
         </select>
-        <span style={{ fontSize: '12px', color: '#888', marginLeft: 8, marginRight: 4 }}>Bars:</span>
+        <span className="toolbar-label">Bars:</span>
         <input
           type="number"
           className="bpm-input"
@@ -667,8 +667,7 @@ function App() {
             });
           }}
         />
-        <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>BPM:</span>
+        <span className="toolbar-label">BPM:</span>
         <input
           type="number"
           className="bpm-input"
@@ -683,12 +682,11 @@ function App() {
             }
           }}
         />
-        <span className="toolbar-separator" />
         <button className="play-btn" onClick={handleClear}>
           Clear
         </button>
         <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: '#888', marginRight: 4 }}>Duration:</span>
+        <span className="toolbar-label">Dur:</span>
         <select
           className="duration-select"
           value={baseNoteDuration}
@@ -700,7 +698,7 @@ function App() {
           <option value={8}>1/2</option>
           <option value={16}>1/1</option>
         </select>
-        <span style={{ fontSize: '12px', color: '#888', marginLeft: 8, marginRight: 4 }}>Tuplet:</span>
+        <span className="toolbar-label">Tup:</span>
         <input
           type="number"
           className="tuplet-input"
@@ -717,8 +715,9 @@ function App() {
             = {noteDuration.toFixed(2)} beats
           </span>
         )}
-        <span className="toolbar-separator" />
-        <span style={{ fontSize: '12px', color: (freeMode || noteJump || fingeringMode) ? '#e67e22' : '#888' }}>
+      </div>
+      <div className="status-bar">
+        <span style={{ color: (freeMode || noteJump || fingeringMode) ? '#e67e22' : '#888' }}>
           {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
