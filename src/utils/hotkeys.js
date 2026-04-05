@@ -21,6 +21,7 @@ const DEFAULT_HOTKEYS = {
   nextBeat: { label: 'Next Beat', description: 'Move playhead right', key: 'ArrowRight' },
   zoomIn: { label: 'Zoom In', description: 'Zoom into timeline', key: '=', modifiers: { ctrl: true } },
   zoomOut: { label: 'Zoom Out', description: 'Zoom out of timeline', key: '-', modifiers: { ctrl: true } },
+  machineGunMode: { label: 'Machine Gun', description: 'Toggle draw mode: drag to paint notes', key: 'd' },
   fingeringMode: { label: 'Fingering Mode', description: 'Toggle fingering mode (arrow keys shift strings)', key: 'g' },
   fingerUp: { label: 'Finger Up', description: 'Move selected notes to higher string (same pitch)', key: 'ArrowUp' },
   fingerDown: { label: 'Finger Down', description: 'Move selected notes to lower string (same pitch)', key: 'ArrowDown' },
@@ -104,5 +105,5 @@ export function formatHotkey(hotkey) {
 // Editable hotkey IDs (ones users can change)
 export const EDITABLE_HOTKEYS = [
   'noteJump', 'freeMode', 'durationMode', 'moveMode', 'adjacentMode',
-  'deleteNotes', 'playStop', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
+  'deleteNotes', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
 ];

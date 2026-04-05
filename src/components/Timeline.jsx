@@ -37,6 +37,7 @@ export default function Timeline({
   hoveredNote, setHoveredNote,
   verticalScroll, setVerticalScroll,
   eraserMode = false,
+  machineGunMode = false,
   noteDuration = 1,
   snapUnit = 1,
   tuplet = 1,
@@ -406,7 +407,16 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode]);
 
-  // Marquee selection on grid background
+  // Machine gun: convert mouse Y to string+fret
+  const yToPitch = useCallback((y) => {
+    const rowFromTop = Math.floor(y / ROW_HEIGHT);
+    const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
+    const midi = pitchRowToMidi(pitchRow);
+    const combo = closestComboForPitch(midi, 0);
+    return combo;
+  }, []);
+
+  // Marquee selection / machine gun on grid background
   const handleGridMouseDown = useCallback((e) => {
     if (e.target.closest('.timeline-note')) return;
     if (e.button !== 0) return;
@@ -417,6 +427,72 @@ export default function Timeline({
     const x = e.clientX - rect.left + scrollLeft;
     const y = e.clientY - rect.top + scrollTop;
 
+    // Machine gun mode: paint notes by dragging
+    if (machineGunMode) {
+      const dur = noteDuration;
+      const startBeat = Math.floor(xToBeat(x, barSubdivisions, cellWidth, true) / dur) * dur;
+      const combo = yToPitch(y);
+      if (!combo) return;
+
+      saveSnapshot();
+      const painted = new Map(); // beat -> { stringIndex, fret }
+      painted.set(startBeat, combo);
+      setNotes(prev => {
+        // Remove any existing note at this beat+string, then add
+        const filtered = prev.filter(n => !(Math.abs(n.beat - startBeat) < 0.001 && n.stringIndex === combo.stringIndex));
+        return [...filtered, { stringIndex: combo.stringIndex, fret: combo.fret, beat: startBeat, duration: dur }];
+      });
+      playNote(combo.stringIndex, combo.fret, 0.15);
+
+      const handleMouseMove = (moveE) => {
+        const mx = moveE.clientX - rect.left + bodyRef.current.scrollLeft;
+        const my = moveE.clientY - rect.top + bodyRef.current.scrollTop;
+        const moveBeat = Math.floor(xToBeat(mx, barSubdivisions, cellWidth, true) / dur) * dur;
+        const moveCombo = yToPitch(my);
+        if (!moveCombo) return;
+        if (moveBeat < 0 || moveBeat >= totalCols) return;
+
+        // Fill all beats from start to current position
+        const minBeat = Math.min(startBeat, moveBeat);
+        const maxBeat = Math.max(startBeat, moveBeat);
+        const newNotes = [];
+        for (let b = minBeat; b <= maxBeat + 0.001; b += dur) {
+          const beat = Math.round(b * 10000) / 10000; // avoid float drift
+          if (beat >= totalCols) break;
+          if (!painted.has(beat)) {
+            // Interpolate pitch between start and current mouse Y
+            const t = maxBeat > minBeat ? (beat - minBeat) / (maxBeat - minBeat) : 0;
+            const interpY = y + (my - y) * ((beat - startBeat) / (moveBeat - startBeat || 1));
+            const beatCombo = yToPitch(interpY);
+            if (beatCombo) {
+              painted.set(beat, beatCombo);
+              newNotes.push({ stringIndex: beatCombo.stringIndex, fret: beatCombo.fret, beat, duration: dur });
+              playNote(beatCombo.stringIndex, beatCombo.fret, 0.1);
+            }
+          }
+        }
+        if (newNotes.length > 0) {
+          setNotes(prev => {
+            // Remove existing at these beats+strings
+            const beatSet = new Set(newNotes.map(n => `${n.beat.toFixed(4)}_${n.stringIndex}`));
+            const filtered = prev.filter(n => !beatSet.has(`${n.beat.toFixed(4)}_${n.stringIndex}`));
+            return [...filtered, ...newNotes];
+          });
+        }
+      };
+
+      const handleMouseUp = () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+      };
+
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+      marqueeDidDragRef.current = true;
+      return;
+    }
+
+    // Normal marquee selection
     marqueeRef.current = { startX: x, startY: y, didMove: false };
     if (!e.shiftKey) {
       setSelectedNotes(new Set());
@@ -478,7 +554,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes, eraserMode, setNotes]);
+  }, [playing, notes, setSelectedNotes, eraserMode, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -677,7 +753,7 @@ export default function Timeline({
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
-          style={{ flex: 1, cursor: eraserMode ? 'crosshair' : undefined }}
+          style={{ flex: 1, cursor: machineGunMode ? 'cell' : eraserMode ? 'crosshair' : undefined }}
         >
         <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
           {/* Loop region highlight in grid */}

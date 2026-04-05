@@ -103,6 +103,7 @@ function App() {
   const clipboardRef = useRef([]);
   const [instrument, setInstrumentState] = useState(getInstrument());
   const [freeMode, setFreeMode] = useState(false);
+  const [machineGunMode, setMachineGunMode] = useState(false);
   const [eraserMode, setEraserMode] = useState(false);
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
@@ -252,6 +253,9 @@ function App() {
       }
       if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
+      }
+      if (matchesHotkey(e, hk.machineGunMode)) {
+        setMachineGunMode(m => !m);
       }
       if (matchesHotkey(e, hk.fingeringMode)) {
         fingeringModeRef.current = !fingeringModeRef.current;
@@ -712,8 +716,8 @@ function App() {
         />
       </div>
       <div className="status-bar">
-        <span style={{ color: (freeMode || noteJump || fingeringMode) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
       </div>
       {/* Mobile action bar */}
@@ -810,6 +814,7 @@ function App() {
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           eraserMode={eraserMode}
+          machineGunMode={machineGunMode}
           noteDuration={noteDuration}
           snapUnit={computedDuration}
           tuplet={tuplet}
