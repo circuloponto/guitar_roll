@@ -25,6 +25,8 @@ const DEFAULT_HOTKEYS = {
   fingeringMode: { label: 'Fingering Mode', description: 'Toggle fingering mode (arrow keys shift strings)', key: 'g' },
   fingerUp: { label: 'Finger Up', description: 'Move selected notes to higher string (same pitch)', key: 'ArrowUp' },
   fingerDown: { label: 'Finger Down', description: 'Move selected notes to lower string (same pitch)', key: 'ArrowDown' },
+  zoomWheel: { label: 'Zoom (Scroll)', description: 'Scroll to zoom timeline', key: 'Wheel', modifiers: { ctrl: true }, wheel: true },
+  velocityWheel: { label: 'Velocity (Scroll)', description: 'Scroll to adjust note velocity', key: 'Wheel', modifiers: { shift: true }, wheel: true },
   escape: { label: 'Escape', description: 'Cancel current mode', key: 'Escape' },
 };
 
@@ -61,6 +63,17 @@ export function matchesHotkey(e, hotkey) {
 
   return keyMatch &&
     (ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey)) &&
+    (shift ? e.shiftKey : !e.shiftKey) &&
+    (alt ? e.altKey : !e.altKey);
+}
+
+// Check if a wheel event matches a wheel hotkey config
+export function matchesWheelHotkey(e, hotkey) {
+  if (!hotkey || !hotkey.wheel) return false;
+  const ctrl = hotkey.modifiers?.ctrl || false;
+  const shift = hotkey.modifiers?.shift || false;
+  const alt = hotkey.modifiers?.alt || false;
+  return (ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey)) &&
     (shift ? e.shiftKey : !e.shiftKey) &&
     (alt ? e.altKey : !e.altKey);
 }
@@ -105,5 +118,5 @@ export function formatHotkey(hotkey) {
 // Editable hotkey IDs (ones users can change)
 export const EDITABLE_HOTKEYS = [
   'noteJump', 'freeMode', 'durationMode', 'moveMode', 'adjacentMode',
-  'deleteNotes', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
+  'deleteNotes', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
 ];

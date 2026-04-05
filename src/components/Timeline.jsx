@@ -9,6 +9,7 @@ import {
   midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
 } from '../utils/pitchMap';
 import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth } from '../utils/barLayout';
+import { matchesWheelHotkey } from '../utils/hotkeys';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -38,9 +39,11 @@ export default function Timeline({
   verticalScroll, setVerticalScroll,
   eraserMode = false,
   machineGunMode = false,
+  defaultVelocity = 0.8,
   noteDuration = 1,
   snapUnit = 1,
   tuplet = 1,
+  hotkeys,
   onResizeDuration,
 }) {
   const bodyRef = useRef(null);
@@ -440,7 +443,7 @@ export default function Timeline({
       setNotes(prev => {
         // Remove any existing note at this beat+string, then add
         const filtered = prev.filter(n => !(Math.abs(n.beat - startBeat) < 0.001 && n.stringIndex === combo.stringIndex));
-        return [...filtered, { stringIndex: combo.stringIndex, fret: combo.fret, beat: startBeat, duration: dur }];
+        return [...filtered, { stringIndex: combo.stringIndex, fret: combo.fret, beat: startBeat, duration: dur, velocity: defaultVelocity }];
       });
       playNote(combo.stringIndex, combo.fret, 0.15);
 
@@ -466,7 +469,7 @@ export default function Timeline({
             const beatCombo = yToPitch(interpY);
             if (beatCombo) {
               painted.set(beat, beatCombo);
-              newNotes.push({ stringIndex: beatCombo.stringIndex, fret: beatCombo.fret, beat, duration: dur });
+              newNotes.push({ stringIndex: beatCombo.stringIndex, fret: beatCombo.fret, beat, duration: dur, velocity: defaultVelocity });
               playNote(beatCombo.stringIndex, beatCombo.fret, 0.1);
             }
           }
@@ -581,11 +584,13 @@ export default function Timeline({
     }
   }, [hoveredNote]);
 
-  // Ctrl+scroll zoom — use document-level to prevent browser zoom
+  // Scroll zoom — use document-level to prevent browser zoom
+  const hotkeysRef = useRef(hotkeys);
+  hotkeysRef.current = hotkeys;
   useEffect(() => {
     const handleWheel = (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      // Only handle if the mouse is over the timeline body
+      const hk = hotkeysRef.current;
+      if (!hk || !matchesWheelHotkey(e, hk.zoomWheel)) return;
       if (!bodyRef.current) return;
       const rect = bodyRef.current.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right ||
@@ -599,6 +604,49 @@ export default function Timeline({
     document.addEventListener('wheel', handleWheel, { passive: false });
     return () => document.removeEventListener('wheel', handleWheel);
   }, [setTimelineZoom]);
+
+  // Alt+scroll to adjust velocity on hovered/selected notes
+  useEffect(() => {
+    const handleWheel = (e) => {
+      const hk = hotkeysRef.current;
+      if (!hk || !matchesWheelHotkey(e, hk.velocityWheel)) return;
+      if (!bodyRef.current) return;
+      const rect = bodyRef.current.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top || e.clientY > rect.bottom) return;
+      e.preventDefault();
+
+      // Find which note the mouse is over
+      const scrollLeft = bodyRef.current.scrollLeft;
+      const scrollTop = bodyRef.current.scrollTop;
+      const mx = e.clientX - rect.left + scrollLeft;
+      const my = e.clientY - rect.top + scrollTop;
+
+      const hoveredIndices = [];
+      notes.forEach((note, i) => {
+        const noteLeft = beatToX(note.beat, barSubdivisions, cellWidth);
+        const noteRight = noteLeft + durationToWidth(note.beat, note.duration || 1, barSubdivisions, cellWidth);
+        const noteTop = rowTopPx(note.stringIndex, note.fret);
+        const noteBottom = noteTop + ROW_HEIGHT;
+        if (mx >= noteLeft && mx <= noteRight && my >= noteTop && my <= noteBottom) {
+          hoveredIndices.push(i);
+        }
+      });
+
+      // Adjust selected notes if any are selected, otherwise just the hovered note
+      const targets = selectedNotes.size > 0 ? [...selectedNotes] : hoveredIndices;
+      if (targets.length === 0) return;
+
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      setNotes(prev => prev.map((n, i) => {
+        if (!targets.includes(i)) return n;
+        const newVel = Math.max(0.05, Math.min(1, (n.velocity ?? 0.8) + delta));
+        return { ...n, velocity: Math.round(newVel * 100) / 100 };
+      }));
+    };
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    return () => document.removeEventListener('wheel', handleWheel);
+  }, [notes, setNotes, selectedNotes, barSubdivisions, cellWidth]);
 
   // Auto-scroll to playhead during playback
   useEffect(() => {
@@ -904,6 +952,7 @@ export default function Timeline({
             const isPlaying = playing && currentBeat !== null &&
               currentBeat >= note.beat && currentBeat < note.beat + duration;
             const color = getNoteColor(note.stringIndex, note.fret);
+            const vel = note.velocity ?? 0.8;
 
             return (
               <div
@@ -916,9 +965,10 @@ export default function Timeline({
                   height: ROW_HEIGHT,
                   minHeight: 4,
                   backgroundColor: color,
+                  opacity: 0.3 + vel * 0.7,
                   boxShadow: isPlaying ? `0 0 12px 4px ${color}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
                 }}
-                title={`${getNoteName(note.stringIndex, note.fret)} (${duration})`}
+                title={`${getNoteName(note.stringIndex, note.fret)} (${duration}) vel:${Math.round(vel * 100)}%`}
                 onClick={(e) => handleNoteClick(e, i)}
                 onContextMenu={(e) => handleNoteContextMenu(e, i)}
                 onMouseEnter={() => playNote(note.stringIndex, note.fret, 0.15)}

@@ -104,6 +104,7 @@ function App() {
   const [instrument, setInstrumentState] = useState(getInstrument());
   const [freeMode, setFreeMode] = useState(false);
   const [machineGunMode, setMachineGunMode] = useState(false);
+  const [defaultVelocity, setDefaultVelocity] = useState(0.8);
   const [eraserMode, setEraserMode] = useState(false);
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
@@ -347,9 +348,9 @@ function App() {
       const filtered = prev.filter(
         n => !(n.stringIndex === stringIndex && n.beat === selectedBeat)
       );
-      return [...filtered, { stringIndex, fret, beat: selectedBeat, duration: noteDuration }];
+      return [...filtered, { stringIndex, fret, beat: selectedBeat, duration: noteDuration, velocity: defaultVelocity }];
     });
-  }, [selectedBeat, noteDuration]);
+  }, [selectedBeat, noteDuration, defaultVelocity]);
 
   const handleAdjacentClick = useCallback((stringIndex, fret) => {
     setNotes(prev => {
@@ -360,7 +361,7 @@ function App() {
         return prev.filter((_, i) => i !== exactMatch);
       }
       // Don't remove existing notes on the same string — just add
-      return [...prev, { stringIndex, fret, beat: selectedBeat, duration: noteDuration }];
+      return [...prev, { stringIndex, fret, beat: selectedBeat, duration: noteDuration, velocity: defaultVelocity }];
     });
   }, [selectedBeat, noteDuration]);
 
@@ -524,7 +525,7 @@ function App() {
           if (note.beat >= beat && note.beat < beat + 1) {
             const offset = (note.beat - beat) * colDur;
             const noteDur = (note.duration || 1) * colDur;
-            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur);
+            playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8);
           }
         });
 
@@ -719,6 +720,17 @@ function App() {
         <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
           {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
+        <span className="status-separator" />
+        <span className="toolbar-label">Vel:</span>
+        <input
+          type="range"
+          className="velocity-slider"
+          min={0}
+          max={100}
+          value={Math.round(defaultVelocity * 100)}
+          onChange={(e) => setDefaultVelocity(Number(e.target.value) / 100)}
+        />
+        <span style={{ fontSize: '11px', color: '#888', minWidth: 28 }}>{Math.round(defaultVelocity * 100)}%</span>
       </div>
       {/* Mobile action bar */}
       <div className="mobile-actions">
@@ -815,9 +827,11 @@ function App() {
           setVerticalScroll={setVerticalScroll}
           eraserMode={eraserMode}
           machineGunMode={machineGunMode}
+          defaultVelocity={defaultVelocity}
           noteDuration={noteDuration}
           snapUnit={computedDuration}
           tuplet={tuplet}
+          hotkeys={hotkeys}
           onResizeDuration={setDurationOverride}
         />
       </div>

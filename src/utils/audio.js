@@ -419,24 +419,26 @@ function playSynth(ctx, freq, startTime, duration, gain) {
   if (fn) fn(ctx, freq, startTime, duration, gain);
 }
 
-export function playNote(stringIndex, fret, duration = 0.5) {
+export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8) {
   const ctx = getAudioContext();
+  const gain = 0.3 * velocity;
   if (currentInstrument === 'drums') {
-    synthDrum(ctx, stringIndex, ctx.currentTime, 0.25);
+    synthDrum(ctx, stringIndex, ctx.currentTime, gain);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
-  playSynth(ctx, freq, ctx.currentTime, duration, 0.25);
+  playSynth(ctx, freq, ctx.currentTime, duration, gain);
 }
 
-export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3) {
+export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, velocity = 0.8) {
   const ctx = getAudioContext();
+  const gain = 0.3 * velocity;
   if (currentInstrument === 'drums') {
-    synthDrum(ctx, stringIndex, startTime, 0.25);
+    synthDrum(ctx, stringIndex, startTime, gain);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
-  playSynth(ctx, freq, startTime, duration, 0.25);
+  playSynth(ctx, freq, startTime, duration, gain);
 }
 
 export function playClickAtTime(time, accent = false) {
