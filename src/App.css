@@ -1058,6 +1058,25 @@
   opacity: 1;
 }
 
+.timeline-note.ghost {
+  border: 1px dashed;
+  background: transparent !important;
+  font-style: italic;
+  color: #999;
+}
+
+.note-bend-indicator {
+  font-size: 7px;
+  color: #e67e22;
+  margin-left: 2px;
+}
+
+.note-slide-indicator {
+  font-size: 8px;
+  color: #3498db;
+  margin-left: 1px;
+}
+
 .timeline-note.selected {
   outline: 2px solid #fff;
   filter: brightness(1.3);

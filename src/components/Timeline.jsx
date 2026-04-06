@@ -1012,27 +1012,34 @@ export default function Timeline({
             const color = getNoteColor(note.stringIndex, note.fret);
             const vel = note.velocity ?? 0.8;
 
+            const isGhost = note.ghost;
+            const hasBend = note.bend && note.bend > 0;
+            const hasSlide = note.slideTo != null;
+
             return (
               <div
                 key={i}
-                className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''}`}
+                className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''} ${isGhost ? 'ghost' : ''}`}
                 style={{
                   left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                   top: topPx,
                   width: noteWidth,
                   height: ROW_HEIGHT,
                   minHeight: 4,
-                  backgroundColor: color,
-                  opacity: 0.3 + vel * 0.7,
+                  backgroundColor: isGhost ? 'transparent' : color,
+                  borderColor: isGhost ? color : undefined,
+                  opacity: isGhost ? 0.6 : (0.3 + vel * 0.7),
                   boxShadow: isPlaying ? `0 0 12px 4px ${color}, inset 0 0 6px rgba(255,255,255,0.3)` : undefined,
                 }}
-                title={`${getNoteName(note.stringIndex, note.fret)} (${duration}) vel:${Math.round(vel * 100)}%`}
+                title={`${isGhost ? '(ghost) ' : ''}${getNoteName(note.stringIndex, note.fret)} (${duration}) vel:${Math.round(vel * 100)}%${hasBend ? ` bend:${note.bend}` : ''}${hasSlide ? ` slide→${note.slideTo}` : ''}`}
                 onClick={(e) => handleNoteClick(e, i)}
                 onContextMenu={(e) => handleNoteContextMenu(e, i)}
                 onMouseEnter={() => hoverPreviewNotes && playNote(note.stringIndex, note.fret, 0.15, hoverVolume)}
                 onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
-                {getNoteName(note.stringIndex, note.fret)}
+                {isGhost ? 'x' : getNoteName(note.stringIndex, note.fret)}
+                {hasBend && <span className="note-bend-indicator">↑{note.bend}</span>}
+                {hasSlide && <span className="note-slide-indicator">↗</span>}
                 <div
                     className="note-resize-handle"
                     onMouseDown={(e) => handleResizeStart(e, i)}

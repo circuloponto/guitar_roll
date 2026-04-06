@@ -567,7 +567,7 @@ export function getSynthParams(instrumentId) {
 }
 
 // Generic parametric synth — builds Web Audio graph from params
-function synthParametric(ctx, freq, startTime, duration, gain, params) {
+function synthParametric(ctx, freq, startTime, duration, gain, params, noteProps) {
   const env = params.envelope;
   const flt = params.filter;
   const trem = params.tremolo || { rate: 0, depth: 0 };
@@ -593,6 +593,11 @@ function synthParametric(ctx, freq, startTime, duration, gain, params) {
     osc.stop(endTime);
     oscs.push(osc);
   });
+
+  // Bend/slide pitch automation
+  if (noteProps && (noteProps.bend || noteProps.slideTo != null)) {
+    applyPitchEffects(oscs, freq, startTime, duration, noteProps);
+  }
 
   // Vibrato LFO — modulates oscillator frequency via detune
   if (vib.rate > 0 && vib.depth > 0) {
@@ -664,12 +669,12 @@ const SYNTH_MAP = {
   'pluck': synthPluck,
 };
 
-function playSynth(ctx, freq, startTime, duration, gain, instrument) {
+function playSynth(ctx, freq, startTime, duration, gain, instrument, noteProps) {
   const inst = instrument || currentInstrument;
   // Check for custom preset first
   const customPresets = loadCustomPresets();
   if (customPresets[inst]) {
-    synthParametric(ctx, freq, startTime, duration, gain, customPresets[inst]);
+    synthParametric(ctx, freq, startTime, duration, gain, customPresets[inst], noteProps);
     return;
   }
   // Legacy hardcoded synth
@@ -677,8 +682,50 @@ function playSynth(ctx, freq, startTime, duration, gain, instrument) {
   if (fn) { fn(ctx, freq, startTime, duration, gain); return; }
   // Built-in parametric preset (no legacy function)
   if (SYNTH_PRESETS[inst]) {
-    synthParametric(ctx, freq, startTime, duration, gain, SYNTH_PRESETS[inst]);
+    synthParametric(ctx, freq, startTime, duration, gain, SYNTH_PRESETS[inst], noteProps);
     return;
+  }
+}
+
+// Ghost note — muted percussive string click
+function synthGhostNote(ctx, startTime, gain) {
+  const bufferSize = ctx.sampleRate * 0.04;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const g = ctx.createGain();
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.setValueAtTime(1500, startTime);
+  f.Q.setValueAtTime(2, startTime);
+  g.gain.setValueAtTime(gain * 0.5, startTime);
+  g.gain.linearRampToValueAtTime(0, startTime + 0.04);
+  noise.connect(f);
+  f.connect(g);
+  g.connect(getMasterOut());
+  noise.start(startTime);
+  noise.stop(startTime + 0.05);
+}
+
+// Bend/slide pitch automation — returns a function to apply to oscillators
+function applyPitchEffects(oscs, freq, startTime, duration, note) {
+  if (note.bend && note.bend > 0) {
+    // Bend: ramp up by bend semitones over first half, hold
+    const bendFreq = freq * Math.pow(2, note.bend / 12);
+    oscs.forEach(osc => {
+      osc.frequency.setValueAtTime(freq, startTime);
+      osc.frequency.linearRampToValueAtTime(bendFreq, startTime + duration * 0.4);
+    });
+  }
+  if (note.slideTo != null) {
+    // Slide: glide from current pitch to target fret pitch
+    const targetFreq = getNoteFrequency(note.stringIndex, note.slideTo);
+    oscs.forEach(osc => {
+      osc.frequency.setValueAtTime(freq, startTime);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(targetFreq, 20), startTime + duration * 0.85);
+    });
   }
 }
 
@@ -694,16 +741,23 @@ export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8, inst
   playSynth(ctx, freq, ctx.currentTime, duration, gain, inst);
 }
 
-export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, velocity = 0.8, instrument, volume = 1) {
+export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, velocity = 0.8, instrument, volume = 1, noteProps) {
   const ctx = getAudioContext();
   const inst = instrument || currentInstrument;
   const gain = 0.3 * velocity * volume;
+
+  // Ghost note
+  if (noteProps && noteProps.ghost) {
+    synthGhostNote(ctx, startTime, gain);
+    return;
+  }
+
   if (inst === 'drums') {
     synthDrum(ctx, stringIndex, startTime, gain);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
-  playSynth(ctx, freq, startTime, duration, gain, inst);
+  playSynth(ctx, freq, startTime, duration, gain, inst, noteProps);
 }
 
 export function playClickAtTime(time, accent = false) {

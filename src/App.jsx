@@ -408,6 +408,44 @@ function App() {
           setSelectedNotes(new Set());
         }
       }
+      if (matchesHotkey(e, hk.toggleGhost)) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          setNotes(prev => prev.map((n, i) =>
+            selectedNotesRef.current.has(i) ? { ...n, ghost: !n.ghost } : n
+          ));
+        }
+      }
+      if (matchesHotkey(e, hk.bendUp)) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          setNotes(prev => prev.map((n, i) =>
+            selectedNotesRef.current.has(i) ? { ...n, bend: Math.min(3, (n.bend || 0) + 0.5) } : n
+          ));
+        }
+      }
+      if (matchesHotkey(e, hk.bendDown)) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          setNotes(prev => prev.map((n, i) =>
+            selectedNotesRef.current.has(i) ? { ...n, bend: Math.max(0, (n.bend || 0) - 0.5) } : n
+          ));
+        }
+      }
+      if (matchesHotkey(e, hk.toggleSlide)) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          setNotes(prev => prev.map((n, i) => {
+            if (!selectedNotesRef.current.has(i)) return n;
+            if (n.slideTo != null) return { ...n, slideTo: undefined };
+            // Find the next note on the same string after this one
+            const nextOnString = prev.filter(other =>
+              other.stringIndex === n.stringIndex && other.beat > n.beat
+            ).sort((a, b) => a.beat - b.beat)[0];
+            return { ...n, slideTo: nextOnString ? nextOnString.fret : Math.min(NUM_FRETS, n.fret + 2) };
+          }));
+        }
+      }
       // Fingering: shift selected notes to adjacent string, same pitch (only in fingering mode)
       if (fingeringModeRef.current && (matchesHotkey(e, hk.fingerUp) || matchesHotkey(e, hk.fingerDown))) {
         if (selectedNotesRef.current.size > 0) {
@@ -670,7 +708,7 @@ function App() {
             if (note.beat >= beat && note.beat < beat + 1) {
               const offset = (note.beat - beat) * colDur;
               const noteDur = (note.duration || 1) * colDur;
-              playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8, track.instrument, track.volume);
+              playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8, track.instrument, track.volume, note);
             }
           });
         });
