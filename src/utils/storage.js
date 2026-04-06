@@ -1,5 +1,6 @@
 import { compressToEncodedURIComponent, decompressFromEncodedURIComponent } from 'lz-string';
 import { NUM_BARS, SUBDIVISIONS, BPM } from './constants';
+import { loadCustomPresets, saveCustomPreset } from './audio';
 
 const STORAGE_KEY = 'guitar-roll-sessions';
 const SCHEMES_KEY = 'guitar-roll-color-schemes';
@@ -35,6 +36,7 @@ export function getSessionState(appState) {
     barSubdivisions: appState.barSubdivisions,
     activeColorScheme: appState.activeColorScheme || null,
     colorSchemes: listColorSchemes(),
+    synthPresets: loadCustomPresets(),
   };
 }
 

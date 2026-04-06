@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { INSTRUMENTS } from '../utils/audio';
+import { getAllInstruments } from '../utils/audio';
 
 export default function TrackStrip({
   tracks, activeTrackId, onSwitchTrack,
@@ -25,7 +25,8 @@ export default function TrackStrip({
     <div className="track-strip">
       {tracks.map(track => {
         const isActive = track.id === activeTrackId;
-        const instLabel = INSTRUMENTS[track.instrument]?.label || track.instrument;
+        const allInst = getAllInstruments();
+        const instLabel = allInst[track.instrument]?.label || track.instrument;
         return (
           <div
             key={track.id}

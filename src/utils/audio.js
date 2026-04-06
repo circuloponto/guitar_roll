@@ -53,7 +53,7 @@ export function getNoteName(stringIndex, fret) {
 
 let currentInstrument = 'clean-electric';
 
-export const INSTRUMENTS = {
+export const BUILTIN_INSTRUMENTS = {
   'clean-electric': { label: 'Clean Electric' },
   'acoustic': { label: 'Acoustic Guitar' },
   'piano': { label: 'Piano' },
@@ -62,6 +62,42 @@ export const INSTRUMENTS = {
   'pluck': { label: 'Pluck / Harp' },
   'drums': { label: 'Drums' },
 };
+
+const HIDDEN_PRESETS_KEY = 'guitar-roll-hidden-presets';
+
+export function loadHiddenPresets() {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_PRESETS_KEY)) || []; }
+  catch { return []; }
+}
+
+export function hidePreset(id) {
+  const hidden = loadHiddenPresets();
+  if (!hidden.includes(id)) {
+    hidden.push(id);
+    localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify(hidden));
+  }
+}
+
+export function unhidePreset(id) {
+  const hidden = loadHiddenPresets().filter(h => h !== id);
+  localStorage.setItem(HIDDEN_PRESETS_KEY, JSON.stringify(hidden));
+}
+
+export function getAllInstruments() {
+  const custom = loadCustomPresets();
+  const hidden = loadHiddenPresets();
+  const all = {};
+  Object.entries(BUILTIN_INSTRUMENTS).forEach(([id, inst]) => {
+    if (!hidden.includes(id)) all[id] = inst;
+  });
+  Object.entries(custom).forEach(([id, p]) => {
+    all[id] = { label: p.name || id };
+  });
+  return all;
+}
+
+// Keep backward compat
+export const INSTRUMENTS = BUILTIN_INSTRUMENTS;
 
 export function setInstrument(id) {
   currentInstrument = id;
@@ -403,6 +439,200 @@ function drumCrash(ctx, t, gain) {
   noise.stop(t + 0.61);
 }
 
+// ===== Parametric synth engine =====
+
+export function defaultSynthParams() {
+  return {
+    name: 'Custom',
+    oscillators: [
+      { type: 'triangle', detune: 0, gain: 1.0 },
+    ],
+    filter: { type: 'lowpass', cutoff: 3000, resonance: 1, envAmount: 0.5 },
+    envelope: { attack: 0.005, decay: 0.1, sustain: 0.5, release: 0.15 },
+    tremolo: { rate: 0, depth: 0 },   // rate in Hz, depth 0-1
+    vibrato: { rate: 0, depth: 0 },   // rate in Hz, depth in cents
+  };
+}
+
+// Built-in preset configs (read-only, can be duplicated)
+export const SYNTH_PRESETS = {
+  'clean-electric': {
+    name: 'Clean Electric', builtIn: true,
+    oscillators: [
+      { type: 'triangle', detune: 0, gain: 1.0 },
+      { type: 'sine', detune: 1200, gain: 0.5 },
+    ],
+    filter: { type: 'lowpass', cutoff: 2000, resonance: 1, envAmount: 0.8 },
+    envelope: { attack: 0.005, decay: 0.04, sustain: 0.48, release: 0.15 },
+  },
+  'acoustic': {
+    name: 'Acoustic Guitar', builtIn: true,
+    oscillators: [
+      { type: 'triangle', detune: 0, gain: 1.0 },
+      { type: 'sine', detune: 1200, gain: 0.5 },
+      { type: 'sine', detune: 1902, gain: 0.25 },
+      { type: 'sine', detune: 2400, gain: 0.12 },
+      { type: 'sine', detune: 2786, gain: 0.06 },
+    ],
+    filter: { type: 'lowpass', cutoff: 3000, resonance: 1.5, envAmount: 0.5 },
+    envelope: { attack: 0.003, decay: 0.08, sustain: 0.3, release: 0.2 },
+  },
+  'piano': {
+    name: 'Piano', builtIn: true,
+    oscillators: [
+      { type: 'sine', detune: 0, gain: 1.0 },
+      { type: 'sine', detune: 1200, gain: 0.6 },
+      { type: 'sine', detune: 1902, gain: 0.2 },
+      { type: 'sine', detune: 2400, gain: 0.08 },
+    ],
+    filter: { type: 'lowpass', cutoff: 5000, resonance: 0.5, envAmount: 0.2 },
+    envelope: { attack: 0.005, decay: 0.05, sustain: 0.7, release: 0.2 },
+  },
+  'bass': {
+    name: 'Bass', builtIn: true,
+    oscillators: [
+      { type: 'sawtooth', detune: 0, gain: 1.0 },
+      { type: 'square', detune: 0, gain: 0.5 },
+    ],
+    filter: { type: 'lowpass', cutoff: 800, resonance: 4, envAmount: 0.4 },
+    envelope: { attack: 0.008, decay: 0.06, sustain: 0.6, release: 0.15 },
+  },
+  'synth-pad': {
+    name: 'Synth Pad', builtIn: true,
+    oscillators: [
+      { type: 'sawtooth', detune: -6, gain: 0.2 },
+      { type: 'sawtooth', detune: -2, gain: 0.2 },
+      { type: 'sawtooth', detune: 0, gain: 0.2 },
+      { type: 'sawtooth', detune: 2, gain: 0.2 },
+      { type: 'sawtooth', detune: 7, gain: 0.2 },
+    ],
+    filter: { type: 'lowpass', cutoff: 1200, resonance: 0.7, envAmount: 0.1 },
+    envelope: { attack: 0.2, decay: 0.1, sustain: 0.8, release: 0.15 },
+  },
+  'pluck': {
+    name: 'Pluck / Harp', builtIn: true,
+    oscillators: [
+      { type: 'triangle', detune: 0, gain: 1.0 },
+    ],
+    filter: { type: 'lowpass', cutoff: 5000, resonance: 1, envAmount: 0.9 },
+    envelope: { attack: 0.002, decay: 0.3, sustain: 0.0, release: 0.1 },
+  },
+};
+
+// Custom presets stored in localStorage
+const CUSTOM_PRESETS_KEY = 'guitar-roll-synth-presets';
+
+export function loadCustomPresets() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PRESETS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+export function saveCustomPreset(id, params) {
+  const presets = loadCustomPresets();
+  presets[id] = params;
+  localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets));
+}
+
+export function deleteCustomPreset(id) {
+  const presets = loadCustomPresets();
+  delete presets[id];
+  localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets));
+}
+
+export function getSynthParams(instrumentId) {
+  if (SYNTH_PRESETS[instrumentId]) return SYNTH_PRESETS[instrumentId];
+  const custom = loadCustomPresets();
+  if (custom[instrumentId]) return custom[instrumentId];
+  return null;
+}
+
+// Generic parametric synth — builds Web Audio graph from params
+function synthParametric(ctx, freq, startTime, duration, gain, params) {
+  const env = params.envelope;
+  const flt = params.filter;
+  const trem = params.tremolo || { rate: 0, depth: 0 };
+  const vib = params.vibrato || { rate: 0, depth: 0 };
+  const gainNode = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  const endTime = startTime + duration + 0.05;
+
+  // Oscillators
+  const oscs = [];
+  params.oscillators.forEach(oscDef => {
+    const osc = ctx.createOscillator();
+    osc.type = oscDef.type;
+    osc.frequency.setValueAtTime(freq, startTime);
+    osc.detune.setValueAtTime(oscDef.detune || 0, startTime);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(oscDef.gain || 1, startTime);
+    osc.connect(oscGain);
+    oscGain.connect(filter);
+    osc.start(startTime);
+    osc.stop(endTime);
+    oscs.push(osc);
+  });
+
+  // Vibrato LFO — modulates oscillator frequency via detune
+  if (vib.rate > 0 && vib.depth > 0) {
+    const vibratoLfo = ctx.createOscillator();
+    const vibratoGain = ctx.createGain();
+    vibratoLfo.type = 'sine';
+    vibratoLfo.frequency.setValueAtTime(vib.rate, startTime);
+    vibratoGain.gain.setValueAtTime(vib.depth, startTime); // depth in cents
+    vibratoLfo.connect(vibratoGain);
+    oscs.forEach(osc => vibratoGain.connect(osc.detune));
+    vibratoLfo.start(startTime);
+    vibratoLfo.stop(endTime);
+  }
+
+  // Filter
+  filter.type = flt.type || 'lowpass';
+  const cutoffStart = flt.cutoff + freq * (1 - flt.envAmount);
+  const cutoffEnd = Math.max(freq * 0.5, flt.cutoff * (1 - flt.envAmount));
+  filter.frequency.setValueAtTime(cutoffStart, startTime);
+  filter.frequency.exponentialRampToValueAtTime(Math.max(cutoffEnd, 20), startTime + duration * 0.8);
+  filter.Q.setValueAtTime(flt.resonance || 1, startTime);
+
+  // ADSR envelope
+  const attack = Math.min(env.attack, duration * 0.5);
+  const decay = Math.min(env.decay, duration - attack);
+  const sustainLevel = gain * env.sustain;
+  const releaseStart = Math.max(startTime + attack + decay, startTime + duration - env.release);
+
+  gainNode.gain.setValueAtTime(0, startTime);
+  gainNode.gain.linearRampToValueAtTime(gain, startTime + attack);
+  if (sustainLevel > 0.001) {
+    gainNode.gain.exponentialRampToValueAtTime(Math.max(sustainLevel, 0.001), startTime + attack + decay);
+  } else {
+    gainNode.gain.linearRampToValueAtTime(0, startTime + attack + decay);
+  }
+  gainNode.gain.setValueAtTime(Math.max(sustainLevel, 0.001), releaseStart);
+  gainNode.gain.linearRampToValueAtTime(0, startTime + duration);
+
+  filter.connect(gainNode);
+
+  // Tremolo LFO — modulates output gain
+  if (trem.rate > 0 && trem.depth > 0) {
+    const tremoloNode = ctx.createGain();
+    tremoloNode.gain.setValueAtTime(1, startTime);
+    const tremoloLfo = ctx.createOscillator();
+    const tremoloDepth = ctx.createGain();
+    tremoloLfo.type = 'sine';
+    tremoloLfo.frequency.setValueAtTime(trem.rate, startTime);
+    tremoloDepth.gain.setValueAtTime(trem.depth, startTime); // 0-1 range
+    tremoloLfo.connect(tremoloDepth);
+    tremoloDepth.connect(tremoloNode.gain);
+    tremoloLfo.start(startTime);
+    tremoloLfo.stop(endTime);
+    gainNode.connect(tremoloNode);
+    tremoloNode.connect(getMasterOut());
+  } else {
+    gainNode.connect(getMasterOut());
+  }
+}
+
 // ===== Dispatch =====
 
 const SYNTH_MAP = {
@@ -416,6 +646,12 @@ const SYNTH_MAP = {
 
 function playSynth(ctx, freq, startTime, duration, gain, instrument) {
   const inst = instrument || currentInstrument;
+  // Check for custom preset first, then parametric built-in, then legacy
+  const customPresets = loadCustomPresets();
+  if (customPresets[inst]) {
+    synthParametric(ctx, freq, startTime, duration, gain, customPresets[inst]);
+    return;
+  }
   const fn = SYNTH_MAP[inst];
   if (fn) fn(ctx, freq, startTime, duration, gain);
 }

@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, setInstrument, getInstrument } from './utils/audio';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { stateFromUrl, saveColorScheme } from './utils/storage';
@@ -11,6 +11,7 @@ import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import DurationPicker from './components/DurationPicker';
 import TrackStrip from './components/TrackStrip';
+import SynthEditor from './components/SynthEditor';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
@@ -173,6 +174,8 @@ function App() {
   hotkeysRef.current = hotkeys;
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [showCheatSheet, setShowCheatSheet] = useState(false);
+  const [showSynthEditor, setShowSynthEditor] = useState(false);
+  const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
   const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
@@ -242,6 +245,12 @@ function App() {
       Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
         saveColorScheme(name, scheme);
       });
+    }
+    if (data.synthPresets) {
+      Object.entries(data.synthPresets).forEach(([id, preset]) => {
+        saveCustomPreset(id, preset);
+      });
+      setInstrumentList(getAllInstruments());
     }
   }, [setTracksTracked]);
 
@@ -739,10 +748,17 @@ function App() {
             ));
           }}
         >
-          {Object.entries(INSTRUMENTS).map(([id, inst]) => (
+          {Object.entries(instrumentList).map(([id, inst]) => (
             <option key={id} value={id}>{inst.label}</option>
           ))}
         </select>
+        <button
+          className="tool-btn"
+          onClick={() => setShowSynthEditor(true)}
+          title="Edit synth parameters"
+        >
+          Synth
+        </button>
         <button
           className="tool-btn"
           onClick={() => setShowSettings(true)}
@@ -1015,6 +1031,21 @@ function App() {
       )}
 
       {/* Settings Modal */}
+      {showSynthEditor && (
+        <SynthEditor
+          currentInstrument={activeTrack?.instrument || instrument}
+          onInstrumentChange={(id) => {
+            setInstrument(id);
+            setInstrumentState(id);
+            setTracksTracked(prev => prev.map(t =>
+              t.id === activeTrackId ? { ...t, instrument: id } : t
+            ));
+            setInstrumentList(getAllInstruments());
+          }}
+          onClose={() => { setShowSynthEditor(false); setInstrumentList(getAllInstruments()); }}
+        />
+      )}
+
       {showSettings && (
         <SettingsModal
           appState={{
