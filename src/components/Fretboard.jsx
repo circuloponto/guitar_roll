@@ -23,7 +23,7 @@ function cellCenterPx(cell) {
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -196,9 +196,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const dx = moveE.clientX - d.startX;
           const dBeats = dx / CELL_WIDTH;
           const rawDuration = d.startDuration + dBeats;
+          const snap = snapUnit;
           const newDuration = isFree
             ? Math.max(0.1, Math.min(totalBeats - d.noteBeat, rawDuration))
-            : Math.max(1, Math.min(totalBeats - d.noteBeat, Math.round(rawDuration)));
+            : Math.max(snap, Math.min(totalBeats - d.noteBeat, Math.round(rawDuration / snap) * snap));
           setDurationDrag({ stringIndex: d.stringIndex, fret: d.fret, duration: newDuration });
           onDurationChange(d.stringIndex, d.fret, newDuration);
         };
@@ -240,9 +241,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const dx = moveE.clientX - d.startX;
           const dBeats = dx / CELL_WIDTH;
           const rawBeat = d.startBeat + dBeats;
+          const snap = snapUnit;
           const newBeat = isFree
             ? Math.max(0, Math.min(totalBeats - (d.noteDuration || 1), rawBeat))
-            : Math.max(0, Math.min(totalBeats - (d.noteDuration || 1), Math.round(rawBeat)));
+            : Math.max(0, Math.min(totalBeats - (d.noteDuration || 1), Math.round(rawBeat / snap) * snap));
           if (newBeat !== d.currentBeat) {
             onBeatChange(d.stringIndex, d.fret, d.currentBeat, newBeat);
             d.currentBeat = newBeat;

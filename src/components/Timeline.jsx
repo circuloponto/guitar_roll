@@ -43,7 +43,7 @@ export default function Timeline({
   defaultVelocity = 0.8,
   noteDuration = 1,
   snapUnit = 1,
-  tuplet = 1,
+  subdivisions = 1,
   hotkeys,
   hoverPreviewPiano = false,
   hoverPreviewNotes = false,
@@ -886,10 +886,10 @@ export default function Timeline({
           ))}
 
           {/* Tuplet subdivision lines */}
-          {tuplet > 1 && Array.from({ length: totalCols }, (_, beat) => {
+          {subdivisions > 1 && Array.from({ length: totalCols }, (_, beat) => {
             const lines = [];
-            for (let t = 1; t < tuplet; t++) {
-              const subBeat = beat + (t / tuplet);
+            for (let t = 1; t < subdivisions; t++) {
+              const subBeat = beat + (t / subdivisions);
               if (subBeat >= totalCols) break;
               lines.push(
                 <div
@@ -904,7 +904,7 @@ export default function Timeline({
 
           {/* Selected beat highlight */}
           {selectedBeat !== null && (
-            (freeMode && selectedBeat % 1 !== 0) || (tuplet > 1) ? (
+            (freeMode && selectedBeat % 1 !== 0) || (subdivisions > 1) ? (
               <div
                 className="timeline-selected-col"
                 style={{

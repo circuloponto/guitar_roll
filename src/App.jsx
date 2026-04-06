@@ -9,7 +9,6 @@ import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
-import DurationPicker from './components/DurationPicker';
 import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
@@ -144,15 +143,14 @@ function App() {
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
-  const [baseNoteDuration, setBaseNoteDuration] = useState(1);
-  const [tuplet, setTuplet] = useState(1);
-  const [durationOverride, setDurationOverride] = useState(null);
-  const computedDuration = tuplet <= 1 ? baseNoteDuration : baseNoteDuration / tuplet;
-  const noteDuration = durationOverride != null ? durationOverride : computedDuration;
+  const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
+  const [noteMultiplier, setNoteMultiplier] = useState(1); // how many subdivisions per note
+  const snapUnit = 1 / subdivisions; // smallest grid step
+  const noteDuration = noteMultiplier / subdivisions; // actual note duration in beats
   const noteDurationRef = useRef(noteDuration);
   noteDurationRef.current = noteDuration;
-  const tupletRef = useRef(tuplet);
-  tupletRef.current = tuplet;
+  const snapUnitRef = useRef(snapUnit);
+  snapUnitRef.current = snapUnit;
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
@@ -245,7 +243,8 @@ function App() {
     if (data.loopEnd !== undefined) setLoopEnd(data.loopEnd);
     if (data.stringColors !== undefined) setStringColors(data.stringColors);
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
-    if (data.noteDuration !== undefined) setBaseNoteDuration(data.noteDuration);
+    if (data.subdivisions !== undefined) setSubdivisions(data.subdivisions);
+    if (data.noteMultiplier !== undefined) setNoteMultiplier(data.noteMultiplier);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
@@ -286,12 +285,12 @@ function App() {
         tracks: tracksRef.current,
         bpm, loop, loopStart, loopEnd,
         stringColors, synesthesia, activeColorScheme,
-        projectName, noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
+        projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature,
       });
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, baseNoteDuration, metronome, barSubdivisions, timeSignature]);
+  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -317,7 +316,7 @@ function App() {
             return prev.length > 0 ? prev[prev.length - 1] : b;
           });
         } else {
-          const step = tupletRef.current > 1 ? noteDurationRef.current : 1;
+          const step = snapUnitRef.current;
           setSelectedBeat(b => Math.max(0, b - step));
         }
       }
@@ -331,7 +330,7 @@ function App() {
             return next.length > 0 ? next[0] : b;
           });
         } else {
-          const step = tupletRef.current > 1 ? noteDurationRef.current : 1;
+          const step = snapUnitRef.current;
           setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
         }
       }
@@ -491,17 +490,20 @@ function App() {
     });
   }, [selectedBeat]);
 
-  const handleSetDuration = useCallback((base, tup) => {
-    setBaseNoteDuration(base);
-    setTuplet(tup);
-    setDurationOverride(null);
-    const dur = tup <= 1 ? base : base / tup;
+  const handleSetSubdivisions = useCallback((subs) => {
+    setSubdivisions(subs);
+    setNoteMultiplier(1);
+  }, []);
+
+  const handleSetMultiplier = useCallback((mult) => {
+    setNoteMultiplier(mult);
     if (selectedNotes.size > 0) {
+      const dur = mult / subdivisions;
       setNotes(prev => prev.map((n, i) =>
         selectedNotes.has(i) ? { ...n, duration: dur } : n
       ));
     }
-  }, [selectedNotes]);
+  }, [selectedNotes, subdivisions]);
 
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
@@ -897,13 +899,27 @@ function App() {
           Clear
         </button>
         <span className="toolbar-separator" />
-        <DurationPicker
-          baseNoteDuration={baseNoteDuration}
-          tuplet={tuplet}
-          noteDuration={noteDuration}
-          durationOverride={durationOverride}
-          onChange={handleSetDuration}
-        />
+        <div className="subdiv-picker">
+          <span className="toolbar-label">Div:</span>
+          <input
+            type="number"
+            className="bpm-input"
+            value={subdivisions}
+            min={1}
+            max={32}
+            onChange={(e) => handleSetSubdivisions(Math.max(1, Math.min(32, Number(e.target.value) || 1)))}
+          />
+          <span className="toolbar-label">x</span>
+          <input
+            type="number"
+            className="bpm-input"
+            value={noteMultiplier}
+            min={1}
+            max={subdivisions * 4}
+            onChange={(e) => handleSetMultiplier(Math.max(1, Number(e.target.value) || 1))}
+          />
+          <span style={{ fontSize: 10, color: '#888' }}>={noteDuration.toFixed(3)}</span>
+        </div>
       </div>
       <TrackStrip
         tracks={tracks}
@@ -996,6 +1012,7 @@ function App() {
           hotkeys={hotkeys}
           hoverPreview={hoverPreview.fretboard}
           hoverVolume={hoverPreview.volume}
+          snapUnit={snapUnit}
         />
         <Timeline
           notes={notes}
@@ -1036,13 +1053,17 @@ function App() {
           machineGunMode={machineGunMode}
           defaultVelocity={defaultVelocity}
           noteDuration={noteDuration}
-          snapUnit={computedDuration}
-          tuplet={tuplet}
+          snapUnit={snapUnit}
+          subdivisions={subdivisions}
           hotkeys={hotkeys}
           hoverPreviewPiano={hoverPreview.pianoRoll}
           hoverPreviewNotes={hoverPreview.timelineNotes}
           hoverVolume={hoverPreview.volume}
-          onResizeDuration={setDurationOverride}
+          onResizeDuration={(dur) => {
+            // Convert resized duration to multiplier
+            const mult = Math.max(1, Math.round(dur / snapUnit));
+            setNoteMultiplier(mult);
+          }}
           chordPreview={chordPreview}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
@@ -1122,7 +1143,7 @@ function App() {
           appState={{
             tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            projectName, noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
+            projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
