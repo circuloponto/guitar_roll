@@ -16,15 +16,18 @@ let masterOut = null;
 function getAudioContext() {
   if (!audioCtx) {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    // Master compressor to prevent clipping when multiple notes play simultaneously
+    // Master limiter chain to prevent clipping on chords
+    const limiterGain = audioCtx.createGain();
+    limiterGain.gain.setValueAtTime(0.6, audioCtx.currentTime);
     const comp = audioCtx.createDynamicsCompressor();
-    comp.threshold.setValueAtTime(-12, audioCtx.currentTime);
-    comp.knee.setValueAtTime(6, audioCtx.currentTime);
-    comp.ratio.setValueAtTime(8, audioCtx.currentTime);
-    comp.attack.setValueAtTime(0.003, audioCtx.currentTime);
-    comp.release.setValueAtTime(0.1, audioCtx.currentTime);
+    comp.threshold.setValueAtTime(-18, audioCtx.currentTime);
+    comp.knee.setValueAtTime(4, audioCtx.currentTime);
+    comp.ratio.setValueAtTime(12, audioCtx.currentTime);
+    comp.attack.setValueAtTime(0.001, audioCtx.currentTime);
+    comp.release.setValueAtTime(0.05, audioCtx.currentTime);
+    limiterGain.connect(comp);
     comp.connect(audioCtx.destination);
-    masterOut = comp;
+    masterOut = limiterGain;
   }
   return audioCtx;
 }
@@ -59,6 +62,7 @@ export const BUILTIN_INSTRUMENTS = {
   'piano': { label: 'Piano' },
   'bass': { label: 'Bass' },
   'synth-pad': { label: 'Synth Pad' },
+  'organ': { label: 'Organ' },
   'pluck': { label: 'Pluck / Harp' },
   'drums': { label: 'Drums' },
 };
@@ -509,6 +513,20 @@ export const SYNTH_PRESETS = {
     filter: { type: 'lowpass', cutoff: 1200, resonance: 0.7, envAmount: 0.1 },
     envelope: { attack: 0.2, decay: 0.1, sustain: 0.8, release: 0.15 },
   },
+  'organ': {
+    name: 'Organ', builtIn: true,
+    oscillators: [
+      { type: 'sine', detune: -1200, gain: 0.5 },
+      { type: 'sine', detune: 0, gain: 1.0 },
+      { type: 'sine', detune: 1200, gain: 0.8 },
+      { type: 'sine', detune: 1902, gain: 0.6 },
+      { type: 'sine', detune: 2400, gain: 0.4 },
+    ],
+    filter: { type: 'lowpass', cutoff: 8000, resonance: 0.5, envAmount: 0 },
+    envelope: { attack: 0.005, decay: 0.01, sustain: 1.0, release: 0.05 },
+    tremolo: { rate: 5.5, depth: 0.3 },
+    vibrato: { rate: 5.5, depth: 15 },
+  },
   'pluck': {
     name: 'Pluck / Harp', builtIn: true,
     oscillators: [
@@ -558,7 +576,9 @@ function synthParametric(ctx, freq, startTime, duration, gain, params) {
   const filter = ctx.createBiquadFilter();
   const endTime = startTime + duration + 0.05;
 
-  // Oscillators
+  // Oscillators — normalize total gain so stacked oscs don't clip
+  const totalOscGain = params.oscillators.reduce((s, o) => s + (o.gain || 1), 0) || 1;
+  const normFactor = 1 / totalOscGain;
   const oscs = [];
   params.oscillators.forEach(oscDef => {
     const osc = ctx.createOscillator();
@@ -566,7 +586,7 @@ function synthParametric(ctx, freq, startTime, duration, gain, params) {
     osc.frequency.setValueAtTime(freq, startTime);
     osc.detune.setValueAtTime(oscDef.detune || 0, startTime);
     const oscGain = ctx.createGain();
-    oscGain.gain.setValueAtTime(oscDef.gain || 1, startTime);
+    oscGain.gain.setValueAtTime((oscDef.gain || 1) * normFactor, startTime);
     osc.connect(oscGain);
     oscGain.connect(filter);
     osc.start(startTime);
@@ -646,14 +666,20 @@ const SYNTH_MAP = {
 
 function playSynth(ctx, freq, startTime, duration, gain, instrument) {
   const inst = instrument || currentInstrument;
-  // Check for custom preset first, then parametric built-in, then legacy
+  // Check for custom preset first
   const customPresets = loadCustomPresets();
   if (customPresets[inst]) {
     synthParametric(ctx, freq, startTime, duration, gain, customPresets[inst]);
     return;
   }
+  // Legacy hardcoded synth
   const fn = SYNTH_MAP[inst];
-  if (fn) fn(ctx, freq, startTime, duration, gain);
+  if (fn) { fn(ctx, freq, startTime, duration, gain); return; }
+  // Built-in parametric preset (no legacy function)
+  if (SYNTH_PRESETS[inst]) {
+    synthParametric(ctx, freq, startTime, duration, gain, SYNTH_PRESETS[inst]);
+    return;
+  }
 }
 
 export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8, instrument, volume = 1) {
