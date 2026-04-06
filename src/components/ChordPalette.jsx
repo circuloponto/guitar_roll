@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { getNoteName, getNoteFrequency } from '../utils/audio';
-import { getMidiNote, closestComboForPitch } from '../utils/pitchMap';
-import { NUM_STRINGS, NUM_FRETS } from '../utils/constants';
+import { getNoteName } from '../utils/audio';
+import { getMidiNote } from '../utils/pitchMap';
+import { NUM_FRETS } from '../utils/constants';
 import { loadChordLibrary, saveChordLibrary } from '../utils/storage';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -38,23 +38,19 @@ function transposeShape(voices, semitoneDelta) {
 }
 
 export default function ChordPalette({ notes, selectedNotes, selectedBeat, onStampChord, onPreviewChange, chordRoot, noteDuration = 1 }) {
-  // Migrate old format chords (notes array) to new format (intervals) on load
+  // Migrate old format chords on load
   const [chords, setChords] = useState(() => {
     const raw = loadChordLibrary();
-    return raw.filter(c => c.intervals || c.notes).map(c => {
-      if (c.intervals) return c;
-      // Migrate: old format had absolute notes, convert to intervals
-      const midis = c.notes.map(n => getMidiNote(n.stringIndex, n.fret));
-      const rootMidi = Math.min(...midis);
-      return {
-        ...c,
-        intervals: c.notes.map((n, i) => ({
-          semitones: midis[i] - rootMidi,
-          duration: n.duration || 1,
-          velocity: n.velocity ?? 0.8,
-          beatOffset: n.beatOffset || 0,
-        })),
-      };
+    return raw.filter(c => c.voices || c.intervals || c.notes).map(c => {
+      if (c.voices) return c; // current format
+      // Migrate from old formats
+      const srcNotes = c.intervals || c.notes || [];
+      const noteList = srcNotes.map(n => {
+        if (n.stringIndex !== undefined) return n;
+        return { stringIndex: 0, fret: n.semitones || 0, duration: n.duration || 1, velocity: n.velocity ?? 0.8, beatOffset: n.beatOffset || 0 };
+      });
+      const { rootMidi, voices } = captureChordShape(noteList);
+      return { ...c, voices, rootMidi };
     });
   });
   const [editingId, setEditingId] = useState(null);
@@ -94,31 +90,44 @@ export default function ChordPalette({ notes, selectedNotes, selectedBeat, onSta
   };
 
   // Stamp chord: transpose intervals to selected root and find voicing
-  // Compute root MIDI from hoveredNote or selector
+  // Compute root MIDI from clicked piano key or selector
   const getRootMidi = () => {
     if (chordRoot) return getMidiNote(chordRoot.stringIndex, chordRoot.fret);
     return 48 + rootNote; // C3 + offset
   };
 
-  // Compute preview voicing for a chord (used for preview + stamp)
-  const computeVoicing = (chord) => {
-    if (!chord.intervals || chord.intervals.length === 0) return null;
-    const rootMidi = getRootMidi();
-    const midiNotes = chord.intervals.map(iv => rootMidi + iv.semitones);
-    const voicing = voiceChord(midiNotes);
-    if (!voicing) return null;
-    return voicing.map((combo, i) => ({
-      stringIndex: combo.stringIndex,
-      fret: combo.fret,
+  // Transpose chord shape to target root, preserving voicing
+  const computeTransposed = (chord) => {
+    const voices = chord.voices;
+    if (!voices || voices.length === 0) return null;
+    if (typeof voices[0].fret !== 'number') return null;
+    const targetMidi = getRootMidi();
+    const originalRoot = chord.rootMidi;
+    if (typeof originalRoot !== 'number') {
+      // No root stored — stamp as-is with current noteDuration
+      return voices.map(v => ({
+        stringIndex: v.stringIndex,
+        fret: v.fret,
+        duration: noteDuration,
+        velocity: v.velocity ?? 0.8,
+        beatOffset: v.beatOffset || 0,
+      }));
+    }
+    const delta = targetMidi - originalRoot;
+    const transposed = transposeShape(voices, delta);
+    if (!transposed) return null;
+    return transposed.map(v => ({
+      stringIndex: v.stringIndex,
+      fret: v.fret,
       duration: noteDuration,
-      velocity: chord.intervals[i].velocity,
-      beatOffset: chord.intervals[i].beatOffset,
+      velocity: v.velocity ?? 0.8,
+      beatOffset: v.beatOffset || 0,
     }));
   };
 
   const handleStamp = (chord) => {
-    const stampNotes = computeVoicing(chord);
-    if (!stampNotes) return;
+    const stampNotes = computeTransposed(chord);
+    if (!stampNotes || stampNotes.length === 0) return;
     onStampChord(stampNotes);
   };
 
@@ -166,7 +175,7 @@ export default function ChordPalette({ notes, selectedNotes, selectedBeat, onSta
             <button
               className="chord-stamp-btn"
               onClick={() => handleStamp(chord)}
-              onMouseEnter={() => onPreviewChange && onPreviewChange(computeVoicing(chord))}
+              onMouseEnter={() => onPreviewChange && onPreviewChange(computeTransposed(chord))}
               onMouseLeave={() => onPreviewChange && onPreviewChange(null)}
               title={`Stamp as ${NOTE_NAMES[rootNote]} (or hovered note)`}
             >
@@ -189,7 +198,7 @@ export default function ChordPalette({ notes, selectedNotes, selectedBeat, onSta
                   {chord.name}
                 </span>
               )}
-              <span className="chord-note-count">{(chord.intervals || []).length}n</span>
+              <span className="chord-note-count">{(chord.voices || chord.intervals || []).length}n</span>
             </button>
             <button className="chord-delete-btn" onClick={() => handleDelete(chord.id)} title="Delete">x</button>
           </div>
