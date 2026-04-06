@@ -178,6 +178,7 @@ function App() {
   const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [showSynthEditor, setShowSynthEditor] = useState(false);
   const [chordPreview, setChordPreview] = useState(null);
+  const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
   const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
@@ -1033,15 +1034,22 @@ function App() {
           onResizeDuration={setDurationOverride}
           chordPreview={chordPreview}
         />
-        <ChordPalette
-          notes={notes}
-          selectedNotes={selectedNotes}
-          selectedBeat={selectedBeat}
-          chordRoot={chordRoot}
-          noteDuration={noteDuration}
-          onStampChord={handleStampChord}
-          onPreviewChange={setChordPreview}
-        />
+        <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
+          <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>
+            {chordPaletteOpen ? '>' : '<'}
+          </button>
+          {chordPaletteOpen && (
+            <ChordPalette
+              notes={notes}
+              selectedNotes={selectedNotes}
+              selectedBeat={selectedBeat}
+              chordRoot={chordRoot}
+              noteDuration={noteDuration}
+              onStampChord={handleStampChord}
+              onPreviewChange={setChordPreview}
+            />
+          )}
+        </div>
       </div>
 
       {/* Cheat Sheet Overlay */}
