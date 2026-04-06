@@ -36,6 +36,7 @@ export default function Timeline({
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop, setLoop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
+  chordRoot, setChordRoot,
   verticalScroll, setVerticalScroll,
   eraserMode = false,
   machineGunMode = false,
@@ -45,6 +46,7 @@ export default function Timeline({
   tuplet = 1,
   hotkeys,
   onResizeDuration,
+  chordPreview,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -774,13 +776,15 @@ export default function Timeline({
             {pianoRows.map((row, i) => {
               const isHovered = hoveredNote &&
                 noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
+              const isChordRoot = chordRoot &&
+                noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === row.pitchRow;
               const combos = pitchRowCombos(row.pitchRow);
               // Pick the combo with lowest fret (first position playing)
               const repCombo = combos.reduce((best, c) => (!best || c.fret < best.fret) ? c : best, null);
               return (
                 <div
                   key={i}
-                  className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
+                  className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''} ${isChordRoot ? 'chord-root' : ''}`}
                   style={{
                     height: ROW_HEIGHT,
                     borderTop: row.isC ? '1px solid #555' : undefined,
@@ -789,6 +793,16 @@ export default function Timeline({
                     if (repCombo) {
                       setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
                       playNote(repCombo.stringIndex, repCombo.fret, 0.15);
+                    }
+                  }}
+                  onClick={() => {
+                    if (repCombo && setChordRoot) {
+                      // Toggle: click same key to deselect
+                      if (chordRoot && noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === row.pitchRow) {
+                        setChordRoot(null);
+                      } else {
+                        setChordRoot({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
+                      }
                     }
                   }}
                 >
@@ -915,6 +929,20 @@ export default function Timeline({
               }}
             />
           )}
+
+          {/* Chord preview (blinking) */}
+          {chordPreview && selectedBeat !== null && !playing && chordPreview.map((cn, i) => (
+            <div
+              key={`cp-${i}`}
+              className="chord-preview-note"
+              style={{
+                left: beatToX(selectedBeat + (cn.beatOffset || 0), barSubdivisions, cellWidth),
+                top: rowTopPx(cn.stringIndex, cn.fret),
+                width: durationToWidth(selectedBeat + (cn.beatOffset || 0), cn.duration || noteDuration, barSubdivisions, cellWidth),
+                height: ROW_HEIGHT,
+              }}
+            />
+          ))}
 
           {/* Background track notes (dimmed, non-interactive) */}
           {backgroundNotes.map((note, i) => {

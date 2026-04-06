@@ -4,7 +4,7 @@ import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
-import { stateFromUrl, saveColorScheme } from './utils/storage';
+import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -12,6 +12,7 @@ import SettingsModal from './components/SettingsModal';
 import DurationPicker from './components/DurationPicker';
 import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
+import ChordPalette from './components/ChordPalette';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
@@ -173,8 +174,10 @@ function App() {
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
+  const [chordRoot, setChordRoot] = useState(null); // { stringIndex, fret } — locked by click on piano key
   const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [showSynthEditor, setShowSynthEditor] = useState(false);
+  const [chordPreview, setChordPreview] = useState(null);
   const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
@@ -252,16 +255,36 @@ function App() {
       });
       setInstrumentList(getAllInstruments());
     }
+    if (data.chordLibrary) {
+      saveChordLibrary(data.chordLibrary);
+    }
   }, [setTracksTracked]);
 
-  // Load from URL on mount
+  // Load from URL or autosave on mount
   useEffect(() => {
     const urlState = stateFromUrl();
     if (urlState) {
       applyState(urlState);
       window.history.replaceState(null, '', window.location.pathname);
+    } else {
+      const auto = loadAutosave();
+      if (auto) applyState(auto);
     }
   }, []);
+
+  // Autosave every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const state = getSessionState({
+        tracks: tracksRef.current,
+        bpm, loop, loopStart, loopEnd,
+        stringColors, synesthesia, activeColorScheme,
+        projectName, noteDuration: baseNoteDuration, metronome, barSubdivisions, timeSignature,
+      });
+      saveAutosave(state);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, baseNoteDuration, metronome, barSubdivisions, timeSignature]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -657,6 +680,23 @@ function App() {
     setSelectedNotes(new Set());
   }, []);
 
+  const handleStampChord = useCallback((chordNotes) => {
+    const beat = selectedBeat;
+    const newNotes = chordNotes.map(cn => ({
+      stringIndex: cn.stringIndex,
+      fret: cn.fret,
+      beat: beat + (cn.beatOffset || 0),
+      duration: cn.duration || noteDuration,
+      velocity: cn.velocity ?? defaultVelocity,
+    }));
+    setNotes(prev => {
+      // Remove existing notes at same string+beat positions
+      const removeKeys = new Set(newNotes.map(n => `${n.stringIndex}_${n.beat}`));
+      const filtered = prev.filter(n => !removeKeys.has(`${n.stringIndex}_${n.beat}`));
+      return [...filtered, ...newNotes];
+    });
+  }, [selectedBeat, noteDuration, defaultVelocity]);
+
   // Track management
   const handleAddTrack = useCallback(() => {
     const num = tracksRef.current.length + 1;
@@ -979,6 +1019,8 @@ function App() {
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
+          chordRoot={chordRoot}
+          setChordRoot={setChordRoot}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           eraserMode={eraserMode}
@@ -989,6 +1031,16 @@ function App() {
           tuplet={tuplet}
           hotkeys={hotkeys}
           onResizeDuration={setDurationOverride}
+          chordPreview={chordPreview}
+        />
+        <ChordPalette
+          notes={notes}
+          selectedNotes={selectedNotes}
+          selectedBeat={selectedBeat}
+          chordRoot={chordRoot}
+          noteDuration={noteDuration}
+          onStampChord={handleStampChord}
+          onPreviewChange={setChordPreview}
         />
       </div>
 

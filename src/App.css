@@ -139,6 +139,138 @@
   margin: 0 2px;
 }
 
+/* Chord Palette */
+.chord-palette {
+  width: 120px;
+  min-width: 120px;
+  border-left: 1px solid #333;
+  background: #111;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chord-palette-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.chord-palette-title {
+  font-size: 11px;
+  font-weight: bold;
+  color: #aaa;
+  flex: 1;
+}
+
+.chord-save-btn {
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.chord-save-btn:hover { color: #fff; border-color: #888; }
+
+.chord-root-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  padding: 4px 4px 2px;
+  border-bottom: 1px solid #333;
+}
+
+.chord-root-btn {
+  background: #1e1e1e;
+  color: #888;
+  border: 1px solid #333;
+  border-radius: 2px;
+  padding: 1px 0;
+  font-size: 9px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 16px;
+  text-align: center;
+}
+
+.chord-root-btn:hover { color: #fff; }
+.chord-root-btn.active { background: #2980b9; color: #fff; border-color: #3498db; }
+
+.chord-palette-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+  scrollbar-width: none;
+}
+
+.chord-palette-list::-webkit-scrollbar { display: none; }
+
+.chord-empty {
+  font-size: 10px;
+  color: #555;
+  padding: 8px 4px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.chord-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.chord-stamp-btn {
+  flex: 1;
+  background: #1e1e1e;
+  color: #ccc;
+  border: 1px solid #333;
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  text-align: left;
+}
+
+.chord-stamp-btn:hover { background: #2a2a2a; border-color: #555; }
+
+.chord-note-count {
+  font-size: 9px;
+  color: #666;
+}
+
+.chord-name-input {
+  font-size: 11px;
+  color: #fff;
+  background: #111;
+  border: 1px solid #3498db;
+  border-radius: 2px;
+  padding: 0 3px;
+  width: 60px;
+  outline: none;
+}
+
+.chord-delete-btn {
+  background: none;
+  color: #555;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.chord-delete-btn:hover { color: #e74c3c; }
+
 /* Track Strip */
 .track-strip {
   display: flex;
@@ -846,6 +978,21 @@
   z-index: 20;
 }
 
+.chord-preview-note {
+  position: absolute;
+  background: rgba(46, 204, 113, 0.25);
+  border: 1px solid rgba(46, 204, 113, 0.7);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 20;
+  animation: chord-blink 0.6s ease-in-out infinite;
+}
+
+@keyframes chord-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .playhead {
   position: absolute;
   top: 0;
@@ -943,6 +1090,14 @@
 
 .piano-key.black.hovered {
   background: #4488cc;
+}
+
+.piano-key.white.chord-root {
+  background: #a3d9a5;
+}
+
+.piano-key.black.chord-root {
+  background: #2e8b57;
 }
 
 /* Hotkeys */

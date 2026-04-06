@@ -4,6 +4,28 @@ import { loadCustomPresets, saveCustomPreset } from './audio';
 
 const STORAGE_KEY = 'guitar-roll-sessions';
 const SCHEMES_KEY = 'guitar-roll-color-schemes';
+const CHORDS_KEY = 'guitar-roll-chord-library';
+const AUTOSAVE_KEY = 'guitar-roll-autosave';
+
+// --- Chord library ---
+export function loadChordLibrary() {
+  try { return JSON.parse(localStorage.getItem(CHORDS_KEY)) || []; }
+  catch { return []; }
+}
+
+export function saveChordLibrary(chords) {
+  localStorage.setItem(CHORDS_KEY, JSON.stringify(chords));
+}
+
+// --- Autosave ---
+export function loadAutosave() {
+  try { return JSON.parse(localStorage.getItem(AUTOSAVE_KEY)); }
+  catch { return null; }
+}
+
+export function saveAutosave(state) {
+  localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(state));
+}
 
 // --- Session state shape ---
 function defaultSession() {
@@ -37,6 +59,7 @@ export function getSessionState(appState) {
     activeColorScheme: appState.activeColorScheme || null,
     colorSchemes: listColorSchemes(),
     synthPresets: loadCustomPresets(),
+    chordLibrary: loadChordLibrary(),
   };
 }
 
