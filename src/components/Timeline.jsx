@@ -82,12 +82,13 @@ export default function Timeline({
         setSelectedBeat(beat);
       }
     } else {
-      const col = xToBeat(x, barSubdivisions, cellWidth, true);
-      if (col >= 0 && col < totalCols) {
-        setSelectedBeat(col);
+      const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+      const snapped = Math.round(rawBeat / snapUnit) * snapUnit;
+      if (snapped >= 0 && snapped < totalCols) {
+        setSelectedBeat(snapped);
       }
     }
-  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth]);
+  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
     if (e.shiftKey) {
@@ -744,7 +745,8 @@ export default function Timeline({
 
                   const handleMove = (moveE) => {
                     const x = moveE.clientX - headerRect.left + scrollLeft;
-                    const beat = xToBeat(x, barSubdivisions, cellWidth, !freeMode);
+                    const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+                    const beat = freeMode ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit;
                     const clamped = Math.max(0, Math.min(totalCols - 1, beat));
                     setSelectedBeat(clamped);
                   };

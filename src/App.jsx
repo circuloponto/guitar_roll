@@ -172,6 +172,7 @@ function App() {
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [fretboardZoom, setFretboardZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
   const [hotkeys, setHotkeys] = useState(loadHotkeys);
@@ -1069,6 +1070,8 @@ function App() {
           hoverPreview={hoverPreview.fretboard}
           hoverVolume={hoverPreview.volume}
           snapUnit={snapUnit}
+          fretboardZoom={fretboardZoom}
+          setFretboardZoom={setFretboardZoom}
         />
         <Timeline
           notes={notes}

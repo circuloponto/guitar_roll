@@ -7,23 +7,18 @@ import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
 
 const PADDING_LEFT = 12;
 const PADDING_RIGHT = 8;
-const FRET_HEIGHT = 40; // pixels per fret cell
+const BASE_FRET_HEIGHT = 40; // pixels per fret cell at zoom 1
 
 // Total cells = NUM_FRETS + 1 (fret 0 is open string, frets 1..NUM_FRETS are normal)
 const TOTAL_CELLS = NUM_FRETS + 1;
-const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
-
-function cellTopPx(cell) {
-  return cell * FRET_HEIGHT;
-}
-
-function cellCenterPx(cell) {
-  return (cell + 0.5) * FRET_HEIGHT;
-}
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+  const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
+  const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
+  const cellTopPx = (cell) => cell * FRET_HEIGHT;
+  const cellCenterPx = (cell) => (cell + 0.5) * FRET_HEIGHT;
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -62,7 +57,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const getStringAndFret = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scrollTop = scrollRef.current ? scrollRef.current.scrollTop : 0;
+    const y = e.clientY - rect.top + scrollTop;
     const w = rect.width;
 
     const leftPx = w * PADDING_LEFT / 100;
@@ -78,7 +74,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
 
     return { stringIndex, fret };
-  }, []);
+  }, [FRET_HEIGHT]);
 
   const handleMouseMove = useCallback((e) => {
     const pos = getStringAndFret(e);
@@ -362,6 +358,26 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
   }, [playingNotes]);
 
+
+  // Ctrl+scroll zoom on fretboard
+  useEffect(() => {
+    const handleWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (!scrollRef.current) return;
+      const rect = scrollRef.current.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top || e.clientY > rect.bottom) return;
+      e.preventDefault();
+      if (setFretboardZoom) {
+        setFretboardZoom(z => {
+          const newZ = z * (1 - e.deltaY * 0.002);
+          return Math.max(0.5, Math.min(4, newZ));
+        });
+      }
+    };
+    document.addEventListener('wheel', handleWheel, { passive: false });
+    return () => document.removeEventListener('wheel', handleWheel);
+  }, [setFretboardZoom]);
 
   const noteName = hover ? getNoteName(hover.stringIndex, hover.fret) : null;
 
