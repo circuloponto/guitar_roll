@@ -23,7 +23,7 @@ function cellCenterPx(cell) {
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -85,12 +85,12 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     setHover(pos);
     setHoveredNote(pos);
 
-    // Preview sound on hover (only when position changes)
-    if (pos) {
+    // Preview sound on hover (only when position changes and enabled)
+    if (hoverPreview && pos) {
       const key = `${pos.stringIndex}_${pos.fret}`;
       if (lastPreviewRef.current !== key) {
         lastPreviewRef.current = key;
-        playNote(pos.stringIndex, pos.fret, 0.15);
+        playNote(pos.stringIndex, pos.fret, 0.15, hoverVolume);
       }
     } else {
       lastPreviewRef.current = null;

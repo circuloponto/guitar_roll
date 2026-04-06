@@ -45,6 +45,9 @@ export default function Timeline({
   snapUnit = 1,
   tuplet = 1,
   hotkeys,
+  hoverPreviewPiano = false,
+  hoverPreviewNotes = false,
+  hoverVolume = 0.3,
   onResizeDuration,
   chordPreview,
 }) {
@@ -792,7 +795,7 @@ export default function Timeline({
                   onMouseEnter={() => {
                     if (repCombo) {
                       setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
-                      playNote(repCombo.stringIndex, repCombo.fret, 0.15);
+                      if (hoverPreviewPiano) playNote(repCombo.stringIndex, repCombo.fret, 0.15, hoverVolume);
                     }
                   }}
                   onClick={() => {
@@ -1024,7 +1027,7 @@ export default function Timeline({
                 title={`${getNoteName(note.stringIndex, note.fret)} (${duration}) vel:${Math.round(vel * 100)}%`}
                 onClick={(e) => handleNoteClick(e, i)}
                 onContextMenu={(e) => handleNoteContextMenu(e, i)}
-                onMouseEnter={() => playNote(note.stringIndex, note.fret, 0.15)}
+                onMouseEnter={() => hoverPreviewNotes && playNote(note.stringIndex, note.fret, 0.15, hoverVolume)}
                 onMouseDown={(e) => handleNoteDragStart(e, i)}
               >
                 {getNoteName(note.stringIndex, note.fret)}

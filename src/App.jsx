@@ -165,6 +165,12 @@ function App() {
   const [machineGunMode, setMachineGunMode] = useState(false);
   const [defaultVelocity, setDefaultVelocity] = useState(0.8);
   const [eraserMode, setEraserMode] = useState(false);
+  const [hoverPreview, setHoverPreview] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('guitar-roll-hover-preview'));
+      return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3, ...saved };
+    } catch { return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3 }; }
+  });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -988,6 +994,8 @@ function App() {
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           hotkeys={hotkeys}
+          hoverPreview={hoverPreview.fretboard}
+          hoverVolume={hoverPreview.volume}
         />
         <Timeline
           notes={notes}
@@ -1031,6 +1039,9 @@ function App() {
           snapUnit={computedDuration}
           tuplet={tuplet}
           hotkeys={hotkeys}
+          hoverPreviewPiano={hoverPreview.pianoRoll}
+          hoverPreviewNotes={hoverPreview.timelineNotes}
+          hoverVolume={hoverPreview.volume}
           onResizeDuration={setDurationOverride}
           chordPreview={chordPreview}
         />
@@ -1115,6 +1126,8 @@ function App() {
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
+          hoverPreview={hoverPreview}
+          onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
           onHotkeysChange={setHotkeys}
         />
       )}

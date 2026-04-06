@@ -49,7 +49,7 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [schemes, setSchemes] = useState(listColorSchemes);
   const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
@@ -74,6 +74,38 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
       <div className="settings-overlay" onClick={onClose}>
         <div className="settings-popup" onClick={e => e.stopPropagation()}>
           <h2 className="settings-title">Settings</h2>
+
+          <div className="settings-section">
+            <h3>Hover Sound Preview</h3>
+            {[
+              { key: 'fretboard', label: 'Fretboard' },
+              { key: 'pianoRoll', label: 'Piano Roll Keys' },
+              { key: 'timelineNotes', label: 'Timeline Notes' },
+            ].map(({ key, label }) => (
+              <div key={key} className="settings-row">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={hoverPreview[key] || false}
+                    onChange={(e) => onHoverPreviewChange({ ...hoverPreview, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              </div>
+            ))}
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 13, color: '#ccc', marginRight: 8 }}>Volume</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round((hoverPreview.volume ?? 0.3) * 100)}
+                onChange={(e) => onHoverPreviewChange({ ...hoverPreview, volume: Number(e.target.value) / 100 })}
+                style={{ width: 120 }}
+              />
+              <span style={{ fontSize: 12, color: '#888', marginLeft: 6 }}>{Math.round((hoverPreview.volume ?? 0.3) * 100)}%</span>
+            </div>
+          </div>
 
           <div className="settings-section">
             <h3>Keyboard Shortcuts</h3>
