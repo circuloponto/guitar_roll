@@ -180,6 +180,8 @@ function App() {
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
   const [chordRoot, setChordRoot] = useState(null); // { stringIndex, fret } — locked by click on piano key
   const [showCheatSheet, setShowCheatSheet] = useState(false);
+  const [showSubdivDial, setShowSubdivDial] = useState(false);
+  const subdivDialRef = useRef(null);
   const [showSynthEditor, setShowSynthEditor] = useState(false);
   const [chordPreview, setChordPreview] = useState(null);
   const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
@@ -266,6 +268,18 @@ function App() {
     }
   }, [setTracksTracked]);
 
+  // Close subdiv dial on outside click
+  useEffect(() => {
+    if (!showSubdivDial) return;
+    const handleClick = (e) => {
+      if (subdivDialRef.current && !subdivDialRef.current.contains(e.target)) {
+        setShowSubdivDial(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showSubdivDial]);
+
   // Load from URL or autosave on mount
   useEffect(() => {
     const urlState = stateFromUrl();
@@ -316,7 +330,7 @@ function App() {
             return prev.length > 0 ? prev[prev.length - 1] : b;
           });
         } else {
-          const step = snapUnitRef.current;
+          const step = noteDurationRef.current;
           setSelectedBeat(b => Math.max(0, b - step));
         }
       }
@@ -330,7 +344,7 @@ function App() {
             return next.length > 0 ? next[0] : b;
           });
         } else {
-          const step = snapUnitRef.current;
+          const step = noteDurationRef.current;
           setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
         }
       }
@@ -899,48 +913,68 @@ function App() {
           Clear
         </button>
         <span className="toolbar-separator" />
-        <div className="subdiv-picker">
-          <div className="subdiv-dial" style={{ width: 38, height: 38 }}>
-            <svg width={38} height={38} viewBox="0 0 38 38">
-              <circle cx={19} cy={19} r={15} fill="none" stroke="#333" strokeWidth={2} />
-              {[1,2,3,4,5,6,7,8,9].map(val => {
-                const angle = ((val - 1) / 9) * 2 * Math.PI - Math.PI / 2;
-                const x = 19 + 15 * Math.cos(angle);
-                const y = 19 + 15 * Math.sin(angle);
-                const isActive = val === subdivisions;
-                return (
-                  <circle
-                    key={val}
-                    cx={x} cy={y}
-                    r={isActive ? 4 : 2.5}
-                    fill={isActive ? '#e67e22' : '#666'}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleSetSubdivisions(val)}
-                  />
-                );
-              })}
-            </svg>
-            <div
-              className="subdiv-center"
-              onClick={() => {
-                const val = prompt('Subdivisions (1-32):', String(subdivisions));
-                if (val) handleSetSubdivisions(Math.max(1, Math.min(32, Number(val) || 1)));
-              }}
-              title="Click to type subdivisions"
-            >
-              {subdivisions}
+        <div className="subdiv-picker" ref={subdivDialRef}>
+          <button
+            className={`subdiv-btn ${showSubdivDial ? 'open' : ''}`}
+            onClick={() => setShowSubdivDial(o => !o)}
+          >
+            ÷{subdivisions} x{noteMultiplier}
+            {noteDuration !== 1 && <span className="subdiv-val"> ={noteDuration.toFixed(3)}</span>}
+          </button>
+          {showSubdivDial && (
+            <div className="subdiv-popup">
+              <div className="subdiv-dial-large">
+                <svg width={120} height={120} viewBox="0 0 120 120">
+                  <circle cx={60} cy={60} r={48} fill="none" stroke="#333" strokeWidth={2} />
+                  {Array.from({ length: 16 }, (_, i) => i + 1).map(val => {
+                    const angle = ((val - 1) / 16) * 2 * Math.PI - Math.PI / 2;
+                    const x = 60 + 48 * Math.cos(angle);
+                    const y = 60 + 48 * Math.sin(angle);
+                    const isActive = val === subdivisions;
+                    return (
+                      <g key={val} style={{ cursor: 'pointer' }} onClick={() => { handleSetSubdivisions(val); }}>
+                        <circle cx={x} cy={y} r={isActive ? 10 : 7}
+                          fill={isActive ? '#e67e22' : '#2a2a2a'}
+                          stroke={isActive ? '#e67e22' : '#555'} strokeWidth={1}
+                        />
+                        <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                          fontSize={10} fontWeight="bold"
+                          fill={isActive ? '#000' : '#999'}
+                          style={{ pointerEvents: 'none' }}
+                        >{val}</text>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <input
+                  className="subdiv-center-input"
+                  type="number"
+                  value={subdivisions}
+                  min={1}
+                  max={64}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(64, Number(e.target.value) || 1));
+                    handleSetSubdivisions(v);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              <div className="subdiv-mult-row">
+                <span style={{ fontSize: 12, color: '#aaa' }}>Multiplier:</span>
+                <input
+                  type="number"
+                  className="subdiv-mult-input"
+                  value={noteMultiplier}
+                  min={1}
+                  max={subdivisions * 8}
+                  onChange={(e) => handleSetMultiplier(Math.max(1, Number(e.target.value) || 1))}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
             </div>
-          </div>
-          <span className="toolbar-label">x</span>
-          <input
-            type="number"
-            className="bpm-input"
-            value={noteMultiplier}
-            min={1}
-            max={subdivisions * 4}
-            onChange={(e) => handleSetMultiplier(Math.max(1, Number(e.target.value) || 1))}
-          />
-          {noteDuration !== 1 && <span style={{ fontSize: 10, color: '#888' }}>={noteDuration.toFixed(3)}</span>}
+          )}
         </div>
       </div>
       <TrackStrip
