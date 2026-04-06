@@ -57,8 +57,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const getStringAndFret = useCallback((e) => {
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
-    const scrollTop = scrollRef.current ? scrollRef.current.scrollTop : 0;
-    const y = e.clientY - rect.top + scrollTop;
+    const y = e.clientY - rect.top;
     const w = rect.width;
 
     const leftPx = w * PADDING_LEFT / 100;

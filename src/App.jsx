@@ -332,7 +332,14 @@ function App() {
           });
         } else {
           const step = noteDurationRef.current;
-          setSelectedBeat(b => Math.max(0, b - step));
+          setSelectedBeat(b => {
+            // If there's a note starting before current position, jump to its start
+            const notesAtPrev = notesRef.current.filter(n => Math.abs(n.beat + (n.duration || 1) - b) < 0.001);
+            if (notesAtPrev.length > 0) {
+              return Math.max(0, notesAtPrev[0].beat);
+            }
+            return Math.max(0, b - step);
+          });
         }
       }
       if (matchesHotkey(e, hk.nextBeat)) {
@@ -346,7 +353,15 @@ function App() {
           });
         } else {
           const step = noteDurationRef.current;
-          setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
+          setSelectedBeat(b => {
+            // If there's a note at current position, jump to its end
+            const notesHere = notesRef.current.filter(n => Math.abs(n.beat - b) < 0.001);
+            if (notesHere.length > 0) {
+              const maxEnd = Math.max(...notesHere.map(n => n.beat + (n.duration || 1)));
+              return Math.min(totalBeats - 1, maxEnd);
+            }
+            return Math.min(totalBeats - 1, b + step);
+          });
         }
       }
       if (matchesHotkey(e, hk.returnToStart)) {
@@ -462,30 +477,31 @@ function App() {
   }, [totalBeats, undo, redo, setNotes]);
 
   const handleFretClick = useCallback((stringIndex, fret) => {
+    const beat = Math.round(selectedBeat * 10000) / 10000; // avoid float drift
     setNotes(prev => {
       const exactMatch = prev.findIndex(
-        n => n.stringIndex === stringIndex && n.fret === fret && n.beat === selectedBeat
+        n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
       );
       if (exactMatch >= 0) {
         return prev.filter((_, i) => i !== exactMatch);
       }
       const filtered = prev.filter(
-        n => !(n.stringIndex === stringIndex && n.beat === selectedBeat)
+        n => !(n.stringIndex === stringIndex && Math.abs(n.beat - beat) < 0.001)
       );
-      return [...filtered, { stringIndex, fret, beat: selectedBeat, duration: noteDuration, velocity: defaultVelocity }];
+      return [...filtered, { stringIndex, fret, beat, duration: noteDuration, velocity: defaultVelocity }];
     });
   }, [selectedBeat, noteDuration, defaultVelocity]);
 
   const handleAdjacentClick = useCallback((stringIndex, fret) => {
+    const beat = Math.round(selectedBeat * 10000) / 10000;
     setNotes(prev => {
       const exactMatch = prev.findIndex(
-        n => n.stringIndex === stringIndex && n.fret === fret && n.beat === selectedBeat
+        n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
       );
       if (exactMatch >= 0) {
         return prev.filter((_, i) => i !== exactMatch);
       }
-      // Don't remove existing notes on the same string — just add
-      return [...prev, { stringIndex, fret, beat: selectedBeat, duration: noteDuration, velocity: defaultVelocity }];
+      return [...prev, { stringIndex, fret, beat, duration: noteDuration, velocity: defaultVelocity }];
     });
   }, [selectedBeat, noteDuration]);
 
