@@ -900,15 +900,37 @@ function App() {
         </button>
         <span className="toolbar-separator" />
         <div className="subdiv-picker">
-          <span className="toolbar-label">Div:</span>
-          <input
-            type="number"
-            className="bpm-input"
-            value={subdivisions}
-            min={1}
-            max={32}
-            onChange={(e) => handleSetSubdivisions(Math.max(1, Math.min(32, Number(e.target.value) || 1)))}
-          />
+          <div className="subdiv-dial" style={{ width: 38, height: 38 }}>
+            <svg width={38} height={38} viewBox="0 0 38 38">
+              <circle cx={19} cy={19} r={15} fill="none" stroke="#333" strokeWidth={2} />
+              {[1,2,3,4,5,6,7,8,9].map(val => {
+                const angle = ((val - 1) / 9) * 2 * Math.PI - Math.PI / 2;
+                const x = 19 + 15 * Math.cos(angle);
+                const y = 19 + 15 * Math.sin(angle);
+                const isActive = val === subdivisions;
+                return (
+                  <circle
+                    key={val}
+                    cx={x} cy={y}
+                    r={isActive ? 4 : 2.5}
+                    fill={isActive ? '#e67e22' : '#666'}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => handleSetSubdivisions(val)}
+                  />
+                );
+              })}
+            </svg>
+            <div
+              className="subdiv-center"
+              onClick={() => {
+                const val = prompt('Subdivisions (1-32):', String(subdivisions));
+                if (val) handleSetSubdivisions(Math.max(1, Math.min(32, Number(val) || 1)));
+              }}
+              title="Click to type subdivisions"
+            >
+              {subdivisions}
+            </div>
+          </div>
           <span className="toolbar-label">x</span>
           <input
             type="number"
@@ -918,7 +940,7 @@ function App() {
             max={subdivisions * 4}
             onChange={(e) => handleSetMultiplier(Math.max(1, Number(e.target.value) || 1))}
           />
-          <span style={{ fontSize: 10, color: '#888' }}>={noteDuration.toFixed(3)}</span>
+          {noteDuration !== 1 && <span style={{ fontSize: 10, color: '#888' }}>={noteDuration.toFixed(3)}</span>}
         </div>
       </div>
       <TrackStrip

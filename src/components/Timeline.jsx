@@ -276,7 +276,7 @@ export default function Timeline({
               const combo = closestComboForPitch(newMidi, start.stringIndex);
               if (!combo) return null;
               const rawBeat = start.beat + lastDeltaBeat;
-              const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
+              const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit));
               return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
             }).filter(Boolean);
             return [...old, ...copies];
@@ -292,7 +292,7 @@ export default function Timeline({
             const combo = closestComboForPitch(newMidi, start.stringIndex);
             if (!combo) return n;
             const rawBeat = start.beat + lastDeltaBeat;
-            const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat)));
+            const newBeat = Math.max(0, Math.min(totalCols - (n.duration || 1), isFree ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit));
             return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
           }));
         }
