@@ -147,9 +147,8 @@ function App() {
   const [currentBeat, setCurrentBeat] = useState(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
-  const [noteMultiplier, setNoteMultiplier] = useState(1); // how many subdivisions per note
   const snapUnit = 1 / subdivisions; // smallest grid step
-  const noteDuration = noteMultiplier / subdivisions; // actual note duration in beats
+  const noteDuration = snapUnit; // note duration always equals one subdivision
   const noteDurationRef = useRef(noteDuration);
   noteDurationRef.current = noteDuration;
   const snapUnitRef = useRef(snapUnit);
@@ -265,7 +264,6 @@ function App() {
     if (data.stringColors !== undefined) setStringColors(data.stringColors);
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
     if (data.subdivisions !== undefined) setSubdivisions(data.subdivisions);
-    if (data.noteMultiplier !== undefined) setNoteMultiplier(data.noteMultiplier);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
@@ -318,12 +316,12 @@ function App() {
         tracks: tracksRef.current,
         bpm, loop, loopStart, loopEnd,
         stringColors, synesthesia, activeColorScheme,
-        projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature,
+        projectName, subdivisions, metronome, barSubdivisions, timeSignature,
       });
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature]);
+  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -583,18 +581,13 @@ function App() {
 
   const handleSetSubdivisions = useCallback((subs) => {
     setSubdivisions(subs);
-    setNoteMultiplier(1);
-  }, []);
-
-  const handleSetMultiplier = useCallback((mult) => {
-    setNoteMultiplier(mult);
     if (selectedNotes.size > 0) {
-      const dur = mult / subdivisions;
+      const dur = 1 / subs;
       setNotes(prev => prev.map((n, i) =>
         selectedNotes.has(i) ? { ...n, duration: dur } : n
       ));
     }
-  }, [selectedNotes, subdivisions]);
+  }, [selectedNotes]);
 
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
@@ -1005,8 +998,7 @@ function App() {
             className={`subdiv-btn ${showSubdivDial ? 'open' : ''}`}
             onClick={() => setShowSubdivDial(o => !o)}
           >
-            ÷{subdivisions} x{noteMultiplier}
-            {noteDuration !== 1 && <span className="subdiv-val"> ={noteDuration.toFixed(3)}</span>}
+            ÷{subdivisions}
           </button>
           {showSubdivDial && (
             <div className="subdiv-popup">
@@ -1039,17 +1031,6 @@ function App() {
                   min={1}
                   max={64}
                   onChange={handleSetSubdivisions}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </div>
-              <div className="subdiv-mult-row">
-                <span style={{ fontSize: 12, color: '#aaa' }}>Multiplier:</span>
-                <NumberInput
-                  className="subdiv-mult-input"
-                  value={noteMultiplier}
-                  min={1}
-                  max={subdivisions * 8}
-                  onChange={handleSetMultiplier}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1212,11 +1193,6 @@ function App() {
           hoverPreviewNotes={hoverPreview.timelineNotes}
           hoverVolume={hoverPreview.volume}
           tupletLines={tupletLines}
-          onResizeDuration={(dur) => {
-            // Convert resized duration to multiplier
-            const mult = Math.max(1, Math.round(dur / snapUnit));
-            setNoteMultiplier(mult);
-          }}
           chordPreview={chordPreview}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
@@ -1322,7 +1298,7 @@ function App() {
           appState={{
             tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            projectName, subdivisions, noteMultiplier, metronome, barSubdivisions, timeSignature,
+            projectName, subdivisions, metronome, barSubdivisions, timeSignature,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
