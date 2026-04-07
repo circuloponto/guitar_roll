@@ -1194,6 +1194,7 @@ function App() {
           hoverVolume={hoverPreview.volume}
           tupletLines={tupletLines}
           chordPreview={chordPreview}
+          onTimelineHover={(pos) => setHoveredNote(pos)}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
           <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>

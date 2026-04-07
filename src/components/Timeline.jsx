@@ -49,6 +49,7 @@ export default function Timeline({
   hoverPreviewNotes = false,
   hoverVolume = 0.3,
   tupletLines = { visible: true, opacity: 0.35 },
+  onTimelineHover,
   onResizeDuration,
   chordPreview,
 }) {
@@ -858,12 +859,25 @@ export default function Timeline({
             const y = e.clientY - rect.top + bodyRef.current.scrollTop;
             const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
             const snapped = freeMode ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit;
-            if (snapped < 0 || snapped >= totalCols) { setHoverPos(null); return; }
+            if (snapped < 0 || snapped >= totalCols) {
+              setHoverPos(null);
+              if (onTimelineHover) onTimelineHover(null);
+              return;
+            }
             const combo = yToPitch(y);
-            if (!combo) { setHoverPos(null); return; }
-            setHoverPos({ beat: snapped, stringIndex: combo.stringIndex, fret: combo.fret });
+            if (!combo) {
+              setHoverPos(null);
+              if (onTimelineHover) onTimelineHover(null);
+              return;
+            }
+            const pos = { beat: snapped, stringIndex: combo.stringIndex, fret: combo.fret };
+            setHoverPos(pos);
+            if (onTimelineHover) onTimelineHover(pos);
           }}
-          onMouseLeave={() => setHoverPos(null)}
+          onMouseLeave={() => {
+            setHoverPos(null);
+            if (onTimelineHover) onTimelineHover(null);
+          }}
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
           style={{ flex: 1, cursor: machineGunMode ? 'cell' : eraserMode ? 'crosshair' : undefined }}
         >
