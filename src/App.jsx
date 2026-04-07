@@ -398,7 +398,7 @@ function App() {
       }
       if (matchesHotkey(e, hk.zoomIn)) {
         e.preventDefault();
-        setTimelineZoom(z => Math.min(10, z * 1.25));
+        setTimelineZoom(z => Math.min(40, z * 1.25));
       }
       if (matchesHotkey(e, hk.zoomOut)) {
         e.preventDefault();

@@ -631,8 +631,8 @@ export default function Timeline({
           e.clientY < rect.top || e.clientY > rect.bottom) return;
       e.preventDefault();
       setTimelineZoom(z => {
-        const newZ = z * (1 - e.deltaY * 0.002);
-        return Math.max(0.2, Math.min(10, newZ));
+        const newZ = z * (1 - e.deltaY * 0.005);
+        return Math.max(0.2, Math.min(40, newZ));
       });
     };
     document.addEventListener('wheel', handleWheel, { passive: false });
