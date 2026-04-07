@@ -48,6 +48,7 @@ export default function Timeline({
   hoverPreviewPiano = false,
   hoverPreviewNotes = false,
   hoverVolume = 0.3,
+  tupletLines = { visible: true, opacity: 0.35 },
   onResizeDuration,
   chordPreview,
 }) {
@@ -888,7 +889,7 @@ export default function Timeline({
           ))}
 
           {/* Tuplet subdivision lines */}
-          {subdivisions > 1 && Array.from({ length: totalCols }, (_, beat) => {
+          {tupletLines.visible && subdivisions > 1 && Array.from({ length: totalCols }, (_, beat) => {
             const lines = [];
             for (let t = 1; t < subdivisions; t++) {
               const subBeat = beat + (t / subdivisions);
@@ -897,7 +898,10 @@ export default function Timeline({
                 <div
                   key={`tup-${beat}-${t}`}
                   className="grid-col tuplet-line"
-                  style={{ left: beatToX(subBeat, barSubdivisions, cellWidth) }}
+                  style={{
+                    left: beatToX(subBeat, barSubdivisions, cellWidth),
+                    borderLeftColor: `rgba(230, 126, 34, ${tupletLines.opacity})`,
+                  }}
                 />
               );
             }

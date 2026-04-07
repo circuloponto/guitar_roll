@@ -39,54 +39,80 @@
 
 .play-btn {
   background: #2a2a2a;
-  color: #fff;
-  border: 1px solid #555;
-  padding: 4px 12px;
-  border-radius: 4px;
+  color: #ddd;
+  border: none;
+  padding: 0 14px;
+  height: 28px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.12s, color 0.12s;
 }
 
 .play-btn:hover {
-  background: #3a3a3a;
+  background: #353535;
+  color: #fff;
+}
+
+.play-btn:active {
+  background: #1e1e1e;
 }
 
 .play-btn.playing {
   background: #c0392b;
-  border-color: #e74c3c;
+  color: #fff;
+}
+
+.play-btn.playing:hover {
+  background: #d04030;
 }
 
 .tool-btn {
   background: #2a2a2a;
-  color: #fff;
-  border: 1px solid #555;
-  padding: 4px 10px;
-  border-radius: 4px;
+  color: #ddd;
+  border: none;
+  padding: 0 12px;
+  height: 28px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
 
 .tool-btn:hover {
-  background: #3a3a3a;
+  background: #353535;
+  color: #fff;
+}
+
+.tool-btn:active {
+  background: #1e1e1e;
 }
 
 .tool-btn.active {
   background: #2980b9;
-  border-color: #3498db;
+  color: #fff;
+}
+
+.tool-btn.active:hover {
+  background: #3498db;
 }
 
 .bpm-input {
-  width: 44px;
+  width: 50px;
+  height: 26px;
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 4px 4px;
-  font-size: 12px;
+  padding: 0 6px;
+  font-size: 13px;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .bpm-input:focus {
@@ -94,14 +120,39 @@
   border-color: #3498db;
 }
 
+/* Hide spinner arrows on all number inputs */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* NumberInput drag-to-change */
+.number-input {
+  cursor: ns-resize;
+  user-select: none;
+}
+.number-input:focus {
+  cursor: text;
+  user-select: text;
+}
+.number-input.dragging {
+  cursor: ns-resize;
+}
+
 .duration-select {
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: 0 8px;
+  height: 26px;
+  font-size: 13px;
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .duration-select:focus {
@@ -110,14 +161,16 @@
 }
 
 .tuplet-input {
-  width: 36px;
+  width: 42px;
+  height: 26px;
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 4px 4px;
-  font-size: 12px;
+  padding: 0 6px;
+  font-size: 13px;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .tuplet-input:focus {
@@ -1510,16 +1563,23 @@
 
 .settings-btn {
   background: #2a2a2a;
-  color: #fff;
-  border: 1px solid #555;
-  padding: 7px 14px;
-  border-radius: 4px;
+  color: #ddd;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
 
 .settings-btn:hover {
-  background: #3a3a3a;
+  background: #353535;
+  color: #fff;
+}
+
+.settings-btn:active {
+  background: #1e1e1e;
 }
 
 .settings-btn.settings-close,
@@ -1530,16 +1590,23 @@
 
 .settings-btn-sm {
   background: #2a2a2a;
-  color: #fff;
-  border: 1px solid #555;
-  padding: 4px 10px;
-  border-radius: 4px;
+  color: #ddd;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
 }
 
 .settings-btn-sm:hover {
-  background: #3a3a3a;
+  background: #353535;
+  color: #fff;
+}
+
+.settings-btn-sm:active {
+  background: #1e1e1e;
 }
 
 .settings-btn-sm.danger:hover {

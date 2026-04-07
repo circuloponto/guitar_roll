@@ -14,6 +14,7 @@ import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import VoiceLeadingModal from './components/VoiceLeadingModal';
 import ConfirmDialog from './components/ConfirmDialog';
+import NumberInput from './components/NumberInput';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
@@ -170,6 +171,12 @@ function App() {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-hover-preview'));
       return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3, ...saved };
     } catch { return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3 }; }
+  });
+  const [tupletLines, setTupletLines] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('guitar-roll-tuplet-lines'));
+      return { visible: true, opacity: 0.35, ...saved };
+    } catch { return { visible: true, opacity: 0.35 }; }
   });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
@@ -936,20 +943,16 @@ function App() {
           <option value="12/8">12/8</option>
         </select>
         <span className="toolbar-label">Bars:</span>
-        <input
-          type="number"
+        <NumberInput
           className="bpm-input"
           value={barSubdivisions.length}
           min={1}
           max={128}
-          onChange={(e) => {
-            const newCount = Math.max(1, Math.min(128, Number(e.target.value) || 1));
+          onChange={(newCount) => {
             setBarSubdivisions(prev => {
               if (newCount > prev.length) {
-                // Add bars with current time signature
                 return [...prev, ...Array(newCount - prev.length).fill(timeSignature[0])];
               } else if (newCount < prev.length) {
-                // Remove bars from the end, delete notes in removed bars
                 const tc = totalColumns(prev.slice(0, newCount));
                 setActiveNotes(notesRef.current.filter(n => n.beat < tc));
                 return prev.slice(0, newCount);
@@ -959,19 +962,12 @@ function App() {
           }}
         />
         <span className="toolbar-label">BPM:</span>
-        <input
-          type="number"
+        <NumberInput
           className="bpm-input"
-          defaultValue={bpm}
+          value={bpm}
           min={30}
           max={300}
-          key={`bpm-${bpm}`}
-          onBlur={(e) => setBpm(Math.max(30, Math.min(300, Number(e.target.value) || 120)))}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.target.blur();
-            }
-          }}
+          onChange={setBpm}
         />
         <button className="play-btn" onClick={() => {
           if (notes.length > 0) setConfirmClear(true);
@@ -1013,30 +1009,23 @@ function App() {
                     );
                   })}
                 </svg>
-                <input
+                <NumberInput
                   className="subdiv-center-input"
-                  type="number"
                   value={subdivisions}
                   min={1}
                   max={64}
-                  onChange={(e) => {
-                    const v = Math.max(1, Math.min(64, Number(e.target.value) || 1));
-                    handleSetSubdivisions(v);
-                  }}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onChange={handleSetSubdivisions}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
               <div className="subdiv-mult-row">
                 <span style={{ fontSize: 12, color: '#aaa' }}>Multiplier:</span>
-                <input
-                  type="number"
+                <NumberInput
                   className="subdiv-mult-input"
                   value={noteMultiplier}
                   min={1}
                   max={subdivisions * 8}
-                  onChange={(e) => handleSetMultiplier(Math.max(1, Number(e.target.value) || 1))}
-                  onKeyDown={(e) => e.stopPropagation()}
+                  onChange={handleSetMultiplier}
                   onClick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -1185,6 +1174,7 @@ function App() {
           hoverPreviewPiano={hoverPreview.pianoRoll}
           hoverPreviewNotes={hoverPreview.timelineNotes}
           hoverVolume={hoverPreview.volume}
+          tupletLines={tupletLines}
           onResizeDuration={(dur) => {
             // Convert resized duration to multiplier
             const mult = Math.max(1, Math.round(dur / snapUnit));
@@ -1301,6 +1291,8 @@ function App() {
           onClose={() => setShowSettings(false)}
           hoverPreview={hoverPreview}
           onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
+          tupletLines={tupletLines}
+          onTupletLinesChange={(v) => { setTupletLines(v); localStorage.setItem('guitar-roll-tuplet-lines', JSON.stringify(v)); }}
           onHotkeysChange={setHotkeys}
         />
       )}
