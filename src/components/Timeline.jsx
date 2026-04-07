@@ -69,28 +69,61 @@ export default function Timeline({
   const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
   const [hoverPos, setHoverPos] = useState(null); // { beat, stringIndex, fret } snapped position under mouse
 
+  const yToPitch = useCallback((y) => {
+    const rowFromTop = Math.floor(y / ROW_HEIGHT);
+    const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
+    const midi = pitchRowToMidi(pitchRow);
+    const combo = closestComboForPitch(midi, 0);
+    return combo;
+  }, []);
+
   const handleClick = useCallback((e) => {
     if (playing) return;
     if (draggingRef.current || noteDragRef.current) return;
     if (marqueeDidDragRef.current) { marqueeDidDragRef.current = false; return; }
+    if (eraserMode || machineGunMode) return;
     if (!e.shiftKey) {
       setSelectedNotes(new Set());
     }
     const rect = bodyRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
+    const y = e.clientY - rect.top + bodyRef.current.scrollTop;
+
+    let beat;
     if (freeMode) {
-      const beat = xToBeat(x, barSubdivisions, cellWidth, false);
-      if (beat >= 0 && beat < totalCols) {
-        setSelectedBeat(beat);
-      }
+      beat = xToBeat(x, barSubdivisions, cellWidth, false);
     } else {
       const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
-      const snapped = Math.round(rawBeat / snapUnit) * snapUnit;
-      if (snapped >= 0 && snapped < totalCols) {
-        setSelectedBeat(snapped);
-      }
+      beat = Math.round(rawBeat / snapUnit) * snapUnit;
     }
-  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit]);
+    if (beat < 0 || beat >= totalCols) return;
+    setSelectedBeat(beat);
+
+    // Place a note at the clicked position
+    const combo = yToPitch(y);
+    if (!combo) return;
+    const finalBeat = Math.round(beat * 10000) / 10000;
+    setNotes(prev => {
+      // Toggle: if exact same note exists at this beat, remove it
+      const exact = prev.findIndex(n =>
+        n.stringIndex === combo.stringIndex && n.fret === combo.fret &&
+        Math.abs(n.beat - finalBeat) < 0.001
+      );
+      if (exact >= 0) return prev.filter((_, i) => i !== exact);
+      // Remove existing notes on the same string at the same beat
+      const filtered = prev.filter(n =>
+        !(n.stringIndex === combo.stringIndex && Math.abs(n.beat - finalBeat) < 0.001)
+      );
+      return [...filtered, {
+        stringIndex: combo.stringIndex,
+        fret: combo.fret,
+        beat: finalBeat,
+        duration: noteDuration,
+        velocity: defaultVelocity,
+      }];
+    });
+    playNote(combo.stringIndex, combo.fret, 0.2);
+  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit, eraserMode, machineGunMode, totalCols, barSubdivisions, yToPitch, setNotes, noteDuration, defaultVelocity]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
     if (e.shiftKey) {
@@ -419,14 +452,6 @@ export default function Timeline({
   }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode]);
 
   // Machine gun: convert mouse Y to string+fret
-  const yToPitch = useCallback((y) => {
-    const rowFromTop = Math.floor(y / ROW_HEIGHT);
-    const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
-    const midi = pitchRowToMidi(pitchRow);
-    const combo = closestComboForPitch(midi, 0);
-    return combo;
-  }, []);
-
   // Marquee selection / machine gun on grid background
   const handleGridMouseDown = useCallback((e) => {
     if (e.target.closest('.timeline-note')) return;
