@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getAllInstruments } from '../utils/audio';
+import ConfirmDialog from './ConfirmDialog';
 
 export default function TrackStrip({
   tracks, activeTrackId, onSwitchTrack,
@@ -8,6 +9,7 @@ export default function TrackStrip({
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null); // track to delete
 
   const startRename = (track) => {
     setEditingId(track.id);
@@ -82,7 +84,14 @@ export default function TrackStrip({
               {tracks.length > 1 && (
                 <button
                   className="track-btn track-delete"
-                  onClick={(e) => { e.stopPropagation(); onDeleteTrack(track.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (track.notes && track.notes.length > 0) {
+                      setConfirmDelete(track);
+                    } else {
+                      onDeleteTrack(track.id);
+                    }
+                  }}
                   title="Delete track"
                 >×</button>
               )}
@@ -91,6 +100,13 @@ export default function TrackStrip({
         );
       })}
       <button className="track-add-btn" onClick={onAddTrack} title="Add track">+</button>
+      {confirmDelete && (
+        <ConfirmDialog
+          message={`Delete track "${confirmDelete.name}" with ${confirmDelete.notes.length} note${confirmDelete.notes.length !== 1 ? 's' : ''}?`}
+          onConfirm={() => { onDeleteTrack(confirmDelete.id); setConfirmDelete(null); }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 }

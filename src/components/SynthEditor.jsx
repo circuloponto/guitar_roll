@@ -5,6 +5,7 @@ import {
   playNote, getAllInstruments,
   loadHiddenPresets, hidePreset, unhidePreset,
 } from '../utils/audio';
+import ConfirmDialog from './ConfirmDialog';
 
 const WAVE_TYPES = ['sine', 'triangle', 'sawtooth', 'square'];
 const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass'];
@@ -18,6 +19,7 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
   const [params, setParams] = useState(JSON.parse(JSON.stringify(initial)));
   const [presetName, setPresetName] = useState(params.name || 'Custom');
   const [dirty, setDirty] = useState(false);
+  const [confirm, setConfirm] = useState(null);
 
   const update = (fn) => {
     setParams(prev => {
@@ -55,7 +57,7 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
 
   const [hiddenList, setHiddenList] = useState(loadHiddenPresets);
 
-  const handleDeletePreset = (id) => {
+  const doDeletePreset = (id) => {
     if (SYNTH_PRESETS[id]) {
       hidePreset(id);
       setHiddenList(loadHiddenPresets());
@@ -63,11 +65,22 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
       deleteCustomPreset(id);
     }
     if (currentInstrument === id) {
-      // Switch to first available instrument
       const remaining = getAllInstruments();
       const firstId = Object.keys(remaining)[0] || 'clean-electric';
       onInstrumentChange(firstId);
     }
+  };
+
+  const handleDeletePreset = (id) => {
+    const preset = allPresets[id];
+    const name = preset?.name || id;
+    const isBuiltIn = !!SYNTH_PRESETS[id];
+    setConfirm({
+      message: isBuiltIn
+        ? `Hide built-in preset "${name}"? You can restore it later.`
+        : `Delete custom preset "${name}"?`,
+      onConfirm: () => { doDeletePreset(id); setConfirm(null); },
+    });
   };
 
   const handleRestorePreset = (id) => {
@@ -131,7 +144,12 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
                 onChange={(e) => update(p => { p.oscillators[i].gain = Number(e.target.value) / 100; })}
               /><span className="synth-val">{Math.round(osc.gain * 100)}%</span></label>
               {params.oscillators.length > 1 && (
-                <button className="settings-btn-sm danger" onClick={() => update(p => { p.oscillators.splice(i, 1); })}>-</button>
+                <button className="settings-btn-sm danger" onClick={() => {
+                  setConfirm({
+                    message: `Remove oscillator ${i + 1}?`,
+                    onConfirm: () => { update(p => { p.oscillators.splice(i, 1); }); setConfirm(null); },
+                  });
+                }}>-</button>
               )}
             </div>
           ))}
@@ -215,6 +233,9 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
           <button className="settings-btn settings-close" onClick={onClose}>Close</button>
         </div>
       </div>
+      {confirm && (
+        <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
+      )}
     </div>
   );
 }

@@ -13,6 +13,7 @@ import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import VoiceLeadingModal from './components/VoiceLeadingModal';
+import ConfirmDialog from './components/ConfirmDialog';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
@@ -189,6 +190,7 @@ function App() {
   const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
   const [showVoiceLeading, setShowVoiceLeading] = useState(false);
   const [voicingPreview, setVoicingPreview] = useState(null); // [{ stringIndex, fret }] for fretboard highlight
+  const [confirmClear, setConfirmClear] = useState(false);
   const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
@@ -971,7 +973,10 @@ function App() {
             }
           }}
         />
-        <button className="play-btn" onClick={handleClear}>
+        <button className="play-btn" onClick={() => {
+          if (notes.length > 0) setConfirmClear(true);
+          else handleClear();
+        }}>
           Clear
         </button>
         <span className="toolbar-separator" />
@@ -1244,6 +1249,14 @@ function App() {
       )}
 
       {/* Settings Modal */}
+      {confirmClear && (
+        <ConfirmDialog
+          message={`Clear all ${notes.length} notes from this track?`}
+          onConfirm={() => { handleClear(); setConfirmClear(false); }}
+          onCancel={() => setConfirmClear(false)}
+        />
+      )}
+
       {showVoiceLeading && (
         <VoiceLeadingModal
           notes={notes}

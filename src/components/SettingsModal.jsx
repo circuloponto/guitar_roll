@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ConfirmDialog from './ConfirmDialog';
 import {
   listColorSchemes, saveColorScheme, deleteColorScheme,
   listSessions, saveSession, loadSession, deleteSession,
@@ -56,6 +57,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
   const [sessions, setSessions] = useState(listSessions);
   const [sessionName, setSessionName] = useState('');
   const [copyMsg, setCopyMsg] = useState('');
+  const [confirm, setConfirm] = useState(null); // { message, onConfirm }
 
   const refreshSchemes = () => setSchemes(listColorSchemes());
   const refreshSessions = () => setSessions(listSessions());
@@ -196,8 +198,10 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                       setPage('editScheme');
                     }}>Edit</button>
                     <button className="settings-btn-sm danger" onClick={() => {
-                      deleteColorScheme(name);
-                      refreshSchemes();
+                      setConfirm({
+                        message: `Delete color scheme "${name}"?`,
+                        onConfirm: () => { deleteColorScheme(name); refreshSchemes(); setConfirm(null); },
+                      });
                     }}>Delete</button>
                   </div>
                 </div>
@@ -242,6 +246,9 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <button className="settings-btn settings-back" onClick={() => setPage('main')}>Back</button>
         </div>
+        {confirm && (
+          <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
+        )}
       </div>
     );
   }
@@ -356,8 +363,10 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                     if (data) onApplyState(data);
                   }}>Load</button>
                   <button className="settings-btn-sm danger" onClick={() => {
-                    deleteSession(name);
-                    refreshSessions();
+                    setConfirm({
+                      message: `Delete session "${name}"?`,
+                      onConfirm: () => { deleteSession(name); refreshSessions(); setConfirm(null); },
+                    });
                   }}>Delete</button>
                 </div>
               </div>
@@ -366,6 +375,9 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <button className="settings-btn settings-back" onClick={() => setPage('main')}>Back</button>
         </div>
+        {confirm && (
+          <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
+        )}
       </div>
     );
   }
