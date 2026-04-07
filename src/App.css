@@ -1413,6 +1413,15 @@ input[type="number"] {
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
 }
 
+.cursor-hover-rect {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.6);
+  background: transparent;
+  pointer-events: none;
+  z-index: 19;
+  border-radius: 2px;
+}
+
 .duration-preview {
   position: absolute;
   background: rgba(46, 204, 113, 0.15);

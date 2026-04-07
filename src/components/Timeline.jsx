@@ -67,6 +67,7 @@ export default function Timeline({
   const marqueeDidDragRef = useRef(false);
   const [subdivMenu, setSubdivMenu] = useState(null); // { barIndex, x, y }
   const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
+  const [hoverPos, setHoverPos] = useState(null); // { beat, stringIndex, fret } snapped position under mouse
 
   const handleClick = useCallback((e) => {
     if (playing) return;
@@ -825,6 +826,19 @@ export default function Timeline({
           ref={bodyRef}
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
+          onMouseMove={(e) => {
+            if (playing) return;
+            const rect = bodyRef.current.getBoundingClientRect();
+            const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
+            const y = e.clientY - rect.top + bodyRef.current.scrollTop;
+            const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+            const snapped = freeMode ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit;
+            if (snapped < 0 || snapped >= totalCols) { setHoverPos(null); return; }
+            const combo = yToPitch(y);
+            if (!combo) { setHoverPos(null); return; }
+            setHoverPos({ beat: snapped, stringIndex: combo.stringIndex, fret: combo.fret });
+          }}
+          onMouseLeave={() => setHoverPos(null)}
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
           style={{ flex: 1, cursor: machineGunMode ? 'cell' : eraserMode ? 'crosshair' : undefined }}
         >
@@ -924,6 +938,19 @@ export default function Timeline({
                 style={{ left: beatToX(Math.floor(selectedBeat), barSubdivisions, cellWidth), width: colWidth(beatToBar(Math.floor(selectedBeat), barSubdivisions).barIndex, barSubdivisions, cellWidth) }}
               />
             )
+          )}
+
+          {/* Cursor hover rectangle showing duration at mouse position */}
+          {hoverPos && !playing && (
+            <div
+              className="cursor-hover-rect"
+              style={{
+                left: beatToX(hoverPos.beat, barSubdivisions, cellWidth),
+                top: rowTopPx(hoverPos.stringIndex, hoverPos.fret),
+                width: durationToWidth(hoverPos.beat, noteDuration, barSubdivisions, cellWidth),
+                height: ROW_HEIGHT,
+              }}
+            />
           )}
 
           {/* Duration preview on hovered row */}
