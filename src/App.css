@@ -460,21 +460,233 @@ input[type="number"] {
 
 .chord-delete-btn:hover { color: #e74c3c; }
 
-/* Track Strip */
-.track-strip {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 4px 8px;
+/* Track Panel — collapsible */
+.track-panel {
   background: #0d0d0d;
   border-bottom: 1px solid #333;
-  overflow-x: auto;
   flex-shrink: 0;
+}
+
+.track-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #0d0d0d;
+}
+
+.track-expand-btn {
+  background: #2a2a2a;
+  color: #ccc;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.track-expand-btn:hover { background: #353535; color: #fff; }
+
+.track-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
   scrollbar-width: none;
 }
 
-.track-strip::-webkit-scrollbar { display: none; }
+.track-tabs-row::-webkit-scrollbar { display: none; }
 
+.track-tab-mini {
+  background: #1a1a1a;
+  color: #ccc;
+  border: 1px solid #333;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.track-tab-mini:hover { background: #222; color: #fff; }
+
+.track-tab-mini.active {
+  background: #1e2a3a;
+  border-color: #3498db;
+  color: #fff;
+}
+
+.track-tab-mini.muted { opacity: 0.5; }
+
+.track-mini-badge {
+  font-size: 9px;
+  font-weight: bold;
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.2);
+  padding: 0 3px;
+  border-radius: 2px;
+}
+
+.track-mini-badge.solo {
+  color: #f1c40f;
+  background: rgba(241, 196, 15, 0.2);
+}
+
+.track-add-btn-mini {
+  background: #1a1a1a;
+  color: #888;
+  border: 1px dashed #444;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.track-add-btn-mini:hover { color: #fff; border-color: #888; }
+
+/* Expanded rows */
+.track-rows {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+  gap: 4px;
+  border-top: 1px solid #222;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.track-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.track-row:hover { background: #1f1f1f; }
+
+.track-row.active {
+  background: #1e2a3a;
+  border-color: #3498db;
+}
+
+.track-row.muted { opacity: 0.6; }
+
+.track-row-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.track-row-name-text {
+  font-size: 13px;
+  font-weight: bold;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.track-row-inst {
+  font-size: 10px;
+  color: #888;
+}
+
+.track-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.track-btn-lg {
+  background: #2a2a2a;
+  color: #888;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  min-width: 32px;
+  height: 28px;
+}
+
+.track-btn-lg:hover { color: #fff; background: #333; }
+.track-btn-lg.active-red { background: #5a1a1a; color: #e74c3c; border-color: #e74c3c; }
+.track-btn-lg.active-yellow { background: #4a3a1a; color: #f1c40f; border-color: #f1c40f; }
+.track-btn-lg.track-delete { color: #666; margin-left: auto; }
+.track-btn-lg.track-delete:hover { color: #e74c3c; background: #2a1a1a; }
+
+.track-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.track-slider-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 28px;
+}
+
+.track-slider {
+  width: 100px;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #333;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.track-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3498db;
+  cursor: pointer;
+}
+
+.track-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3498db;
+  border: none;
+  cursor: pointer;
+}
+
+.track-slider-ghost::-webkit-slider-thumb { background: #888; }
+.track-slider-ghost::-moz-range-thumb { background: #888; }
+
+.track-slider-val {
+  font-size: 11px;
+  color: #888;
+  min-width: 32px;
+  font-family: monospace;
+}
+
+/* Legacy styles still used somewhere */
 .track-tab {
   display: flex;
   flex-direction: column;
@@ -582,6 +794,18 @@ input[type="number"] {
   background: #3498db;
   border: none;
   cursor: pointer;
+}
+
+.track-volume.track-opacity {
+  width: 30px;
+}
+
+.track-volume.track-opacity::-webkit-slider-thumb {
+  background: #888;
+}
+
+.track-volume.track-opacity::-moz-range-thumb {
+  background: #888;
 }
 
 .track-add-btn {

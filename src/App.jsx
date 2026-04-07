@@ -18,7 +18,7 @@ import NumberInput from './components/NumberInput';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
-  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false };
+  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2 };
 }
 
 function getPlayableTracks(tracks) {
@@ -839,6 +839,18 @@ function App() {
     ));
   }, [setTracksTracked]);
 
+  const handleToggleVisible = useCallback((trackId) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, visible: t.visible === false ? true : false } : t
+    ));
+  }, [setTracksTracked]);
+
+  const handleSetBgOpacity = useCallback((trackId, opacity) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, bgOpacity: opacity } : t
+    ));
+  }, [setTracksTracked]);
+
   return (
     <div className="app">
       <div className="toolbar">
@@ -1043,6 +1055,8 @@ function App() {
         onAddTrack={handleAddTrack}
         onDeleteTrack={handleDeleteTrack}
         onRenameTrack={handleRenameTrack}
+        onToggleVisible={handleToggleVisible}
+        onSetBgOpacity={handleSetBgOpacity}
       />
       <div className="status-bar">
         <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
@@ -1107,8 +1121,18 @@ function App() {
           freeMode={freeMode}
           totalBeats={totalBeats}
           activeNotes={playing ? [] : notes.filter(n => selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1))}
+          backgroundActiveNotes={(() => {
+            const beat = playing && currentBeat !== null ? currentBeat : selectedBeat;
+            if (playing && currentBeat === null) return [];
+            return tracks
+              .filter(t => t.id !== activeTrackId && t.visible !== false)
+              .flatMap(t => t.notes
+                .filter(n => beat >= n.beat && beat < n.beat + (n.duration || 1))
+                .map(n => ({ ...n, _trackOpacity: t.bgOpacity ?? 0.2 }))
+              );
+          })()}
           playingNotes={playing && currentBeat !== null
-            ? getPlayableTracks(tracks).flatMap(t => t.notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1)))
+            ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
             : []}
           stringColors={stringColors}
           getNoteColor={getNoteColor}
@@ -1131,8 +1155,8 @@ function App() {
         />
         <Timeline
           notes={notes}
-          backgroundNotes={tracks.filter(t => t.id !== activeTrackId && !t.muted).flatMap(t =>
-            t.notes.map(n => ({ ...n, _trackColor: '#888' }))
+          backgroundNotes={tracks.filter(t => t.id !== activeTrackId && t.visible !== false).flatMap(t =>
+            t.notes.map(n => ({ ...n, _trackColor: '#888', _trackOpacity: t.bgOpacity ?? 0.2 }))
           )}
           setNotes={setNotes}
           saveSnapshot={saveSnapshot}

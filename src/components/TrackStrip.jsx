@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { getAllInstruments } from '../utils/audio';
 import ConfirmDialog from './ConfirmDialog';
 
@@ -6,10 +7,12 @@ export default function TrackStrip({
   tracks, activeTrackId, onSwitchTrack,
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onRenameTrack,
+  onToggleVisible, onSetBgOpacity,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(null); // track to delete
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [expanded, setExpanded] = useState(false);
 
   const startRename = (track) => {
     setEditingId(track.id);
@@ -23,83 +26,149 @@ export default function TrackStrip({
     setEditingId(null);
   };
 
+  const allInst = getAllInstruments();
+
   return (
-    <div className="track-strip">
-      {tracks.map(track => {
-        const isActive = track.id === activeTrackId;
-        const allInst = getAllInstruments();
-        const instLabel = allInst[track.instrument]?.label || track.instrument;
-        return (
-          <div
-            key={track.id}
-            className={`track-tab ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''}`}
-            onClick={() => onSwitchTrack(track.id)}
-          >
-            <div className="track-tab-top">
-              {editingId === track.id ? (
-                <input
-                  className="track-name-input"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') setEditingId(null);
-                    e.stopPropagation();
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  autoFocus
-                />
-              ) : (
-                <span
-                  className="track-name"
-                  onDoubleClick={(e) => { e.stopPropagation(); startRename(track); }}
-                >
-                  {track.name}
-                </span>
-              )}
-              <span className="track-inst">{instLabel}</span>
-            </div>
-            <div className="track-tab-controls">
+    <div className={`track-panel ${expanded ? 'expanded' : ''}`}>
+      {/* Slim header bar — always visible */}
+      <div className="track-header">
+        <button
+          className="track-expand-btn"
+          onClick={() => setExpanded(e => !e)}
+          title={expanded ? 'Collapse tracks' : 'Expand tracks'}
+        >
+          {expanded ? '▾' : '▸'} Tracks ({tracks.length})
+        </button>
+        <div className="track-tabs-row">
+          {tracks.map(track => {
+            const isActive = track.id === activeTrackId;
+            return (
               <button
-                className={`track-btn ${track.muted ? 'active-red' : ''}`}
-                onClick={(e) => { e.stopPropagation(); onToggleMute(track.id); }}
-                title="Mute"
-              >M</button>
-              <button
-                className={`track-btn ${track.solo ? 'active-yellow' : ''}`}
-                onClick={(e) => { e.stopPropagation(); onToggleSolo(track.id); }}
-                title="Solo"
-              >S</button>
-              <input
-                type="range"
-                className="track-volume"
-                min={0}
-                max={100}
-                value={Math.round(track.volume * 100)}
-                onChange={(e) => { e.stopPropagation(); onSetVolume(track.id, Number(e.target.value) / 100); }}
-                onClick={(e) => e.stopPropagation()}
-                title={`Volume: ${Math.round(track.volume * 100)}%`}
-              />
-              {tracks.length > 1 && (
-                <button
-                  className="track-btn track-delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (track.notes && track.notes.length > 0) {
-                      setConfirmDelete(track);
-                    } else {
-                      onDeleteTrack(track.id);
-                    }
-                  }}
-                  title="Delete track"
-                >×</button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-      <button className="track-add-btn" onClick={onAddTrack} title="Add track">+</button>
+                key={track.id}
+                className={`track-tab-mini ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''}`}
+                onClick={() => onSwitchTrack(track.id)}
+              >
+                {track.name}
+                {track.muted && <span className="track-mini-badge">M</span>}
+                {track.solo && <span className="track-mini-badge solo">S</span>}
+              </button>
+            );
+          })}
+          <button className="track-add-btn-mini" onClick={onAddTrack} title="Add track">+</button>
+        </div>
+      </div>
+
+      {/* Expanded panel — full track controls */}
+      {expanded && (
+        <div className="track-rows">
+          {tracks.map(track => {
+            const isActive = track.id === activeTrackId;
+            const instLabel = allInst[track.instrument]?.label || track.instrument;
+            return (
+              <div
+                key={track.id}
+                className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''}`}
+                onClick={() => onSwitchTrack(track.id)}
+              >
+                <div className="track-row-name">
+                  {editingId === track.id ? (
+                    <input
+                      className="track-name-input"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename();
+                        if (e.key === 'Escape') setEditingId(null);
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="track-row-name-text"
+                      onDoubleClick={(e) => { e.stopPropagation(); startRename(track); }}
+                    >
+                      {track.name}
+                    </span>
+                  )}
+                  <span className="track-row-inst">{instLabel}</span>
+                </div>
+
+                <div className="track-row-controls">
+                  <button
+                    className={`track-btn-lg ${track.muted ? 'active-red' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); onToggleMute(track.id); }}
+                    title="Mute"
+                  >M</button>
+                  <button
+                    className={`track-btn-lg ${track.solo ? 'active-yellow' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); onToggleSolo(track.id); }}
+                    title="Solo"
+                  >S</button>
+                  {!isActive && onToggleVisible && (
+                    <button
+                      className={`track-btn-lg ${track.visible === false ? 'active-red' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); onToggleVisible(track.id); }}
+                      title={track.visible === false ? 'Show ghost notes' : 'Hide ghost notes'}
+                    >
+                      {track.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  )}
+
+                  <div className="track-slider-group">
+                    <label className="track-slider-label">Vol</label>
+                    <input
+                      type="range"
+                      className="track-slider"
+                      min={0}
+                      max={100}
+                      value={Math.round(track.volume * 100)}
+                      onChange={(e) => { e.stopPropagation(); onSetVolume(track.id, Number(e.target.value) / 100); }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <span className="track-slider-val">{Math.round(track.volume * 100)}%</span>
+                  </div>
+
+                  {!isActive && onSetBgOpacity && track.visible !== false && (
+                    <div className="track-slider-group">
+                      <label className="track-slider-label">Opacity</label>
+                      <input
+                        type="range"
+                        className="track-slider track-slider-ghost"
+                        min={5}
+                        max={100}
+                        value={Math.round((track.bgOpacity ?? 0.2) * 100)}
+                        onChange={(e) => { e.stopPropagation(); onSetBgOpacity(track.id, Number(e.target.value) / 100); }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <span className="track-slider-val">{Math.round((track.bgOpacity ?? 0.2) * 100)}%</span>
+                    </div>
+                  )}
+
+                  {tracks.length > 1 && (
+                    <button
+                      className="track-btn-lg track-delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (track.notes && track.notes.length > 0) {
+                          setConfirmDelete(track);
+                        } else {
+                          onDeleteTrack(track.id);
+                        }
+                      }}
+                      title="Delete track"
+                    >×</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          <button className="track-add-btn" onClick={onAddTrack} title="Add track">+ Add Track</button>
+        </div>
+      )}
+
       {confirmDelete && (
         <ConfirmDialog
           message={`Delete track "${confirmDelete.name}" with ${confirmDelete.notes.length} note${confirmDelete.notes.length !== 1 ? 's' : ''}?`}

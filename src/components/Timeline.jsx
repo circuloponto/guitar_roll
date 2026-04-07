@@ -969,7 +969,7 @@ export default function Timeline({
                   height: ROW_HEIGHT,
                   minHeight: 4,
                   backgroundColor: note._trackColor || '#888',
-                  opacity: 0.2,
+                  opacity: note._trackOpacity ?? 0.2,
                   pointerEvents: 'none',
                 }}
               >

@@ -14,7 +14,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -499,6 +499,23 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           }}>
             {fret}
           </div>
+        ))}
+
+        {/* Background track notes (white, dimmed) */}
+        {backgroundActiveNotes.map((note, i) => (
+          <div key={`bg-${i}`} style={{
+            position: 'absolute',
+            left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+            top: cellCenterPx(note.fret),
+            width: 32,
+            height: 12,
+            borderRadius: 6,
+            background: '#fff',
+            opacity: note._trackOpacity ?? 0.2,
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
+            pointerEvents: 'none',
+            zIndex: 4,
+          }} />
         ))}
 
         {/* Active notes glow blur */}
