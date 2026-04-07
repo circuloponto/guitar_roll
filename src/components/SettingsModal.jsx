@@ -121,30 +121,8 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             </button>
           </div>
 
-          <div className="settings-section">
-            <h3>String Colors</h3>
-            {['E', 'A', 'D', 'G', 'B', 'e'].map((name, i) => (
-              <div key={i} className="settings-row">
-                <span className="settings-label">{name}</span>
-                <input
-                  type="color"
-                  value={appState.stringColors[i]}
-                  onChange={(e) => {
-                    const next = [...appState.stringColors];
-                    next[i] = e.target.value;
-                    onApplyState({ stringColors: next });
-                  }}
-                />
-                <HexInput
-                  value={appState.stringColors[i]}
-                  onChange={(v) => {
-                    const next = [...appState.stringColors];
-                    next[i] = v;
-                    onApplyState({ stringColors: next });
-                  }}
-                />
-              </div>
-            ))}
+          <div className="settings-section" style={{ display: 'none' }}>
+            <h3>String Colors (moved to Color Schemes)</h3>
           </div>
 
           <div className="settings-section">
@@ -205,21 +183,23 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             {schemeNames.map(name => (
               <div key={name} className="scheme-item">
                 <span className="scheme-name">{name}</span>
-                <div className="scheme-colors-preview">
-                  {CHROMATIC_INTERNAL.map(n => (
-                    <div key={n} className="scheme-color-dot" style={{ background: schemes[name][n] || '#ffffff' }} />
-                  ))}
-                </div>
-                <div className="scheme-actions">
-                  <button className="settings-btn-sm" onClick={() => applyScheme(name, schemes[name])}>Apply</button>
-                  <button className="settings-btn-sm" onClick={() => {
-                    setEditingScheme({ name, colors: { ...schemes[name] } });
-                    setPage('editScheme');
-                  }}>Edit</button>
-                  <button className="settings-btn-sm danger" onClick={() => {
-                    deleteColorScheme(name);
-                    refreshSchemes();
-                  }}>Delete</button>
+                <div className="scheme-row">
+                  <div className="scheme-colors-preview">
+                    {CHROMATIC_INTERNAL.map(n => (
+                      <div key={n} className="scheme-color-dot" style={{ background: schemes[name][n] || '#ffffff' }} />
+                    ))}
+                  </div>
+                  <div className="scheme-actions">
+                    <button className="settings-btn-sm" onClick={() => applyScheme(name, schemes[name])}>Apply</button>
+                    <button className="settings-btn-sm" onClick={() => {
+                      setEditingScheme({ name, colors: { ...schemes[name] } });
+                      setPage('editScheme');
+                    }}>Edit</button>
+                    <button className="settings-btn-sm danger" onClick={() => {
+                      deleteColorScheme(name);
+                      refreshSchemes();
+                    }}>Delete</button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -232,6 +212,32 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             }}>
               + Add Color Scheme
             </button>
+          </div>
+
+          <div className="settings-section" style={{ marginTop: 16 }}>
+            <h3>String Colors</h3>
+            {['E', 'A', 'D', 'G', 'B', 'e'].map((name, i) => (
+              <div key={i} className="settings-row">
+                <span className="settings-label">{name}</span>
+                <input
+                  type="color"
+                  value={appState.stringColors[i]}
+                  onChange={(e) => {
+                    const next = [...appState.stringColors];
+                    next[i] = e.target.value;
+                    onApplyState({ stringColors: next });
+                  }}
+                />
+                <HexInput
+                  value={appState.stringColors[i]}
+                  onChange={(v) => {
+                    const next = [...appState.stringColors];
+                    next[i] = v;
+                    onApplyState({ stringColors: next });
+                  }}
+                />
+              </div>
+            ))}
           </div>
 
           <button className="settings-btn settings-back" onClick={() => setPage('main')}>Back</button>

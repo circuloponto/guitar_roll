@@ -12,6 +12,7 @@ import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
+import VoiceLeadingModal from './components/VoiceLeadingModal';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
@@ -186,6 +187,8 @@ function App() {
   const [showSynthEditor, setShowSynthEditor] = useState(false);
   const [chordPreview, setChordPreview] = useState(null);
   const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
+  const [showVoiceLeading, setShowVoiceLeading] = useState(false);
+  const [voicingPreview, setVoicingPreview] = useState(null); // [{ stringIndex, fret }] for fretboard highlight
   const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
@@ -445,6 +448,10 @@ function App() {
             return { ...n, slideTo: nextOnString ? nextOnString.fret : Math.min(NUM_FRETS, n.fret + 2) };
           }));
         }
+      }
+      if (matchesHotkey(e, hk.voiceLeading)) {
+        e.preventDefault();
+        setShowVoiceLeading(true);
       }
       // Fingering: shift selected notes to adjacent string, same pitch (only in fingering mode)
       if (fingeringModeRef.current && (matchesHotkey(e, hk.fingerUp) || matchesHotkey(e, hk.fingerDown))) {
@@ -1126,6 +1133,7 @@ function App() {
           snapUnit={snapUnit}
           fretboardZoom={fretboardZoom}
           setFretboardZoom={setFretboardZoom}
+          voicingPreview={voicingPreview}
         />
         <Timeline
           notes={notes}
@@ -1236,6 +1244,24 @@ function App() {
       )}
 
       {/* Settings Modal */}
+      {showVoiceLeading && (
+        <VoiceLeadingModal
+          notes={notes}
+          selectedNotes={selectedNotes}
+          onPreview={setVoicingPreview}
+          onApply={(replacements) => {
+            setNotes(prev => prev.map((n, i) => {
+              const rep = replacements.find(r => r.index === i);
+              if (!rep) return n;
+              return { ...n, stringIndex: rep.stringIndex, fret: rep.fret };
+            }));
+            setShowVoiceLeading(false);
+            setVoicingPreview(null);
+          }}
+          onClose={() => { setShowVoiceLeading(false); setVoicingPreview(null); }}
+        />
+      )}
+
       {showSynthEditor && (
         <SynthEditor
           currentInstrument={activeTrack?.instrument || instrument}

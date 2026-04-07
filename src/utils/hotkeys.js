@@ -25,6 +25,7 @@ const DEFAULT_HOTKEYS = {
   bendUp: { label: 'Bend Up', description: 'Increase bend on selected notes', key: 'ArrowUp', modifiers: { shift: true } },
   bendDown: { label: 'Bend Down', description: 'Decrease bend on selected notes', key: 'ArrowDown', modifiers: { shift: true } },
   toggleSlide: { label: 'Toggle Slide', description: 'Toggle slide to next note on selected', key: 's', modifiers: { shift: true } },
+  voiceLeading: { label: 'Voice Leading', description: 'Open voice leading assistant for selected chords', key: 'v' },
   machineGunMode: { label: 'Machine Gun', description: 'Toggle draw mode: drag to paint notes', key: 'd' },
   fingeringMode: { label: 'Fingering Mode', description: 'Toggle fingering mode (arrow keys shift strings)', key: 'g' },
   fingerUp: { label: 'Finger Up', description: 'Move selected notes to higher string (same pitch)', key: 'ArrowUp' },
@@ -123,5 +124,5 @@ export function formatHotkey(hotkey) {
 // Editable hotkey IDs (ones users can change)
 export const EDITABLE_HOTKEYS = [
   'noteJump', 'freeMode', 'durationMode', 'moveMode', 'adjacentMode',
-  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
+  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'voiceLeading', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
 ];

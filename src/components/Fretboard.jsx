@@ -14,7 +14,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -576,6 +576,24 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             }} />
           );
         })}
+
+        {/* Voice leading preview */}
+        {voicingPreview && voicingPreview.map((v, i) => (
+          <div key={`vp-${i}`} style={{
+            position: 'absolute',
+            left: `${PADDING_LEFT + (v.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
+            top: cellCenterPx(v.fret),
+            width: 36,
+            height: 16,
+            borderRadius: 8,
+            border: '2px solid rgba(46, 204, 113, 0.8)',
+            background: 'rgba(46, 204, 113, 0.2)',
+            transform: 'translate(-50%, -50%) rotate(-50deg)',
+            pointerEvents: 'none',
+            zIndex: 9,
+            animation: 'chord-blink 0.6s ease-in-out infinite',
+          }} />
+        ))}
 
         {/* Fretboard marquee */}
         {fretMarquee && (

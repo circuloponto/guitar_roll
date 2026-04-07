@@ -1581,22 +1581,29 @@
 
 .scheme-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 4px;
   padding: 8px;
   border-bottom: 1px solid #222;
-  flex-wrap: wrap;
 }
 
 .scheme-name {
   font-weight: bold;
   font-size: 13px;
-  min-width: 80px;
+  word-break: break-word;
+}
+
+.scheme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .scheme-colors-preview {
   display: flex;
   gap: 2px;
+  flex-shrink: 0;
 }
 
 .scheme-color-dot {
@@ -1610,6 +1617,7 @@
   display: flex;
   gap: 4px;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .scheme-edit-grid {
@@ -1682,6 +1690,80 @@
   color: #aaa;
   margin-left: 8px;
   text-align: right;
+}
+
+/* Voice Leading Modal */
+.vl-modal {
+  min-width: 400px;
+  max-width: 90vw;
+}
+
+.vl-chords {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  max-height: 50vh;
+}
+
+.vl-chord-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.vl-chord-header {
+  font-size: 11px;
+  font-weight: bold;
+  color: #aaa;
+  text-align: center;
+  padding: 2px 0;
+  border-bottom: 1px solid #333;
+}
+
+.vl-voicing {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.vl-voicing:hover { border-color: #555; }
+.vl-voicing.active { border-color: #3498db; background: #1e2a3a; }
+
+.vl-voicing-label {
+  font-weight: bold;
+  color: #ccc;
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.vl-score {
+  font-weight: normal;
+  color: #666;
+  font-size: 10px;
+}
+
+.vl-note {
+  display: flex;
+  gap: 6px;
+  color: #999;
+}
+
+.vl-string { color: #666; min-width: 20px; }
+.vl-fret { color: #e67e22; min-width: 20px; }
+.vl-name { color: #ccc; }
+
+.vl-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  justify-content: flex-end;
 }
 
 @media (max-width: 520px) {
