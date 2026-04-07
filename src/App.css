@@ -679,6 +679,18 @@ input[type="number"] {
 .track-slider-ghost::-webkit-slider-thumb { background: #888; }
 .track-slider-ghost::-moz-range-thumb { background: #888; }
 
+.track-scheme-select {
+  background: #2a2a2a;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+.track-scheme-select:focus { border-color: #3498db; }
+
 .track-slider-val {
   font-size: 11px;
   color: #888;

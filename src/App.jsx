@@ -4,7 +4,7 @@ import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
-import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave } from './utils/storage';
+import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -18,7 +18,7 @@ import NumberInput from './components/NumberInput';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
-  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2 };
+  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2, schemeName: null };
 }
 
 function getPlayableTracks(tracks) {
@@ -232,12 +232,18 @@ function App() {
   const synesthesiaMap = {};
   synesthesia.forEach(s => { if (s.note) synesthesiaMap[s.note] = s.color; });
 
+  // Track schemes are stored by name in localStorage; load active track's scheme map
+  const activeTrackScheme = activeTrack?.schemeName
+    ? (listColorSchemes()[activeTrack.schemeName] || null)
+    : null;
+
   const getNoteColor = useCallback((stringIndex, fret) => {
     const name = getNoteName(stringIndex, fret);
     const letter = name.replace(/[0-9]/g, '');
+    if (activeTrackScheme && activeTrackScheme[letter]) return activeTrackScheme[letter];
     if (synesthesiaMap[letter]) return synesthesiaMap[letter];
     return stringColors[stringIndex];
-  }, [stringColors, synesthesia]);
+  }, [stringColors, synesthesia, activeTrackScheme]);
 
   // Apply partial state from settings/load/URL
   const applyState = useCallback((data) => {
@@ -851,6 +857,12 @@ function App() {
     ));
   }, [setTracksTracked]);
 
+  const handleSetTrackScheme = useCallback((trackId, schemeName) => {
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? { ...t, schemeName } : t
+    ));
+  }, [setTracksTracked]);
+
   return (
     <div className="app">
       <div className="toolbar">
@@ -1057,6 +1069,7 @@ function App() {
         onRenameTrack={handleRenameTrack}
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}
+        onSetTrackScheme={handleSetTrackScheme}
       />
       <div className="status-bar">
         <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>

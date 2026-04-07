@@ -1,18 +1,22 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { getAllInstruments } from '../utils/audio';
+import { listColorSchemes } from '../utils/storage';
 import ConfirmDialog from './ConfirmDialog';
+import SchemeEditorModal from './SchemeEditorModal';
 
 export default function TrackStrip({
   tracks, activeTrackId, onSwitchTrack,
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onRenameTrack,
-  onToggleVisible, onSetBgOpacity,
+  onToggleVisible, onSetBgOpacity, onSetTrackScheme,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const [newSchemeForTrack, setNewSchemeForTrack] = useState(null);
+  const [schemesVersion, setSchemesVersion] = useState(0); // bump to refresh dropdown
 
   const startRename = (track) => {
     setEditingId(track.id);
@@ -27,6 +31,10 @@ export default function TrackStrip({
   };
 
   const allInst = getAllInstruments();
+  // eslint-disable-next-line no-unused-vars
+  const _v = schemesVersion;
+  const schemes = listColorSchemes();
+  const schemeNames = Object.keys(schemes);
 
   return (
     <div className={`track-panel ${expanded ? 'expanded' : ''}`}>
@@ -147,6 +155,30 @@ export default function TrackStrip({
                     </div>
                   )}
 
+                  {onSetTrackScheme && (
+                    <div className="track-slider-group">
+                      <label className="track-slider-label">Scheme</label>
+                      <select
+                        className="track-scheme-select"
+                        value={track.schemeName || ''}
+                        onChange={(e) => {
+                          if (e.target.value === '__new__') {
+                            setNewSchemeForTrack(track.id);
+                          } else {
+                            onSetTrackScheme(track.id, e.target.value || null);
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <option value="">Default</option>
+                        {schemeNames.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                        <option value="__new__">+ New Scheme...</option>
+                      </select>
+                    </div>
+                  )}
+
                   {tracks.length > 1 && (
                     <button
                       className="track-btn-lg track-delete"
@@ -174,6 +206,16 @@ export default function TrackStrip({
           message={`Delete track "${confirmDelete.name}" with ${confirmDelete.notes.length} note${confirmDelete.notes.length !== 1 ? 's' : ''}?`}
           onConfirm={() => { onDeleteTrack(confirmDelete.id); setConfirmDelete(null); }}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+      {newSchemeForTrack && (
+        <SchemeEditorModal
+          onSave={(name) => {
+            onSetTrackScheme(newSchemeForTrack, name);
+            setNewSchemeForTrack(null);
+            setSchemesVersion(v => v + 1);
+          }}
+          onCancel={() => setNewSchemeForTrack(null)}
         />
       )}
     </div>
