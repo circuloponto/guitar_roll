@@ -54,6 +54,7 @@ export function getSessionState(appState) {
     stringColors: appState.stringColors,
     synesthesia: appState.synesthesia,
     subdivisions: appState.subdivisions,
+    markers: appState.markers,
     metronome: appState.metronome,
     barSubdivisions: appState.barSubdivisions,
     activeColorScheme: appState.activeColorScheme || null,

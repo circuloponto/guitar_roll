@@ -171,6 +171,9 @@ function App() {
       return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3, ...saved };
     } catch { return { fretboard: false, pianoRoll: false, timelineNotes: false, volume: 0.3 }; }
   });
+  const [markers, setMarkers] = useState([]); // [{ id, name, beat, color }]
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
   const [tupletLines, setTupletLines] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-tuplet-lines'));
@@ -264,6 +267,7 @@ function App() {
     if (data.stringColors !== undefined) setStringColors(data.stringColors);
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
     if (data.subdivisions !== undefined) setSubdivisions(data.subdivisions);
+    if (data.markers !== undefined) setMarkers(data.markers);
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
@@ -316,12 +320,12 @@ function App() {
         tracks: tracksRef.current,
         bpm, loop, loopStart, loopEnd,
         stringColors, synesthesia, activeColorScheme,
-        projectName, subdivisions, metronome, barSubdivisions, timeSignature,
+        projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
       });
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature]);
+  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -383,6 +387,22 @@ function App() {
       if (matchesHotkey(e, hk.returnToStart)) {
         e.preventDefault();
         setSelectedBeat(0);
+      }
+      if (matchesHotkey(e, hk.prevMarker)) {
+        e.preventDefault();
+        setSelectedBeat(b => {
+          const sorted = [...markersRef.current].sort((a, c) => a.beat - c.beat);
+          const prev = sorted.filter(m => m.beat < b);
+          return prev.length > 0 ? prev[prev.length - 1].beat : b;
+        });
+      }
+      if (matchesHotkey(e, hk.nextMarker)) {
+        e.preventDefault();
+        setSelectedBeat(b => {
+          const sorted = [...markersRef.current].sort((a, c) => a.beat - c.beat);
+          const next = sorted.filter(m => m.beat > b);
+          return next.length > 0 ? next[0].beat : b;
+        });
       }
       if (matchesHotkey(e, hk.playStop)) {
         e.preventDefault();
@@ -856,6 +876,27 @@ function App() {
     ));
   }, [setTracksTracked]);
 
+  // Marker management
+  const handleAddMarker = useCallback((beat) => {
+    setMarkers(prev => {
+      const newMarker = {
+        id: crypto.randomUUID(),
+        name: 'Marker',
+        beat,
+        color: '#3498db',
+      };
+      return [...prev, newMarker].sort((a, b) => a.beat - b.beat);
+    });
+  }, []);
+
+  const handleUpdateMarker = useCallback((id, updates) => {
+    setMarkers(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m).sort((a, b) => a.beat - b.beat));
+  }, []);
+
+  const handleDeleteMarker = useCallback((id) => {
+    setMarkers(prev => prev.filter(m => m.id !== id));
+  }, []);
+
   return (
     <div className="app">
       <div className="toolbar">
@@ -1195,6 +1236,10 @@ function App() {
           tupletLines={tupletLines}
           chordPreview={chordPreview}
           onTimelineHover={(pos) => setHoveredNote(pos)}
+          markers={markers}
+          onAddMarker={handleAddMarker}
+          onUpdateMarker={handleUpdateMarker}
+          onDeleteMarker={handleDeleteMarker}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
           <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>
@@ -1299,7 +1344,7 @@ function App() {
           appState={{
             tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, activeColorScheme,
-            projectName, subdivisions, metronome, barSubdivisions, timeSignature,
+            projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}

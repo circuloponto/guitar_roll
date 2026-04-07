@@ -50,6 +50,10 @@ export default function Timeline({
   hoverVolume = 0.3,
   tupletLines = { visible: true, opacity: 0.35 },
   onTimelineHover,
+  markers = [],
+  onAddMarker,
+  onUpdateMarker,
+  onDeleteMarker,
   onResizeDuration,
   chordPreview,
 }) {
@@ -69,6 +73,10 @@ export default function Timeline({
   const [subdivMenu, setSubdivMenu] = useState(null); // { barIndex, x, y }
   const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
   const [hoverPos, setHoverPos] = useState(null); // { beat, stringIndex, fret } snapped position under mouse
+  const [markerMenu, setMarkerMenu] = useState(null); // { x, y, beat, markerId } for context menu
+  const [editingMarkerId, setEditingMarkerId] = useState(null);
+  const [editingMarkerName, setEditingMarkerName] = useState('');
+  const markerDragRef = useRef(null);
 
   const yToPitch = useCallback((y) => {
     const rowFromTop = Math.floor(y / ROW_HEIGHT);
@@ -737,9 +745,18 @@ export default function Timeline({
             const rect = headerRef.current.getBoundingClientRect();
             const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
             const x = e.clientX - rect.left + scrollLeft;
-            const beat = xToBeat(x, barSubdivisions, cellWidth, true);
-            const { barIndex } = beatToBar(beat, barSubdivisions);
-            setSubdivMenu({ barIndex, x: e.clientX, y: e.clientY });
+            // Check if clicking on a marker
+            const clickedMarker = markers.find(m => {
+              const mx = beatToX(m.beat, barSubdivisions, cellWidth);
+              return Math.abs(mx - x) < 6;
+            });
+            if (clickedMarker) {
+              setMarkerMenu({ x: e.clientX, y: e.clientY, markerId: clickedMarker.id });
+              return;
+            }
+            const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+            const snapped = Math.max(0, Math.round(rawBeat / snapUnit) * snapUnit);
+            setMarkerMenu({ x: e.clientX, y: e.clientY, beat: snapped });
           }}
         >
           <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth, height: '100%' }}>
@@ -747,6 +764,69 @@ export default function Timeline({
               className="loop-region-header"
               style={{ left: loopLeftPx, width: loopWidthPx }}
             />}
+            {/* Markers */}
+            {markers.map(marker => (
+              <div
+                key={marker.id}
+                className="timeline-marker"
+                style={{ left: beatToX(marker.beat, barSubdivisions, cellWidth) }}
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.stopPropagation();
+                  const startX = e.clientX;
+                  const startBeat = marker.beat;
+                  let didMove = false;
+                  const handleMove = (moveE) => {
+                    const dx = moveE.clientX - startX;
+                    if (Math.abs(dx) > 3) didMove = true;
+                    const cw = colWidth(0, barSubdivisions, cellWidth);
+                    const newBeat = Math.max(0, Math.min(totalCols - 1, Math.round((startBeat + dx / cw) / snapUnit) * snapUnit));
+                    if (newBeat !== marker.beat && onUpdateMarker) {
+                      onUpdateMarker(marker.id, { beat: newBeat });
+                    }
+                  };
+                  const handleUp = () => {
+                    window.removeEventListener('mousemove', handleMove);
+                    window.removeEventListener('mouseup', handleUp);
+                    if (!didMove) {
+                      // Click without drag — start renaming
+                      setEditingMarkerId(marker.id);
+                      setEditingMarkerName(marker.name);
+                    }
+                  };
+                  window.addEventListener('mousemove', handleMove);
+                  window.addEventListener('mouseup', handleUp);
+                }}
+                title={`${marker.name} @ beat ${marker.beat + 1}`}
+              >
+                <div className="timeline-marker-line" style={{ background: marker.color }} />
+                <div className="timeline-marker-label" style={{ background: marker.color }}>
+                  {editingMarkerId === marker.id ? (
+                    <input
+                      className="marker-name-input"
+                      value={editingMarkerName}
+                      onChange={(e) => setEditingMarkerName(e.target.value)}
+                      onBlur={() => {
+                        if (editingMarkerName.trim() && onUpdateMarker) {
+                          onUpdateMarker(marker.id, { name: editingMarkerName.trim() });
+                        }
+                        setEditingMarkerId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.target.blur();
+                        if (e.key === 'Escape') setEditingMarkerId(null);
+                        e.stopPropagation();
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      autoFocus
+                    />
+                  ) : (
+                    marker.name
+                  )}
+                </div>
+              </div>
+            ))}
             {/* Beat labels and bar lines */}
             {Array.from({ length: totalCols }, (_, i) => {
               const isBar = starts.includes(i);
@@ -979,6 +1059,18 @@ export default function Timeline({
             )
           )}
 
+          {/* Marker lines through grid */}
+          {markers.map(marker => (
+            <div
+              key={`mline-${marker.id}`}
+              className="timeline-marker-line-grid"
+              style={{
+                left: beatToX(marker.beat, barSubdivisions, cellWidth),
+                background: marker.color,
+              }}
+            />
+          ))}
+
           {/* Cursor hover rectangle showing duration at mouse position */}
           {hoverPos && !playing && (
             <div
@@ -1169,6 +1261,48 @@ export default function Timeline({
         </div>
       </div>
       </div>
+
+      {/* Marker context menu */}
+      {markerMenu && (
+        <div className="subdiv-menu-overlay" onClick={() => setMarkerMenu(null)}>
+          <div
+            className="subdiv-menu"
+            style={{ left: markerMenu.x, top: markerMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            {markerMenu.markerId ? (
+              <>
+                <div className="subdiv-menu-title">Marker</div>
+                <button className="subdiv-menu-item" onClick={() => {
+                  const m = markers.find(x => x.id === markerMenu.markerId);
+                  if (m) {
+                    setEditingMarkerId(m.id);
+                    setEditingMarkerName(m.name);
+                  }
+                  setMarkerMenu(null);
+                }}>Rename</button>
+                <button className="subdiv-menu-item" onClick={() => {
+                  if (onDeleteMarker) onDeleteMarker(markerMenu.markerId);
+                  setMarkerMenu(null);
+                }}>Delete</button>
+              </>
+            ) : (
+              <>
+                <div className="subdiv-menu-title">Beat {markerMenu.beat + 1}</div>
+                <button className="subdiv-menu-item" onClick={() => {
+                  if (onAddMarker) onAddMarker(markerMenu.beat);
+                  setMarkerMenu(null);
+                }}>+ Add Marker</button>
+                <button className="subdiv-menu-item" onClick={() => {
+                  const { barIndex } = beatToBar(markerMenu.beat, barSubdivisions);
+                  setSubdivMenu({ barIndex, x: markerMenu.x, y: markerMenu.y });
+                  setMarkerMenu(null);
+                }}>Bar Subdivisions...</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Subdivision context menu */}
       {subdivMenu && (
