@@ -345,6 +345,14 @@ export default function Timeline({
     const rect = headerRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
     const x = e.clientX - rect.left + scrollLeft;
+    const snap = snapUnit;
+    const free = freeMode;
+
+    // Snap a raw beat to the tuplet grid (or no snap in free mode)
+    const snapBeat = (raw) => {
+      if (free) return raw;
+      return Math.round(raw / snap) * snap;
+    };
 
     const edgeThreshold = Math.max(8, cellWidth * 0.5);
     const loopLeftX = beatToX(loopStart, barSubdivisions, cellWidth);
@@ -360,23 +368,20 @@ export default function Timeline({
       } else if (isNearRight) {
         loopDragRef.current = { mode: 'right', fixedStart: loopStart };
       } else if (isInside) {
-        // Click inside — will remove loop on mouseup if no drag
         loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen: loopEnd - loopStart, didMove: false };
       } else {
-        // Click outside existing loop — create new
-        const startCol = xToBeat(x, barSubdivisions, cellWidth, true);
+        const startCol = snapBeat(xToBeat(x, barSubdivisions, cellWidth, false));
         if (startCol < 0 || startCol >= totalCols) return;
         loopDragRef.current = { mode: 'new', startCol, didMove: false };
         setLoopStart(startCol);
-        setLoopEnd(startCol + 1);
+        setLoopEnd(startCol + snap);
       }
     } else {
-      // No loop — create new
-      const startCol = xToBeat(x, barSubdivisions, cellWidth, true);
+      const startCol = snapBeat(xToBeat(x, barSubdivisions, cellWidth, false));
       if (startCol < 0 || startCol >= totalCols) return;
       loopDragRef.current = { mode: 'new', startCol, didMove: false };
       setLoopStart(startCol);
-      setLoopEnd(startCol + 1);
+      setLoopEnd(startCol + snap);
     }
 
     e.preventDefault();
@@ -384,21 +389,23 @@ export default function Timeline({
     const handleMouseMove = (moveE) => {
       if (!loopDragRef.current) return;
       const mx = moveE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
-      const col = Math.max(0, Math.min(totalCols, Math.round(xToBeat(mx, barSubdivisions, cellWidth, false))));
+      const rawCol = xToBeat(mx, barSubdivisions, cellWidth, false);
+      const col = Math.max(0, Math.min(totalCols, snapBeat(rawCol)));
       const d = loopDragRef.current;
       d.didMove = true;
 
       if (d.mode === 'left') {
-        const newStart = Math.min(col, d.fixedEnd - 1);
+        const newStart = Math.min(col, d.fixedEnd - snap);
         setLoopStart(newStart);
         setSelectedBeat(newStart);
         setLoop(true);
       } else if (d.mode === 'right') {
-        setLoopEnd(Math.max(col, d.fixedStart + 1));
+        setLoopEnd(Math.max(col, d.fixedStart + snap));
         setLoop(true);
       } else if (d.mode === 'move') {
-        const newStartBeat = xToBeat(beatToX(d.origStart, barSubdivisions, cellWidth) + (mx - d.startX), barSubdivisions, cellWidth, true);
-        const deltaCols = newStartBeat - d.origStart;
+        const rawStart = xToBeat(beatToX(d.origStart, barSubdivisions, cellWidth) + (mx - d.startX), barSubdivisions, cellWidth, false);
+        const snappedStart = snapBeat(rawStart);
+        const deltaCols = snappedStart - d.origStart;
         let newStart = d.origStart + deltaCols;
         let newEnd = d.origEnd + deltaCols;
         if (newStart < 0) { newStart = 0; newEnd = d.loopLen; }
@@ -409,11 +416,11 @@ export default function Timeline({
         const anchor = d.startCol;
         if (col >= anchor) {
           setLoopStart(anchor);
-          setLoopEnd(Math.max(col, anchor + 1));
+          setLoopEnd(Math.max(col, anchor + snap));
           d.lastCol = col;
         } else {
           setLoopStart(col);
-          setLoopEnd(anchor + 1);
+          setLoopEnd(anchor + snap);
           d.lastCol = col;
         }
         setLoop(true);
@@ -424,17 +431,15 @@ export default function Timeline({
       const d = loopDragRef.current;
       if (d) {
         if (d.mode === 'new' && !d.didMove) {
-          // Just a click with no drag — move playhead here, don't create loop
           const ux = upE.clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
-          const beat = xToBeat(ux, barSubdivisions, cellWidth, !freeMode);
+          const rawBeat = xToBeat(ux, barSubdivisions, cellWidth, false);
+          const beat = free ? rawBeat : snapBeat(rawBeat);
           setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
           setLoop(false);
         } else if (d.mode === 'new' && d.didMove) {
           setLoop(true);
-          // Move playhead to start of new loop
           setSelectedBeat(Math.min(d.startCol, d.lastCol));
         } else if (d.mode === 'move' && !d.didMove) {
-          // Click inside loop without moving — remove loop
           setLoop(false);
         }
       }
@@ -445,7 +450,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode]);
+  }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode, snapUnit]);
 
   // Machine gun: convert mouse Y to string+fret
   // Marquee selection / machine gun on grid background
