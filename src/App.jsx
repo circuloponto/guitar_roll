@@ -186,6 +186,12 @@ function App() {
       return { onHover: true, onInput: true, onPlayback: true, ...saved };
     } catch { return { onHover: true, onInput: true, onPlayback: true }; }
   });
+  const [hoverPill, setHoverPill] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('guitar-roll-hover-pill'));
+      return { fretboard: true, pianoRoll: true, ...saved };
+    } catch { return { fretboard: true, pianoRoll: true }; }
+  });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -1211,6 +1217,7 @@ function App() {
           setFretboardZoom={setFretboardZoom}
           voicingPreview={voicingPreview}
           autoScroll={autoScroll}
+          hoverPill={hoverPill}
         />
         <Timeline
           notes={notes}
@@ -1381,6 +1388,8 @@ function App() {
           onTupletLinesChange={(v) => { setTupletLines(v); localStorage.setItem('guitar-roll-tuplet-lines', JSON.stringify(v)); }}
           autoScroll={autoScroll}
           onAutoScrollChange={(v) => { setAutoScroll(v); localStorage.setItem('guitar-roll-auto-scroll', JSON.stringify(v)); }}
+          hoverPill={hoverPill}
+          onHoverPillChange={(v) => { setHoverPill(v); localStorage.setItem('guitar-roll-hover-pill', JSON.stringify(v)); }}
           onHotkeysChange={setHotkeys}
         />
       )}

@@ -14,7 +14,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -870,7 +870,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* Hover indicator - pill in center of cell */}
-        {hover && !durationMode && !moveMode && (
+        {(hoverPill?.fretboard ?? true) && hover && !durationMode && !moveMode && (
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
@@ -887,7 +887,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* External hover highlight (from piano roll) */}
-        {!hover && hoveredNote && hoveredNote.fret >= 0 && hoveredNote.fret < TOTAL_CELLS && (
+        {(hoverPill?.pianoRoll ?? true) && !hover && hoveredNote && hoveredNote.fret >= 0 && hoveredNote.fret < TOTAL_CELLS && (
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hoveredNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
