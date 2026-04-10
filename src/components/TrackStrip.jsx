@@ -8,7 +8,7 @@ import SchemeEditorModal from './SchemeEditorModal';
 export default function TrackStrip({
   tracks, activeTrackId, onSwitchTrack,
   onToggleMute, onToggleSolo, onSetVolume,
-  onAddTrack, onDeleteTrack, onRenameTrack,
+  onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -17,6 +17,8 @@ export default function TrackStrip({
   const [expanded, setExpanded] = useState(false);
   const [newSchemeForTrack, setNewSchemeForTrack] = useState(null);
   const [schemesVersion, setSchemesVersion] = useState(0); // bump to refresh dropdown
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
 
   const startRename = (track) => {
     setEditingId(track.id);
@@ -69,14 +71,34 @@ export default function TrackStrip({
       {/* Expanded panel — full track controls */}
       {expanded && (
         <div className="track-rows">
-          {tracks.map(track => {
+          {tracks.map((track, index) => {
             const isActive = track.id === activeTrackId;
             const instLabel = allInst[track.instrument]?.label || track.instrument;
             return (
               <div
                 key={track.id}
-                className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''}`}
+                className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
                 onClick={() => onSwitchTrack(track.id)}
+                draggable
+                onDragStart={(e) => {
+                  setDragIndex(index);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDragOverIndex(index);
+                }}
+                onDragLeave={() => setDragOverIndex(null)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (dragIndex !== null && dragIndex !== index) {
+                    onReorderTracks(dragIndex, index);
+                  }
+                  setDragIndex(null);
+                  setDragOverIndex(null);
+                }}
+                onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
               >
                 <div className="track-row-name">
                   {editingId === track.id ? (
@@ -178,6 +200,13 @@ export default function TrackStrip({
                       </select>
                     </div>
                   )}
+
+                  <button
+                    className="track-btn-lg"
+                    onClick={(e) => { e.stopPropagation(); onDuplicateTrack(track.id); }}
+                    title="Duplicate track"
+                    style={{ color: '#8bc34a' }}
+                  >⧉</button>
 
                   {tracks.length > 1 && (
                     <button

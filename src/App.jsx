@@ -813,6 +813,33 @@ function App() {
     switchTrack(newTrack.id);
   }, [setTracksTracked, switchTrack]);
 
+  const handleDuplicateTrack = useCallback((trackId) => {
+    const source = tracksRef.current.find(t => t.id === trackId);
+    if (!source) return;
+    const newTrack = {
+      ...source,
+      id: crypto.randomUUID(),
+      name: source.name + ' (copy)',
+      notes: source.notes.map(n => ({ ...n })),
+    };
+    setTracksTracked(prev => {
+      const idx = prev.findIndex(t => t.id === trackId);
+      const next = [...prev];
+      next.splice(idx + 1, 0, newTrack);
+      return next;
+    });
+    switchTrack(newTrack.id);
+  }, [setTracksTracked, switchTrack]);
+
+  const handleReorderTracks = useCallback((fromIndex, toIndex) => {
+    setTracksTracked(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, [setTracksTracked]);
+
   const handleDeleteTrack = useCallback((trackId) => {
     setTracksTracked(prev => {
       if (prev.length <= 1) return prev;
@@ -1083,6 +1110,8 @@ function App() {
         onSetVolume={handleSetTrackVolume}
         onAddTrack={handleAddTrack}
         onDeleteTrack={handleDeleteTrack}
+        onDuplicateTrack={handleDuplicateTrack}
+        onReorderTracks={handleReorderTracks}
         onRenameTrack={handleRenameTrack}
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}

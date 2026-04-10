@@ -582,6 +582,12 @@ input[type="number"] {
 }
 
 .track-row.muted { opacity: 0.6; }
+.track-row.drag-over {
+  border-top: 2px solid #e67e22;
+}
+.track-row[draggable] {
+  cursor: grab;
+}
 
 .track-row-name {
   display: flex;
