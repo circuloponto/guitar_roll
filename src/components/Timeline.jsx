@@ -1111,7 +1111,7 @@ export default function Timeline({
           {/* Tuplet subdivision lines */}
           {tupletLines.visible && subdivisions > 1 && Array.from({ length: totalCols }, (_, beat) => {
             const lines = [];
-            for (let t = 1; t < subdivisions; t++) {
+            for (let t = 0; t < subdivisions; t++) {
               const subBeat = beat + (t / subdivisions);
               if (subBeat >= totalCols) break;
               lines.push(

@@ -92,8 +92,7 @@ export function durationToWidth(beat, duration, barSubs, cellWidth) {
 // Get the beat label for a given beat index: "1", "1.1", "1.2", etc.
 export function beatLabel(beat, barSubs) {
   const { barIndex, subIndex } = beatToBar(beat, barSubs);
-  if (subIndex === 0) return `${barIndex + 1}`;
-  return `${barIndex + 1}.${subIndex}`;
+  return `${barIndex + 1}.${subIndex + 1}`;
 }
 
 // Check if a beat is the first beat of a bar
