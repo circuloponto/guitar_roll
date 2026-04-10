@@ -71,6 +71,8 @@ export default function Timeline({
   const loopDragRef = useRef(null);
   const marqueeRef = useRef(null);
   const marqueeDidDragRef = useRef(false);
+  const [cursorMode, setCursorMode] = useState(false);
+  const cursorModeRef = useRef(false);
   const [subdivMenu, setSubdivMenu] = useState(null); // { barIndex, x, y }
   const [marquee, setMarquee] = useState(null); // { x1, y1, x2, y2 } in px relative to grid
   const [hoverPos, setHoverPos] = useState(null); // { beat, stringIndex, fret } snapped position under mouse
@@ -85,6 +87,15 @@ export default function Timeline({
     const midi = pitchRowToMidi(pitchRow);
     const combo = closestComboForPitch(midi, 0);
     return combo;
+  }, []);
+
+  // Track K key for cursor-only mode (deselect + place cursor, no note input)
+  useEffect(() => {
+    const down = (e) => { if (e.key === 'k' || e.key === 'K') { cursorModeRef.current = true; setCursorMode(true); } };
+    const up = (e) => { if (e.key === 'k' || e.key === 'K') { cursorModeRef.current = false; setCursorMode(false); } };
+    document.addEventListener('keydown', down);
+    document.addEventListener('keyup', up);
+    return () => { document.removeEventListener('keydown', down); document.removeEventListener('keyup', up); };
   }, []);
 
   const handleClick = useCallback((e) => {
@@ -108,6 +119,9 @@ export default function Timeline({
     }
     if (beat < 0 || beat >= totalCols) return;
     setSelectedBeat(beat);
+
+    // K held: cursor-only mode — deselect and place cursor, no note input
+    if (cursorModeRef.current) return;
 
     // Place a note at the clicked position
     const combo = yToPitch(y);
@@ -1073,7 +1087,7 @@ export default function Timeline({
           ))}
 
           {/* Cursor hover rectangle showing duration at mouse position */}
-          {hoverPos && !playing && (
+          {hoverPos && !playing && !cursorMode && (
             <div
               className="cursor-hover-rect"
               style={{

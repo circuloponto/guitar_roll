@@ -422,11 +422,11 @@ function App() {
         e.preventDefault();
         redo();
       }
-      if (matchesHotkey(e, hk.zoomIn)) {
+      if (matchesHotkey(e, hk.zoomIn) || ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '='))) {
         e.preventDefault();
         setTimelineZoom(z => Math.min(40, z * 1.25));
       }
-      if (matchesHotkey(e, hk.zoomOut)) {
+      if (matchesHotkey(e, hk.zoomOut) || ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_'))) {
         e.preventDefault();
         setTimelineZoom(z => Math.max(0.2, z / 1.25));
       }
