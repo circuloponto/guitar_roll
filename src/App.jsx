@@ -990,6 +990,28 @@ function App() {
         </button>
         <button
           className="tool-btn"
+          onClick={() => {
+            if (!confirm('Start a new session? Unsaved changes will be lost.')) return;
+            const track = createDefaultTrack();
+            applyState({
+              tracks: [track],
+              bpm: 120, loop: false, loopStart: 0, loopEnd: totalColumns(defaultBarSubdivisions()),
+              stringColors: ['#ffffff','#ffffff','#ffffff','#ffffff','#ffffff','#ffffff'],
+              synesthesia: [], activeColorScheme: null,
+              subdivisions: 4, markers: [], metronome: false,
+              barSubdivisions: defaultBarSubdivisions(),
+              timeSignature: [4, 4], projectName: 'Untitled',
+            });
+            setSelectedBeat(0);
+            setSelectedNotes(new Set());
+            setNoteDuration(0.25);
+          }}
+          title="New Session"
+        >
+          New
+        </button>
+        <button
+          className="tool-btn"
           onClick={() => setShowSettings(true)}
           title="Settings"
         >
