@@ -148,7 +148,7 @@ function App() {
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
   const snapUnit = 1 / subdivisions; // smallest grid step
-  const noteDuration = snapUnit; // note duration always equals one subdivision
+  const [noteDuration, setNoteDuration] = useState(snapUnit);
   const noteDurationRef = useRef(noteDuration);
   noteDurationRef.current = noteDuration;
   const snapUnitRef = useRef(snapUnit);
@@ -594,6 +594,7 @@ function App() {
 
   const handleSetSubdivisions = useCallback((subs) => {
     setSubdivisions(subs);
+    setNoteDuration(1 / subs);
     if (selectedNotes.size > 0) {
       const dur = 1 / subs;
       setNotes(prev => prev.map((n, i) =>
@@ -1221,6 +1222,8 @@ function App() {
           machineGunMode={machineGunMode}
           defaultVelocity={defaultVelocity}
           noteDuration={noteDuration}
+          setNoteDuration={setNoteDuration}
+          onResizeDuration={setNoteDuration}
           snapUnit={snapUnit}
           subdivisions={subdivisions}
           hotkeys={hotkeys}

@@ -42,6 +42,7 @@ export default function Timeline({
   machineGunMode = false,
   defaultVelocity = 0.8,
   noteDuration = 1,
+  setNoteDuration,
   snapUnit = 1,
   subdivisions = 1,
   hotkeys,
@@ -568,6 +569,7 @@ export default function Timeline({
             let didDrag = false;
             saveSnapshot();
 
+            let lastDuration = noteDuration;
             const handleMouseMove = (moveE) => {
               const dx = moveE.clientX - startX;
               if (!didDrag && Math.abs(dx) < 5) return;
@@ -578,15 +580,16 @@ export default function Timeline({
               const rawDuration = noteDuration + dBeats;
               const newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(snap, Math.round(rawDuration / snap) * snap);
               const maxDuration = totalCols - finalBeat;
-              const clampedDuration = Math.min(newDuration, maxDuration);
+              lastDuration = Math.min(newDuration, maxDuration);
               setNotes(prev => prev.map(n =>
                 (n.stringIndex === combo.stringIndex && n.fret === combo.fret && Math.abs(n.beat - finalBeat) < 0.001)
-                  ? { ...n, duration: clampedDuration }
+                  ? { ...n, duration: lastDuration }
                   : n
               ));
             };
 
             const handleMouseUp = () => {
+              if (didDrag && setNoteDuration) setNoteDuration(lastDuration);
               window.removeEventListener('mousemove', handleMouseMove);
               window.removeEventListener('mouseup', handleMouseUp);
             };
