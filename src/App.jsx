@@ -5,6 +5,7 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOu
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, timeToBeat, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
 import { loadAudioFile } from './utils/audioFile';
+import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
@@ -989,6 +990,33 @@ function App() {
     ));
   }, [setTracksTracked]);
 
+  const handleImportMidi = useCallback(async (file) => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const midi = parseMidi(arrayBuffer);
+      const { tracks: midiTracks, detectedBpm } = midiToGuitarNotes(midi, subdivisions);
+
+      if (midiTracks.length === 0) {
+        alert('No playable guitar notes found in this MIDI file.\nNotes must be in the range E2–E6 (MIDI 40–88).');
+        return;
+      }
+
+      // Set detected BPM
+      if (detectedBpm > 0) setBpm(detectedBpm);
+
+      // Create tracks for each MIDI track
+      const newTracks = midiTracks.map(mt =>
+        ({ ...createDefaultTrack(mt.name), notes: mt.notes })
+      );
+
+      setTracksTracked(prev => [...prev, ...newTracks]);
+      switchTrack(newTracks[0].id);
+      setSelectedNotes(new Set());
+    } catch (err) {
+      alert('Failed to import MIDI file: ' + err.message);
+    }
+  }, [setTracksTracked, switchTrack, subdivisions]);
+
   const handleToggleVisible = useCallback((trackId) => {
     setTracksTracked(prev => prev.map(t =>
       t.id === trackId ? { ...t, visible: t.visible === false ? true : false } : t
@@ -1103,6 +1131,21 @@ function App() {
           title="New Session"
         >
           New
+        </button>
+        <button
+          className="tool-btn"
+          onClick={() => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.mid,.midi';
+            input.onchange = () => {
+              if (input.files[0]) handleImportMidi(input.files[0]);
+            };
+            input.click();
+          }}
+          title="Import MIDI file"
+        >
+          Import MIDI
         </button>
         <button
           className="tool-btn"
