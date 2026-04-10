@@ -335,60 +335,40 @@ function App() {
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
-  const [noteJump, setNoteJump] = useState(false);
-  const noteJumpRef = useRef(false);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
       const hk = hotkeysRef.current;
 
-      if (matchesHotkey(e, hk.noteJump)) {
-        noteJumpRef.current = !noteJumpRef.current;
-        setNoteJump(noteJumpRef.current);
+      // Ctrl+Left/Right: jump to previous/next note
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const currentNotes = notesRef.current;
+        if (currentNotes.length === 0) return;
+        const beats = [...new Set(currentNotes.map(n => n.beat))].sort((a, c) => a - c);
+        if (e.key === 'ArrowLeft') {
+          setSelectedBeat(b => {
+            const prev = beats.filter(beat => beat < b - 0.001);
+            return prev.length > 0 ? prev[prev.length - 1] : b;
+          });
+        } else {
+          setSelectedBeat(b => {
+            const next = beats.filter(beat => beat > b + 0.001);
+            return next.length > 0 ? next[0] : b;
+          });
+        }
         return;
       }
       if (matchesHotkey(e, hk.prevBeat)) {
         e.preventDefault();
-        if (noteJumpRef.current) {
-          const currentNotes = notesRef.current;
-          setSelectedBeat(b => {
-            const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
-            const prev = beats.filter(beat => beat < b);
-            return prev.length > 0 ? prev[prev.length - 1] : b;
-          });
-        } else {
-          const step = noteDurationRef.current;
-          setSelectedBeat(b => {
-            // If there's a note starting before current position, jump to its start
-            const notesAtPrev = notesRef.current.filter(n => Math.abs(n.beat + (n.duration || 1) - b) < 0.001);
-            if (notesAtPrev.length > 0) {
-              return Math.max(0, notesAtPrev[0].beat);
-            }
-            return Math.max(0, b - step);
-          });
-        }
+        const step = noteDurationRef.current;
+        setSelectedBeat(b => Math.max(0, b - step));
       }
       if (matchesHotkey(e, hk.nextBeat)) {
         e.preventDefault();
-        if (noteJumpRef.current) {
-          const currentNotes = notesRef.current;
-          setSelectedBeat(b => {
-            const beats = [...new Set(currentNotes.map(n => Math.floor(n.beat)))].sort((a, c) => a - c);
-            const next = beats.filter(beat => beat > b);
-            return next.length > 0 ? next[0] : b;
-          });
-        } else {
-          const step = noteDurationRef.current;
-          setSelectedBeat(b => {
-            // If there's a note at current position, jump to its end
-            const notesHere = notesRef.current.filter(n => Math.abs(n.beat - b) < 0.001);
-            if (notesHere.length > 0) {
-              const maxEnd = Math.max(...notesHere.map(n => n.beat + (n.duration || 1)));
-              return Math.min(totalBeats - 1, maxEnd);
-            }
-            return Math.min(totalBeats - 1, b + step);
-          });
-        }
+        const step = noteDurationRef.current;
+        setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
       }
       if (matchesHotkey(e, hk.returnToStart)) {
         e.preventDefault();
@@ -1100,8 +1080,8 @@ function App() {
         onSetTrackScheme={handleSetTrackScheme}
       />
       <div className="status-bar">
-        <span style={{ color: (freeMode || noteJump || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{noteJump ? 'JUMP ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        <span style={{ color: (freeMode || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
         <span className="status-separator" />
         <span className="toolbar-label">Vel:</span>
@@ -1148,7 +1128,6 @@ function App() {
         <span className="mobile-actions-sep" />
         <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
         <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
-        <button className={noteJump ? 'active' : ''} onClick={() => { noteJumpRef.current = !noteJumpRef.current; setNoteJump(noteJumpRef.current); }}>Jump</button>
       </div>
       <div className="main-area">
         <Fretboard
