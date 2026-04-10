@@ -325,8 +325,17 @@ function App() {
     }
   }, []);
 
+  // Autosave toggle
+  const [autoSave, setAutoSave] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-auto-save');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch { return true; }
+  });
+
   // Autosave every 30 seconds
   useEffect(() => {
+    if (!autoSave) return;
     const interval = setInterval(() => {
       const state = getSessionState({
         tracks: tracksRef.current,
@@ -337,7 +346,7 @@ function App() {
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
+  }, [autoSave, bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -1390,6 +1399,8 @@ function App() {
           onAutoScrollChange={(v) => { setAutoScroll(v); localStorage.setItem('guitar-roll-auto-scroll', JSON.stringify(v)); }}
           hoverPill={hoverPill}
           onHoverPillChange={(v) => { setHoverPill(v); localStorage.setItem('guitar-roll-hover-pill', JSON.stringify(v)); }}
+          autoSave={autoSave}
+          onAutoSaveChange={(v) => { setAutoSave(v); localStorage.setItem('guitar-roll-auto-save', JSON.stringify(v)); }}
           onHotkeysChange={setHotkeys}
         />
       )}

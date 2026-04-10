@@ -50,7 +50,7 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [schemes, setSchemes] = useState(listColorSchemes);
   const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
@@ -191,6 +191,20 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <div className="settings-section" style={{ display: 'none' }}>
             <h3>String Colors (moved to Color Schemes)</h3>
+          </div>
+
+          <div className="settings-section">
+            <h3>Autosave</h3>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoSave ?? true}
+                  onChange={(e) => onAutoSaveChange(e.target.checked)}
+                />
+                Autosave every 30 seconds
+              </label>
+            </div>
           </div>
 
           <div className="settings-section">
