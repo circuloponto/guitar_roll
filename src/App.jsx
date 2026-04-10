@@ -335,10 +335,17 @@ function App() {
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
+  const handleSetSubdivisionsRef = useRef(null);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
       const hk = hotkeysRef.current;
+
+      // Number keys 1-9: set tuplet subdivision
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+        handleSetSubdivisionsRef.current(Number(e.key));
+        return;
+      }
 
       // Ctrl+Left/Right: jump to previous/next note
       if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
@@ -594,6 +601,7 @@ function App() {
       ));
     }
   }, [selectedNotes]);
+  handleSetSubdivisionsRef.current = handleSetSubdivisions;
 
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
