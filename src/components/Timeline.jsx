@@ -103,51 +103,22 @@ export default function Timeline({
     if (draggingRef.current || noteDragRef.current) return;
     if (marqueeDidDragRef.current) { marqueeDidDragRef.current = false; return; }
     if (eraserMode || machineGunMode) return;
-    if (!e.shiftKey) {
-      setSelectedNotes(new Set());
+
+    // K held: cursor-only mode — deselect and place cursor
+    if (cursorModeRef.current) {
+      if (!e.shiftKey) setSelectedNotes(new Set());
+      const rect = bodyRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
+      let beat;
+      if (freeMode) {
+        beat = xToBeat(x, barSubdivisions, cellWidth, false);
+      } else {
+        const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+        beat = Math.round(rawBeat / snapUnit) * snapUnit;
+      }
+      if (beat >= 0 && beat < totalCols) setSelectedBeat(beat);
     }
-    const rect = bodyRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left + bodyRef.current.scrollLeft;
-    const y = e.clientY - rect.top + bodyRef.current.scrollTop;
-
-    let beat;
-    if (freeMode) {
-      beat = xToBeat(x, barSubdivisions, cellWidth, false);
-    } else {
-      const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
-      beat = Math.round(rawBeat / snapUnit) * snapUnit;
-    }
-    if (beat < 0 || beat >= totalCols) return;
-    setSelectedBeat(beat);
-
-    // K held: cursor-only mode — deselect and place cursor, no note input
-    if (cursorModeRef.current) return;
-
-    // Place a note at the clicked position
-    const combo = yToPitch(y);
-    if (!combo) return;
-    const finalBeat = Math.round(beat * 10000) / 10000;
-    setNotes(prev => {
-      // Toggle: if exact same note exists at this beat, remove it
-      const exact = prev.findIndex(n =>
-        n.stringIndex === combo.stringIndex && n.fret === combo.fret &&
-        Math.abs(n.beat - finalBeat) < 0.001
-      );
-      if (exact >= 0) return prev.filter((_, i) => i !== exact);
-      // Remove existing notes on the same string at the same beat
-      const filtered = prev.filter(n =>
-        !(n.stringIndex === combo.stringIndex && Math.abs(n.beat - finalBeat) < 0.001)
-      );
-      return [...filtered, {
-        stringIndex: combo.stringIndex,
-        fret: combo.fret,
-        beat: finalBeat,
-        duration: noteDuration,
-        velocity: defaultVelocity,
-      }];
-    });
-    playNote(combo.stringIndex, combo.fret, 0.2);
-  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit, eraserMode, machineGunMode, totalCols, barSubdivisions, yToPitch, setNotes, noteDuration, defaultVelocity]);
+  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit, eraserMode, machineGunMode, totalCols, barSubdivisions]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
     if (e.shiftKey) {
@@ -552,6 +523,82 @@ export default function Timeline({
       return;
     }
 
+    // Click-and-drag to place a note and resize its duration
+    if (!eraserMode && !cursorModeRef.current && !e.shiftKey) {
+      let beat;
+      if (freeMode) {
+        beat = xToBeat(x, barSubdivisions, cellWidth, false);
+      } else {
+        const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
+        beat = Math.round(rawBeat / snapUnit) * snapUnit;
+      }
+      if (beat >= 0 && beat < totalCols) {
+        const combo = yToPitch(y);
+        if (combo) {
+          const finalBeat = Math.round(beat * 10000) / 10000;
+          // Check if toggling off an existing note
+          let toggled = false;
+          setNotes(prev => {
+            const exact = prev.findIndex(n =>
+              n.stringIndex === combo.stringIndex && n.fret === combo.fret &&
+              Math.abs(n.beat - finalBeat) < 0.001
+            );
+            if (exact >= 0) { toggled = true; return prev.filter((_, i) => i !== exact); }
+            const filtered = prev.filter(n =>
+              !(n.stringIndex === combo.stringIndex && Math.abs(n.beat - finalBeat) < 0.001)
+            );
+            return [...filtered, {
+              stringIndex: combo.stringIndex,
+              fret: combo.fret,
+              beat: finalBeat,
+              duration: noteDuration,
+              velocity: defaultVelocity,
+            }];
+          });
+          setSelectedBeat(beat);
+          setSelectedNotes(new Set());
+          playNote(combo.stringIndex, combo.fret, 0.2);
+          marqueeDidDragRef.current = true; // prevent handleClick from also firing
+
+          if (!toggled) {
+            // Start drag-to-resize the newly placed note
+            const isFree = freeMode;
+            const snap = snapUnit;
+            const startX = e.clientX;
+            let didDrag = false;
+            saveSnapshot();
+
+            const handleMouseMove = (moveE) => {
+              const dx = moveE.clientX - startX;
+              if (!didDrag && Math.abs(dx) < 5) return;
+              didDrag = true;
+              const noteBarIdx = beatToBar(finalBeat, barSubdivisions).barIndex;
+              const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
+              const dBeats = dx / cw;
+              const rawDuration = noteDuration + dBeats;
+              const newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(snap, Math.round(rawDuration / snap) * snap);
+              const maxDuration = totalCols - finalBeat;
+              const clampedDuration = Math.min(newDuration, maxDuration);
+              setNotes(prev => prev.map(n =>
+                (n.stringIndex === combo.stringIndex && n.fret === combo.fret && Math.abs(n.beat - finalBeat) < 0.001)
+                  ? { ...n, duration: clampedDuration }
+                  : n
+              ));
+            };
+
+            const handleMouseUp = () => {
+              window.removeEventListener('mousemove', handleMouseMove);
+              window.removeEventListener('mouseup', handleMouseUp);
+            };
+
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+          }
+          return;
+        }
+      }
+    }
+
     // Normal marquee selection
     marqueeRef.current = { startX: x, startY: y, didMove: false };
     if (!e.shiftKey) {
@@ -614,7 +661,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes, eraserMode, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch]);
+  }, [playing, notes, setSelectedNotes, eraserMode, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
