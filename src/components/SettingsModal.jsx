@@ -50,7 +50,7 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [schemes, setSchemes] = useState(listColorSchemes);
   const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
@@ -134,6 +134,26 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               />
               <span style={{ fontSize: 12, color: '#888', marginLeft: 6 }}>{Math.round((tupletLines?.opacity ?? 0.35) * 100)}%</span>
             </div>
+          </div>
+
+          <div className="settings-section">
+            <h3>Fretboard Auto-Scroll</h3>
+            {[
+              { key: 'onHover', label: 'Scroll on note hover' },
+              { key: 'onInput', label: 'Scroll on note input' },
+              { key: 'onPlayback', label: 'Scroll during playback' },
+            ].map(({ key, label }) => (
+              <div key={key} className="settings-row">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={autoScroll?.[key] ?? true}
+                    onChange={(e) => onAutoScrollChange({ ...autoScroll, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              </div>
+            ))}
           </div>
 
           <div className="settings-section">

@@ -14,7 +14,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -323,6 +323,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
   // Auto-scroll fretboard to show hovered note (from piano roll — only when local hover is null)
   useEffect(() => {
+    if (!(autoScroll?.onHover ?? true)) return;
     if (!hoveredNote || !scrollRef.current || hover) return;
     const noteTop = cellTopPx(hoveredNote.fret);
     const noteBottom = noteTop + FRET_HEIGHT;
@@ -335,10 +336,11 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     } else if (noteBottom > viewBottom) {
       container.scrollTo({ top: noteBottom - container.clientHeight + 20, behavior: 'smooth' });
     }
-  }, [hoveredNote, hover]);
+  }, [hoveredNote, hover, autoScroll]);
 
   // Auto-scroll fretboard to show playing notes during playback
   useEffect(() => {
+    if (!(autoScroll?.onPlayback ?? true)) return;
     if (!playingNotes.length || !scrollRef.current) return;
     let minFret = Infinity, maxFret = -Infinity;
     for (const n of playingNotes) {
@@ -355,7 +357,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       const center = (regionTop + regionBottom) / 2;
       container.scrollTo({ top: center - container.clientHeight / 2, behavior: 'smooth' });
     }
-  }, [playingNotes]);
+  }, [playingNotes, autoScroll]);
 
 
   // Ctrl+scroll zoom on fretboard

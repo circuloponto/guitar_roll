@@ -180,6 +180,12 @@ function App() {
       return { visible: true, opacity: 0.35, ...saved };
     } catch { return { visible: true, opacity: 0.35 }; }
   });
+  const [autoScroll, setAutoScroll] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('guitar-roll-auto-scroll'));
+      return { onHover: true, onInput: true, onPlayback: true, ...saved };
+    } catch { return { onHover: true, onInput: true, onPlayback: true }; }
+  });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -1187,6 +1193,7 @@ function App() {
           fretboardZoom={fretboardZoom}
           setFretboardZoom={setFretboardZoom}
           voicingPreview={voicingPreview}
+          autoScroll={autoScroll}
         />
         <Timeline
           notes={notes}
@@ -1236,6 +1243,7 @@ function App() {
           tupletLines={tupletLines}
           chordPreview={chordPreview}
           onTimelineHover={(pos) => setHoveredNote(pos)}
+          autoScroll={autoScroll}
           markers={markers}
           onAddMarker={handleAddMarker}
           onUpdateMarker={handleUpdateMarker}
@@ -1352,6 +1360,8 @@ function App() {
           onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
           tupletLines={tupletLines}
           onTupletLinesChange={(v) => { setTupletLines(v); localStorage.setItem('guitar-roll-tuplet-lines', JSON.stringify(v)); }}
+          autoScroll={autoScroll}
+          onAutoScrollChange={(v) => { setAutoScroll(v); localStorage.setItem('guitar-roll-auto-scroll', JSON.stringify(v)); }}
           onHotkeysChange={setHotkeys}
         />
       )}

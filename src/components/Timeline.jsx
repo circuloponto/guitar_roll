@@ -56,6 +56,7 @@ export default function Timeline({
   onDeleteMarker,
   onResizeDuration,
   chordPreview,
+  autoScroll,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -610,6 +611,7 @@ export default function Timeline({
 
   // Auto-scroll vertically to show hovered note
   useEffect(() => {
+    if (!(autoScroll?.onInput ?? true)) return;
     if (!hoveredNote || !bodyRef.current) return;
     const noteTop = rowTopPx(hoveredNote.stringIndex, hoveredNote.fret);
     const noteBottom = noteTop + ROW_HEIGHT;
@@ -624,7 +626,7 @@ export default function Timeline({
       const target = noteBottom - container.clientHeight + 20;
       container.scrollTo({ top: target, behavior: 'smooth' });
     }
-  }, [hoveredNote]);
+  }, [hoveredNote, autoScroll]);
 
   // Scroll zoom — use document-level to prevent browser zoom
   const hotkeysRef = useRef(hotkeys);
@@ -690,8 +692,24 @@ export default function Timeline({
     return () => document.removeEventListener('wheel', handleWheel);
   }, [notes, setNotes, selectedNotes, barSubdivisions, cellWidth]);
 
+  // Shift+wheel to pan horizontally, plain wheel scrolls vertically only
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const handleWheel = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // let zoom/velocity handlers take over
+      if (e.shiftKey) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, []);
+
   // Auto-scroll to playhead during playback
   useEffect(() => {
+    if (!(autoScroll?.onPlayback ?? true)) return;
     if (playing && bodyRef.current && currentBeat !== null) {
       const playheadX = beatToX(currentBeat, barSubdivisions, cellWidth);
       const container = bodyRef.current;
@@ -702,7 +720,7 @@ export default function Timeline({
         container.scrollLeft = playheadX - 100;
       }
     }
-  }, [currentBeat, playing]);
+  }, [currentBeat, playing, autoScroll]);
 
   const loopLeftPx = beatToX(loopStart, barSubdivisions, cellWidth);
   const loopWidthPx = beatToX(loopEnd, barSubdivisions, cellWidth) - loopLeftPx;
