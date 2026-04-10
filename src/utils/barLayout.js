@@ -142,6 +142,12 @@ export function beatToTime(beat, barSubs, bpm, denominator = 4) {
   return beat * colDur;
 }
 
+// Convert seconds to beat position (inverse of beatToTime)
+export function timeToBeat(seconds, bpm, denominator = 4) {
+  const colDur = subdivDuration(bpm, denominator);
+  return seconds / colDur;
+}
+
 // Get the duration in seconds of one column at a specific beat
 export function colDurationAtBeat(beat, barSubs, bpm, denominator = 4) {
   return subdivDuration(bpm, denominator);

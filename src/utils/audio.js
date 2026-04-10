@@ -787,4 +787,4 @@ export function playClickAtTime(time, accent = false) {
   osc2.stop(time + dur + 0.01);
 }
 
-export { getAudioContext };
+export { getAudioContext, getMasterOut };

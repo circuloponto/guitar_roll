@@ -8,7 +8,7 @@ import {
   TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi,
   midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
 } from '../utils/pitchMap';
-import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth } from '../utils/barLayout';
+import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth, timeToBeat } from '../utils/barLayout';
 import { matchesWheelHotkey } from '../utils/hotkeys';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
@@ -58,6 +58,9 @@ export default function Timeline({
   onResizeDuration,
   chordPreview,
   autoScroll,
+  audioTracks = [],
+  bpm = 120,
+  timeSignature = [4, 4],
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -1145,6 +1148,48 @@ export default function Timeline({
               }}
             />
           ))}
+
+          {/* Audio waveforms */}
+          {audioTracks.map(at => {
+            const durationBeats = timeToBeat(at.audioDuration, bpm, timeSignature[1]);
+            const startX = beatToX(at.audioOffset, barSubdivisions, cellWidth);
+            const endX = beatToX(at.audioOffset + durationBeats, barSubdivisions, cellWidth);
+            const width = Math.max(1, endX - startX);
+            return (
+              <canvas
+                key={`waveform-${at.trackId}`}
+                width={Math.round(width)}
+                height={GRID_TOTAL_HEIGHT}
+                style={{
+                  position: 'absolute',
+                  left: startX,
+                  top: 0,
+                  width,
+                  height: GRID_TOTAL_HEIGHT,
+                  opacity: at.isActive ? 0.5 : (at.bgOpacity ?? 0.2),
+                  pointerEvents: 'none',
+                  zIndex: 2,
+                }}
+                ref={el => {
+                  if (!el || !at.waveformPeaks) return;
+                  const ctx = el.getContext('2d');
+                  const w = el.width;
+                  const h = el.height;
+                  ctx.clearRect(0, 0, w, h);
+                  const peaks = at.waveformPeaks;
+                  const color = at.isActive ? '#3498db' : '#888';
+                  ctx.fillStyle = color;
+                  const mid = h / 2;
+                  for (let i = 0; i < w; i++) {
+                    const peakIdx = Math.floor((i / w) * peaks.length);
+                    const peak = peaks[peakIdx] || 0;
+                    const barH = peak * mid;
+                    ctx.fillRect(i, mid - barH, 1, barH * 2);
+                  }
+                }}
+              />
+            );
+          })}
 
           {/* Cursor hover rectangle showing duration at mouse position */}
           {hoverPos && !playing && !cursorMode && (

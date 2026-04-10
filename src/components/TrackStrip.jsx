@@ -10,6 +10,7 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
+  onLoadAudio, onRemoveAudio,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -199,6 +200,36 @@ export default function TrackStrip({
                         <option value="__new__">+ New Scheme...</option>
                       </select>
                     </div>
+                  )}
+
+                  {track.type === 'audio' && track.audioFileName ? (
+                    <div className="track-slider-group">
+                      <span className="track-slider-label" style={{ color: '#3498db' }} title={track.audioFileName}>
+                        🎵 {track.audioFileName.length > 12 ? track.audioFileName.slice(0, 12) + '…' : track.audioFileName}
+                      </span>
+                      <button
+                        className="track-btn-lg"
+                        onClick={(e) => { e.stopPropagation(); onRemoveAudio(track.id); }}
+                        title="Remove audio"
+                        style={{ color: '#e74c3c', fontSize: 11 }}
+                      >✕</button>
+                    </div>
+                  ) : (
+                    <button
+                      className="track-btn-lg"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.wav,.mp3,.aiff,.aif';
+                        input.onchange = () => {
+                          if (input.files[0]) onLoadAudio(track.id, input.files[0]);
+                        };
+                        input.click();
+                      }}
+                      title="Load audio file"
+                      style={{ color: '#3498db', fontSize: 11 }}
+                    >🎵</button>
                   )}
 
                   <button

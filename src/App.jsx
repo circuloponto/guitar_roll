@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
-import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
+import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, timeToBeat, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
+import { loadAudioFile } from './utils/audioFile';
 import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
 import { getMidiNote } from './utils/pitchMap';
@@ -18,7 +19,7 @@ import NumberInput from './components/NumberInput';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
-  return { id: crypto.randomUUID(), name, instrument, notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2, schemeName: null };
+  return { id: crypto.randomUUID(), name, instrument, type: 'notes', notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2, schemeName: null, audioFileName: null, audioDuration: 0, audioOffset: 0, waveformPeaks: null };
 }
 
 function getPlayableTracks(tracks) {
@@ -34,6 +35,8 @@ function App() {
   // === Track state ===
   const [tracks, setTracksRaw] = useState(() => [createDefaultTrack()]);
   const tracksRef = useRef(tracks);
+  const audioBuffersRef = useRef({}); // { [trackId]: AudioBuffer }
+  const audioSourcesRef = useRef([]); // active AudioBufferSourceNodes during playback
   const [activeTrackId, setActiveTrackId] = useState(() => tracks[0]?.id);
   const activeTrackIdRef = useRef(activeTrackId);
   activeTrackIdRef.current = activeTrackId;
@@ -656,11 +659,61 @@ function App() {
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
     }
+    // Stop audio file sources
+    audioSourcesRef.current.forEach(({ source }) => {
+      try { source.stop(); } catch {}
+    });
+    audioSourcesRef.current = [];
+  }, []);
+
+  const scheduleAudioTracks = useCallback((playable, fromBeat, startTime, ctx, barSubs) => {
+    // Stop any previous audio sources
+    audioSourcesRef.current.forEach(({ source }) => {
+      try { source.stop(); } catch {}
+    });
+    audioSourcesRef.current = [];
+
+    const getMasterOut = () => {
+      // Access master output from audio module
+      getAudioContext();
+      return ctx.destination; // fallback; will be routed through limiter below
+    };
+
+    playable.forEach(track => {
+      if (track.type !== 'audio') return;
+      const buffer = audioBuffersRef.current[track.id];
+      if (!buffer) return;
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      const gainNode = ctx.createGain();
+      gainNode.gain.setValueAtTime(track.muted ? 0 : track.volume, startTime);
+      source.connect(gainNode);
+      gainNode.connect(getMasterOut());
+
+      const audioStartBeat = track.audioOffset || 0;
+      const beatOffset = fromBeat - audioStartBeat;
+      const bpm = bpmRef.current;
+      const denom = timeSigRef.current[1];
+      const timeOffset = beatToTime(Math.max(0, beatOffset), barSubs, bpm, denom);
+
+      if (beatOffset >= 0) {
+        if (timeOffset < buffer.duration) {
+          source.start(startTime, timeOffset);
+        }
+      } else {
+        const delay = beatToTime(-beatOffset, barSubs, bpm, denom);
+        source.start(startTime + delay, 0);
+      }
+
+      audioSourcesRef.current.push({ source, gainNode, trackId: track.id });
+    });
   }, []);
 
   const startPlayback = useCallback((fromBeat) => {
     const playable = getPlayableTracks(tracksRef.current);
-    if (playable.every(t => t.notes.length === 0)) return;
+    const hasContent = playable.some(t => t.notes.length > 0 || (t.type === 'audio' && audioBuffersRef.current[t.id]));
+    if (!hasContent) return;
 
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
@@ -677,6 +730,9 @@ function App() {
 
     const initialStart = regionStart;
     const startTime = ctx.currentTime + 0.05;
+
+    // Schedule audio file tracks
+    scheduleAudioTracks(playable, fromBeat, startTime, ctx, barSubs);
     const lookahead = 0.1;
     let nextBeatIndex = 0;
     let nextBeatTime = startTime;
@@ -720,6 +776,9 @@ function App() {
           // Switch to full loop region
           prevRStart = loopStartRef.current;
           prevRDuration = loopEndRef.current - loopStartRef.current;
+          // Reschedule audio tracks for loop restart
+          const loopPlayable = getPlayableTracks(tracksRef.current);
+          scheduleAudioTracks(loopPlayable, loopStartRef.current, nextBeatTime, ctx, bs);
         }
       }
 
@@ -749,6 +808,7 @@ function App() {
         const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm, timeSigRef.current[1]);
 
         currentPlayable.forEach(track => {
+          if (track.type === 'audio') return;
           track.notes.forEach(note => {
             if (note.beat >= beat && note.beat < beat + 1) {
               const offset = (note.beat - beat) * colDur;
@@ -775,7 +835,7 @@ function App() {
     };
 
     animFrameRef.current = requestAnimationFrame(animate);
-  }, [stopPlayback]);
+  }, [stopPlayback, scheduleAudioTracks]);
 
   // Play button: from start of loop or start of timeline
   const handlePlay = useCallback(() => {
@@ -892,6 +952,40 @@ function App() {
   const handleRenameTrack = useCallback((trackId, name) => {
     setTracksTracked(prev => prev.map(t =>
       t.id === trackId ? { ...t, name } : t
+    ));
+  }, [setTracksTracked]);
+
+  const handleLoadAudio = useCallback(async (trackId, file) => {
+    try {
+      const { buffer, peaks } = await loadAudioFile(file);
+      audioBuffersRef.current[trackId] = buffer;
+      setTracksTracked(prev => prev.map(t =>
+        t.id === trackId ? {
+          ...t,
+          type: 'audio',
+          audioFileName: file.name,
+          audioDuration: buffer.duration,
+          audioOffset: 0,
+          notes: [],
+          waveformPeaks: Array.from(peaks),
+        } : t
+      ));
+    } catch (err) {
+      alert('Failed to load audio file: ' + err.message);
+    }
+  }, [setTracksTracked]);
+
+  const handleRemoveAudio = useCallback((trackId) => {
+    delete audioBuffersRef.current[trackId];
+    setTracksTracked(prev => prev.map(t =>
+      t.id === trackId ? {
+        ...t,
+        type: 'notes',
+        audioFileName: null,
+        audioDuration: 0,
+        audioOffset: 0,
+        waveformPeaks: null,
+      } : t
     ));
   }, [setTracksTracked]);
 
@@ -1150,6 +1244,8 @@ function App() {
         onDuplicateTrack={handleDuplicateTrack}
         onReorderTracks={handleReorderTracks}
         onRenameTrack={handleRenameTrack}
+        onLoadAudio={handleLoadAudio}
+        onRemoveAudio={handleRemoveAudio}
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}
         onSetTrackScheme={handleSetTrackScheme}
@@ -1305,6 +1401,17 @@ function App() {
           onAddMarker={handleAddMarker}
           onUpdateMarker={handleUpdateMarker}
           onDeleteMarker={handleDeleteMarker}
+          audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
+            trackId: t.id,
+            audioOffset: t.audioOffset || 0,
+            audioDuration: t.audioDuration,
+            waveformPeaks: t.waveformPeaks,
+            isActive: t.id === activeTrackId,
+            bgOpacity: t.bgOpacity ?? 0.2,
+            volume: t.volume,
+          }))}
+          bpm={bpm}
+          timeSignature={timeSignature}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
           <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>
