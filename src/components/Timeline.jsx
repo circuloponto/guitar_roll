@@ -857,6 +857,11 @@ export default function Timeline({
                 key={marker.id}
                 className="timeline-marker"
                 style={{ left: beatToX(marker.beat, barSubdivisions, cellWidth) }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMarkerMenu({ x: e.clientX, y: e.clientY, markerId: marker.id });
+                }}
                 onMouseDown={(e) => {
                   if (e.button !== 0) return;
                   e.stopPropagation();
