@@ -1059,23 +1059,6 @@ export default function Timeline({
             return lines;
           })}
 
-          {/* Selected beat highlight */}
-          {selectedBeat !== null && (
-            (freeMode && selectedBeat % 1 !== 0) || (subdivisions > 1) ? (
-              <div
-                className="timeline-selected-col"
-                style={{
-                  left: beatToX(selectedBeat, barSubdivisions, cellWidth),
-                  width: durationToWidth(selectedBeat, noteDuration, barSubdivisions, cellWidth),
-                }}
-              />
-            ) : (
-              <div
-                className="timeline-selected-col"
-                style={{ left: beatToX(Math.floor(selectedBeat), barSubdivisions, cellWidth), width: colWidth(beatToBar(Math.floor(selectedBeat), barSubdivisions).barIndex, barSubdivisions, cellWidth) }}
-              />
-            )
-          )}
 
           {/* Marker lines through grid */}
           {markers.map(marker => (
@@ -1270,6 +1253,11 @@ export default function Timeline({
               width: marquee.x2 - marquee.x1,
               height: marquee.y2 - marquee.y1,
             }} />
+          )}
+
+          {/* Selected beat line */}
+          {selectedBeat !== null && !playing && (
+            <div className="playhead" style={{ left: beatToX(selectedBeat, barSubdivisions, cellWidth), background: '#ffffff', width: 1 }} />
           )}
 
           {/* Playhead */}
