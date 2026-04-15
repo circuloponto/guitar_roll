@@ -760,8 +760,12 @@ export default function Timeline({
       }
     }
 
-    // Normal marquee selection (or marquee-erase under Shift+RightClick)
-    marqueeRef.current = { startX: x, startY: y, didMove: false, erase: isMarqueeErase };
+    // Normal marquee selection (or marquee-erase under Shift+RightClick).
+    // Capture the selection at drag start so shift-drag can add-and-remove as the marquee grows/shrinks.
+    const initialSelection = e.shiftKey && !isMarqueeErase
+      ? new Set(selectedNotes)
+      : new Set();
+    marqueeRef.current = { startX: x, startY: y, didMove: false, erase: isMarqueeErase, initialSelection };
     const prevCursor = document.body.style.cursor;
     if (isMarqueeErase) document.body.style.cursor = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><rect x='3' y='11' width='14' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ff9999' stroke='black' stroke-width='1.5'/><rect x='3' y='11' width='5' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ffffff' stroke='black' stroke-width='1.5'/></svg>") 4 20, crosshair`;
     if (!e.shiftKey || isMarqueeErase) {
@@ -796,14 +800,15 @@ export default function Timeline({
           selected.add(i);
         }
       });
-      setSelectedNotes(prev => {
-        if (moveE.shiftKey) {
-          const merged = new Set(prev);
-          selected.forEach(i => merged.add(i));
-          return merged;
-        }
-        return selected;
-      });
+      // Shift-drag: final selection is (initialSelection ∪ currentlyInMarquee)
+      // so shrinking the marquee deselects notes that are no longer inside it.
+      if (moveE.shiftKey && !isMarqueeErase) {
+        const merged = new Set(marqueeRef.current.initialSelection);
+        selected.forEach(i => merged.add(i));
+        setSelectedNotes(merged);
+      } else {
+        setSelectedNotes(selected);
+      }
     };
 
     const handleMouseUp = () => {
