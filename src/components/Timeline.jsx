@@ -1149,46 +1149,98 @@ export default function Timeline({
             />
           ))}
 
-          {/* Audio waveforms */}
-          {audioTracks.map(at => {
+          {/* Audio waveforms — split into tiles so each pixel maps 1:1 with display */}
+          {audioTracks.flatMap(at => {
             const durationBeats = timeToBeat(at.audioDuration, bpm, timeSignature[1]);
             const startX = beatToX(at.audioOffset, barSubdivisions, cellWidth);
             const endX = beatToX(at.audioOffset + durationBeats, barSubdivisions, cellWidth);
-            const width = Math.max(1, endX - startX);
-            return (
-              <canvas
-                key={`waveform-${at.trackId}`}
-                width={Math.round(width)}
-                height={GRID_TOTAL_HEIGHT}
-                style={{
-                  position: 'absolute',
-                  left: startX,
-                  top: 0,
-                  width,
-                  height: GRID_TOTAL_HEIGHT,
-                  opacity: at.isActive ? 0.5 : (at.bgOpacity ?? 0.2),
-                  pointerEvents: 'none',
-                  zIndex: 2,
-                }}
-                ref={el => {
-                  if (!el || !at.waveformPeaks) return;
-                  const ctx = el.getContext('2d');
-                  const w = el.width;
-                  const h = el.height;
-                  ctx.clearRect(0, 0, w, h);
-                  const peaks = at.waveformPeaks;
-                  const color = at.isActive ? '#3498db' : '#888';
-                  ctx.fillStyle = color;
-                  const mid = h / 2;
-                  for (let i = 0; i < w; i++) {
-                    const peakIdx = Math.floor((i / w) * peaks.length);
-                    const peak = peaks[peakIdx] || 0;
-                    const barH = peak * mid;
-                    ctx.fillRect(i, mid - barH, 1, barH * 2);
-                  }
-                }}
-              />
-            );
+            const totalWidth = Math.max(1, endX - startX);
+            const TILE_W = 4096;
+            const tileCount = Math.ceil(totalWidth / TILE_W);
+            const color = at.isActive ? '#3498db' : '#888';
+            const peaks = at.waveformPeaks;
+            const buffer = at.audioBuffer;
+            const canvases = [];
+            for (let ti = 0; ti < tileCount; ti++) {
+              const tileOffset = ti * TILE_W;
+              const tileWidth = Math.min(TILE_W, totalWidth - tileOffset);
+              const tileStartFrac = tileOffset / totalWidth;
+              const tileEndFrac = (tileOffset + tileWidth) / totalWidth;
+              canvases.push(
+                <canvas
+                  key={`waveform-${at.trackId}-${ti}`}
+                  width={Math.round(tileWidth)}
+                  height={GRID_TOTAL_HEIGHT}
+                  style={{
+                    position: 'absolute',
+                    left: startX + tileOffset,
+                    top: 0,
+                    width: tileWidth,
+                    height: GRID_TOTAL_HEIGHT,
+                    opacity: at.isActive ? 0.5 : (at.bgOpacity ?? 0.2),
+                    pointerEvents: 'none',
+                    zIndex: 2,
+                  }}
+                  ref={el => {
+                    if (!el) return;
+                    const c2d = el.getContext('2d');
+                    const w = el.width;
+                    const h = el.height;
+                    c2d.clearRect(0, 0, w, h);
+                    c2d.fillStyle = color;
+                    const mid = h / 2;
+
+                    const precomputedInTile = peaks ? peaks.length * (tileEndFrac - tileStartFrac) : 0;
+                    if (buffer && precomputedInTile < w) {
+                      const data = buffer.getChannelData(0);
+                      const sampleStart = Math.floor(tileStartFrac * data.length);
+                      const sampleEnd = Math.floor(tileEndFrac * data.length);
+                      const span = sampleEnd - sampleStart;
+                      const samplesPerPixel = span / w;
+                      if (samplesPerPixel >= 1) {
+                        for (let i = 0; i < w; i++) {
+                          const s = sampleStart + Math.floor(i * samplesPerPixel);
+                          const e = sampleStart + Math.floor((i + 1) * samplesPerPixel);
+                          let min = 0, max = 0;
+                          for (let j = s; j < e; j++) {
+                            const v = data[j];
+                            if (v > max) max = v;
+                            else if (v < min) min = v;
+                          }
+                          const yTop = mid - max * mid;
+                          const yBot = mid - min * mid;
+                          c2d.fillRect(i, yTop, 1, Math.max(1, yBot - yTop));
+                        }
+                      } else {
+                        c2d.strokeStyle = color;
+                        c2d.lineWidth = 1;
+                        c2d.beginPath();
+                        for (let i = 0; i < w; i++) {
+                          const pos = sampleStart + (i / (w - 1 || 1)) * Math.max(0, span - 1);
+                          const i0 = Math.floor(pos);
+                          const i1 = Math.min(i0 + 1, data.length - 1);
+                          const frac = pos - i0;
+                          const v = data[i0] * (1 - frac) + data[i1] * frac;
+                          const y = mid - v * mid;
+                          if (i === 0) c2d.moveTo(i, y);
+                          else c2d.lineTo(i, y);
+                        }
+                        c2d.stroke();
+                      }
+                    } else if (peaks) {
+                      for (let i = 0; i < w; i++) {
+                        const frac = tileStartFrac + (i / w) * (tileEndFrac - tileStartFrac);
+                        const peakIdx = Math.min(peaks.length - 1, Math.floor(frac * peaks.length));
+                        const peak = peaks[peakIdx] || 0;
+                        const barH = peak * mid;
+                        c2d.fillRect(i, mid - barH, 1, barH * 2);
+                      }
+                    }
+                  }}
+                />
+              );
+            }
+            return canvases;
           })}
 
           {/* Cursor hover rectangle showing duration at mouse position */}

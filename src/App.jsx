@@ -4,7 +4,8 @@ import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, timeToBeat, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
-import { loadAudioFile } from './utils/audioFile';
+import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
+import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
@@ -269,6 +270,22 @@ function App() {
       setTracksTracked(data.tracks);
       const firstId = data.tracks[0]?.id;
       if (firstId) { setActiveTrackId(firstId); activeTrackIdRef.current = firstId; }
+      // Rehydrate persisted audio files from IndexedDB
+      data.tracks.forEach(async (t) => {
+        if (t.type === 'audio' && t.audioFileName && !audioBuffersRef.current[t.id]) {
+          try {
+            const stored = await getAudioFile(t.id);
+            if (!stored) return;
+            const ctx = getAudioContext();
+            const buffer = await ctx.decodeAudioData(stored.arrayBuffer.slice(0));
+            audioBuffersRef.current[t.id] = buffer;
+            // Trigger a re-render so the Timeline picks up the buffer for crisp waveform
+            setTracksTracked(prev => prev.map(tr => tr.id === t.id ? { ...tr } : tr));
+          } catch (e) {
+            console.warn('Could not restore audio for track', t.id, e);
+          }
+        }
+      });
     } else if (data.notes !== undefined) {
       // Legacy: wrap flat notes into a single track
       setTracksTracked(prev => {
@@ -971,7 +988,16 @@ function App() {
 
   const handleLoadAudio = useCallback(async (trackId, file) => {
     try {
-      const { buffer, peaks } = await loadAudioFile(file);
+      const arrayBuffer = await file.arrayBuffer();
+      // Persist raw bytes so audio survives reload
+      try {
+        await putAudioFile(trackId, arrayBuffer.slice(0), file.name, file.type);
+      } catch (e) {
+        console.warn('Could not persist audio file:', e);
+      }
+      const ctx = getAudioContext();
+      const buffer = await ctx.decodeAudioData(arrayBuffer);
+      const peaks = computeWaveformPeaks(buffer, 2000);
       audioBuffersRef.current[trackId] = buffer;
       setTracksTracked(prev => prev.map(t =>
         t.id === trackId ? {
@@ -991,6 +1017,7 @@ function App() {
 
   const handleRemoveAudio = useCallback((trackId) => {
     delete audioBuffersRef.current[trackId];
+    deleteAudioFile(trackId).catch(() => {});
     setTracksTracked(prev => prev.map(t =>
       t.id === trackId ? {
         ...t,
@@ -1461,6 +1488,7 @@ function App() {
             audioOffset: t.audioOffset || 0,
             audioDuration: t.audioDuration,
             waveformPeaks: t.waveformPeaks,
+            audioBuffer: audioBuffersRef.current[t.id],
             isActive: t.id === activeTrackId,
             bgOpacity: t.bgOpacity ?? 0.2,
             volume: t.volume,
