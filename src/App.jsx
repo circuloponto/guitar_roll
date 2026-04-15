@@ -867,7 +867,7 @@ function App() {
       stopPlayback();
       return;
     }
-    startPlayback(Math.floor(selectedBeatRef.current));
+    startPlayback(selectedBeatRef.current);
   }, [playing, stopPlayback, startPlayback]);
 
   handlePlayRef.current = handlePlayFromHead;
