@@ -329,6 +329,19 @@ function App() {
     }
   }, []);
 
+  // Handle share link opened in an already-running tab (only hash changes, no reload)
+  useEffect(() => {
+    const onHashChange = () => {
+      const urlState = stateFromUrl();
+      if (urlState) {
+        applyState(urlState);
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [applyState]);
+
   // Autosave toggle
   const [autoSave, setAutoSave] = useState(() => {
     try {
@@ -1201,7 +1214,6 @@ function App() {
           className="bpm-input"
           value={barSubdivisions.length}
           min={1}
-          max={128}
           onChange={(newCount) => {
             setBarSubdivisions(prev => {
               if (newCount > prev.length) {
