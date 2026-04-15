@@ -562,9 +562,19 @@ export default function Timeline({
         beat = Math.round(rawBeat / snapUnit) * snapUnit;
       }
       if (beat >= 0 && beat < totalCols) {
-        const combo = yToPitch(y);
+        // Pick a string that isn't already occupied at this beat so chords can be placed
+        const finalBeatForCombo = Math.round(beat * 10000) / 10000;
+        const rowFromTop = Math.floor(y / ROW_HEIGHT);
+        const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
+        const midiTarget = pitchRowToMidi(pitchRow);
+        const allCombos = pitchRowCombos(pitchRow);
+        const occupied = new Set(
+          notes.filter(n => Math.abs(n.beat - finalBeatForCombo) < 0.001).map(n => n.stringIndex)
+        );
+        const free = allCombos.find(c => !occupied.has(c.stringIndex));
+        const combo = free || closestComboForPitch(midiTarget, 0);
         if (combo) {
-          const finalBeat = Math.round(beat * 10000) / 10000;
+          const finalBeat = finalBeatForCombo;
           // Check if toggling off an existing note
           let toggled = false;
           setNotes(prev => {
@@ -573,14 +583,25 @@ export default function Timeline({
               Math.abs(n.beat - finalBeat) < 0.001
             );
             if (exact >= 0) { toggled = true; return prev.filter((_, i) => i !== exact); }
-            const filtered = prev.filter(n =>
-              !(n.stringIndex === combo.stringIndex && Math.abs(n.beat - finalBeat) < 0.001)
-            );
-            return [...filtered, {
+            // Truncate any earlier note on the same string that would overlap the new note
+            const truncated = prev.map(n => {
+              if (n.stringIndex !== combo.stringIndex) return n;
+              const nEnd = n.beat + (n.duration || 1);
+              if (n.beat < finalBeat && nEnd > finalBeat) {
+                return { ...n, duration: Math.max(0.01, finalBeat - n.beat) };
+              }
+              return n;
+            });
+            // Cap the new note's duration at the next note on the same string
+            const nextOnString = truncated
+              .filter(n => n.stringIndex === combo.stringIndex && n.beat > finalBeat)
+              .reduce((min, n) => n.beat < min ? n.beat : min, Infinity);
+            const maxDur = Math.max(0.01, nextOnString - finalBeat);
+            return [...truncated, {
               stringIndex: combo.stringIndex,
               fret: combo.fret,
               beat: finalBeat,
-              duration: noteDuration,
+              duration: Math.min(noteDuration, maxDur),
               velocity: defaultVelocity,
             }];
           });
