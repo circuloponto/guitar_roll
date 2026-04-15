@@ -1349,7 +1349,20 @@ input[type="number"] {
   transition: opacity 0.15s;
 }
 
-.timeline-note:hover .note-resize-handle {
+.note-resize-handle-left {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.timeline-note:hover .note-resize-handle,
+.timeline-note:hover .note-resize-handle-left {
   opacity: 1;
 }
 

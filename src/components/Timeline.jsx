@@ -218,6 +218,66 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, onResizeDuration]);
 
+  // Resize from the left edge: moves start beat right/left while keeping the end fixed.
+  const handleResizeStartLeft = useCallback((e, noteIndex) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const note = notes[noteIndex];
+    const isSelected = selectedNotes.has(noteIndex);
+    const affectedIndices = isSelected ? [...selectedNotes] : [noteIndex];
+    const startStates = new Map(
+      affectedIndices.map(i => [i, { beat: notes[i].beat, duration: notes[i].duration || 1 }])
+    );
+
+    draggingRef.current = {
+      noteIndex,
+      startX: e.clientX,
+      affectedIndices,
+      startStates,
+      leftEdge: true,
+    };
+    saveSnapshot();
+    const isFree = freeMode;
+    const snap = snapUnit;
+
+    const handleMouseMove = (moveE) => {
+      if (!draggingRef.current) return;
+      const dx = moveE.clientX - draggingRef.current.startX;
+      const { affectedIndices, startStates } = draggingRef.current;
+      const noteBarIdx = beatToBar(note.beat, barSubdivisions).barIndex;
+      const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
+      const dBeats = dx / cw;
+
+      setNotesDrag(prev => prev.map((n, i) => {
+        if (!affectedIndices.includes(i)) return n;
+        const base = startStates.get(i);
+        const end = base.beat + base.duration;
+        const rawBeat = base.beat + dBeats;
+        let newBeat = isFree ? rawBeat : Math.round(rawBeat / snap) * snap;
+        // Cap at any earlier note on same string so we don't overlap
+        const prevEnd = prev
+          .filter((m, j) => j !== i && m.stringIndex === n.stringIndex && m.beat + (m.duration || 1) <= end && m.beat < newBeat + 0.0001)
+          .reduce((max, m) => {
+            const e2 = m.beat + (m.duration || 1);
+            return e2 > max ? e2 : max;
+          }, 0);
+        newBeat = Math.max(prevEnd, Math.min(newBeat, end - (isFree ? 0.01 : snap)));
+        const newDuration = Math.max(isFree ? 0.01 : snap, end - newBeat);
+        return { ...n, beat: newBeat, duration: newDuration };
+      }));
+    };
+
+    const handleMouseUp = () => {
+      commitDrag();
+      setTimeout(() => { draggingRef.current = null; }, 0);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, barSubdivisions, cellWidth]);
+
   const handleNoteContextMenu = useCallback((e, noteIndex) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1415,6 +1475,10 @@ export default function Timeline({
                 {isGhost ? 'x' : getNoteName(note.stringIndex, note.fret)}
                 {hasBend && <span className="note-bend-indicator">↑{note.bend}</span>}
                 {hasSlide && <span className="note-slide-indicator">↗</span>}
+                <div
+                    className="note-resize-handle-left"
+                    onMouseDown={(e) => handleResizeStartLeft(e, i)}
+                  />
                 <div
                     className="note-resize-handle"
                     onMouseDown={(e) => handleResizeStart(e, i)}
