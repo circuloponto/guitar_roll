@@ -31,7 +31,7 @@ export default function Timeline({
   notes, backgroundNotes = [], setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   timelineZoom = 1, setTimelineZoom,
   barSubdivisions, setBarSubdivisions,
-  currentBeat, selectedBeat, setSelectedBeat,
+  currentBeat, playheadBeatRef, selectedBeat, setSelectedBeat,
   playing, onDeleteNote,
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop, setLoop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
@@ -84,6 +84,26 @@ export default function Timeline({
   const [editingMarkerId, setEditingMarkerId] = useState(null);
   const [editingMarkerName, setEditingMarkerName] = useState('');
   const markerDragRef = useRef(null);
+  const bodyPlayheadRef = useRef(null);
+  const headerPlayheadRef = useRef(null);
+
+  // Imperatively move playhead every frame during playback so it stays in sync with audio
+  // even when the expensive timeline DOM is slow to re-render at high zoom-out.
+  useEffect(() => {
+    if (!playing || !playheadBeatRef) return;
+    let raf;
+    const tick = () => {
+      const b = playheadBeatRef.current;
+      if (b !== null && b !== undefined) {
+        const x = beatToX(b, barSubdivisions, cellWidth);
+        if (bodyPlayheadRef.current) bodyPlayheadRef.current.style.left = x + 'px';
+        if (headerPlayheadRef.current) headerPlayheadRef.current.style.left = x + 'px';
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, playheadBeatRef, barSubdivisions, cellWidth]);
 
   const yToPitch = useCallback((y) => {
     const rowFromTop = Math.floor(y / ROW_HEIGHT);
@@ -963,8 +983,8 @@ export default function Timeline({
               />
             )}
             {/* Playhead in header */}
-            {currentBeat !== null && playing && (
-              <div className="header-playhead" style={{ left: beatToX(currentBeat, barSubdivisions, cellWidth) }} />
+            {playing && (
+              <div ref={headerPlayheadRef} className="header-playhead" style={{ left: beatToX(currentBeat ?? 0, barSubdivisions, cellWidth) }} />
             )}
           </div>
         </div>
@@ -1432,8 +1452,8 @@ export default function Timeline({
           )}
 
           {/* Playhead */}
-          {currentBeat !== null && playing && (
-            <div className="playhead" style={{ left: beatToX(currentBeat, barSubdivisions, cellWidth) }} />
+          {playing && (
+            <div ref={bodyPlayheadRef} className="playhead" style={{ left: beatToX(currentBeat ?? 0, barSubdivisions, cellWidth) }} />
           )}
         </div>
       </div>

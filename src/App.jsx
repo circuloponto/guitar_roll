@@ -150,6 +150,9 @@ function App() {
   const [projectName, setProjectName] = useState('Guitar Roll');
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
+  // Imperative playhead ref — updated every audio frame, consumed by Timeline
+  // without going through React state so smooth motion survives slow renders.
+  const playheadBeatRef = useRef(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
   const snapUnit = 1 / subdivisions; // smallest grid step
@@ -687,6 +690,7 @@ function App() {
     playingRef.current = false;
     setPlaying(false);
     setCurrentBeat(null);
+    playheadBeatRef.current = null;
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
     }
@@ -825,6 +829,7 @@ function App() {
         return;
       }
 
+      playheadBeatRef.current = playheadBeat;
       setCurrentBeat(playheadBeat);
 
       // Schedule upcoming beats
@@ -1443,6 +1448,7 @@ function App() {
           setBarSubdivisions={setBarSubdivisions}
           setTimelineZoom={setTimelineZoom}
           currentBeat={currentBeat}
+          playheadBeatRef={playheadBeatRef}
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}
           playing={playing}
