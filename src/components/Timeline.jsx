@@ -38,7 +38,6 @@ export default function Timeline({
   hoveredNote, setHoveredNote,
   chordRoot, setChordRoot,
   verticalScroll, setVerticalScroll,
-  eraserMode = false,
   machineGunMode = false,
   defaultVelocity = 0.8,
   noteDuration = 1,
@@ -126,7 +125,7 @@ export default function Timeline({
     if (playing) return;
     if (draggingRef.current || noteDragRef.current) return;
     if (marqueeDidDragRef.current) { marqueeDidDragRef.current = false; return; }
-    if (eraserMode || machineGunMode) return;
+    if (machineGunMode) return;
 
     // K held: cursor-only mode — deselect and place cursor
     if (cursorModeRef.current) {
@@ -142,7 +141,7 @@ export default function Timeline({
       }
       if (beat >= 0 && beat < totalCols) setSelectedBeat(beat);
     }
-  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit, eraserMode, machineGunMode, totalCols, barSubdivisions]);
+  }, [setSelectedBeat, setSelectedNotes, playing, freeMode, cellWidth, snapUnit, machineGunMode, totalCols, barSubdivisions]);
 
   const handleNoteClick = useCallback((e, noteIndex) => {
     if (e.shiftKey) {
@@ -278,9 +277,12 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, barSubdivisions, cellWidth]);
 
+  const rightDragEraseRef = useRef(false);
   const handleNoteContextMenu = useCallback((e, noteIndex) => {
     e.preventDefault();
     e.stopPropagation();
+    // The right-click-drag eraser already handled deletion on mousedown
+    if (rightDragEraseRef.current) { rightDragEraseRef.current = false; return; }
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
     setSelectedNotes(prev => {
       if (!prev.has(noteIndex)) return prev;
@@ -538,8 +540,55 @@ export default function Timeline({
   // Machine gun: convert mouse Y to string+fret
   // Marquee selection / machine gun on grid background
   const handleGridMouseDown = useCallback((e) => {
-    if (e.target.closest('.timeline-note')) return;
-    if (e.button !== 0) return;
+    // Shift + right-click drag: marquee-select erase (falls through to marquee logic below)
+    // Plain right-click drag: brush-erase notes under the cursor
+    if (e.button === 2 && !playing && !e.shiftKey) {
+      e.preventDefault();
+      rightDragEraseRef.current = true;
+      saveSnapshot();
+      const prevCursor = document.body.style.cursor;
+      document.body.style.cursor = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><rect x='3' y='11' width='14' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ff9999' stroke='black' stroke-width='1.5'/><rect x='3' y='11' width='5' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ffffff' stroke='black' stroke-width='1.5'/></svg>") 4 20, crosshair`;
+      const eraseAt = (clientX, clientY) => {
+        const el = document.elementFromPoint(clientX, clientY);
+        const noteEl = el && el.closest && el.closest('.timeline-note');
+        if (!noteEl) return;
+        const idxAttr = noteEl.getAttribute('data-note-index');
+        if (idxAttr == null) return;
+        const idx = parseInt(idxAttr, 10);
+        if (Number.isNaN(idx)) return;
+        setNotes(prev => prev.filter((_, i) => i !== idx));
+        setSelectedNotes(prev => {
+          if (!prev.has(idx)) return prev;
+          const next = new Set();
+          prev.forEach(i => {
+            if (i < idx) next.add(i);
+            else if (i > idx) next.add(i - 1);
+          });
+          return next;
+        });
+      };
+      eraseAt(e.clientX, e.clientY);
+      marqueeDidDragRef.current = true;
+      const handleMove = (moveE) => eraseAt(moveE.clientX, moveE.clientY);
+      const handleUp = () => {
+        document.body.style.cursor = prevCursor;
+        window.removeEventListener('mousemove', handleMove);
+        window.removeEventListener('mouseup', handleUp);
+      };
+      window.addEventListener('mousemove', handleMove);
+      window.addEventListener('mouseup', handleUp);
+      return;
+    }
+    // Shift+right-click: marquee-erase (continue into marquee code below with erase flag)
+    const isMarqueeErase = e.button === 2 && e.shiftKey && !playing;
+    if (isMarqueeErase) {
+      e.preventDefault();
+      rightDragEraseRef.current = true;
+      marqueeDidDragRef.current = true;
+    } else {
+      if (e.target.closest('.timeline-note')) return;
+      if (e.button !== 0) return;
+    }
 
     const rect = bodyRef.current.getBoundingClientRect();
     const scrollLeft = bodyRef.current.scrollLeft;
@@ -613,7 +662,7 @@ export default function Timeline({
     }
 
     // Click-and-drag to place a note and resize its duration
-    if (!eraserMode && !cursorModeRef.current && !e.shiftKey) {
+    if (!cursorModeRef.current && !e.shiftKey && e.button === 0) {
       let beat;
       if (freeMode) {
         beat = xToBeat(x, barSubdivisions, cellWidth, false);
@@ -711,9 +760,11 @@ export default function Timeline({
       }
     }
 
-    // Normal marquee selection
-    marqueeRef.current = { startX: x, startY: y, didMove: false };
-    if (!e.shiftKey) {
+    // Normal marquee selection (or marquee-erase under Shift+RightClick)
+    marqueeRef.current = { startX: x, startY: y, didMove: false, erase: isMarqueeErase };
+    const prevCursor = document.body.style.cursor;
+    if (isMarqueeErase) document.body.style.cursor = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><rect x='3' y='11' width='14' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ff9999' stroke='black' stroke-width='1.5'/><rect x='3' y='11' width='5' height='8' rx='1.5' transform='rotate(-35 10 15)' fill='%23ffffff' stroke='black' stroke-width='1.5'/></svg>") 4 20, crosshair`;
+    if (!e.shiftKey || isMarqueeErase) {
       setSelectedNotes(new Set());
     }
 
@@ -756,8 +807,8 @@ export default function Timeline({
     };
 
     const handleMouseUp = () => {
-      // In eraser mode, delete all notes that were selected by the marquee
-      if (eraserMode && marqueeRef.current && marqueeRef.current.didMove) {
+      const wasErase = marqueeRef.current && marqueeRef.current.erase;
+      if (wasErase && marqueeRef.current && marqueeRef.current.didMove) {
         setSelectedNotes(prev => {
           if (prev.size > 0) {
             setNotes(old => old.filter((_, i) => !prev.has(i)));
@@ -765,6 +816,7 @@ export default function Timeline({
           return new Set();
         });
       }
+      if (isMarqueeErase) document.body.style.cursor = prevCursor;
       marqueeRef.current = null;
       setMarquee(null);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -773,7 +825,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes, eraserMode, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat]);
+  }, [playing, notes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -1128,6 +1180,7 @@ export default function Timeline({
           ref={bodyRef}
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
+          onContextMenu={(e) => e.preventDefault()}
           onMouseMove={(e) => {
             if (playing) return;
             const rect = bodyRef.current.getBoundingClientRect();
@@ -1155,7 +1208,7 @@ export default function Timeline({
             if (onTimelineHover) onTimelineHover(null);
           }}
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
-          style={{ flex: 1, cursor: machineGunMode ? 'cell' : eraserMode ? 'crosshair' : undefined }}
+          style={{ flex: 1, cursor: machineGunMode ? 'cell' : undefined }}
         >
         <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
           {/* Loop region highlight in grid */}
@@ -1454,6 +1507,7 @@ export default function Timeline({
             return (
               <div
                 key={i}
+                data-note-index={i}
                 className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''} ${isGhost ? 'ghost' : ''}`}
                 style={{
                   left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
@@ -1523,7 +1577,7 @@ export default function Timeline({
 
           {/* Marquee selection rectangle */}
           {marquee && (
-            <div className={`marquee-rect ${eraserMode ? 'eraser' : ''}`} style={{
+            <div className={`marquee-rect ${marqueeRef.current && marqueeRef.current.erase ? 'eraser' : ''}`} style={{
               left: marquee.x1,
               top: marquee.y1,
               width: marquee.x2 - marquee.x1,

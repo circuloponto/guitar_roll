@@ -172,7 +172,6 @@ function App() {
   const [freeMode, setFreeMode] = useState(false);
   const [machineGunMode, setMachineGunMode] = useState(false);
   const [defaultVelocity, setDefaultVelocity] = useState(0.8);
-  const [eraserMode, setEraserMode] = useState(false);
   const [hoverPreview, setHoverPreview] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-hover-preview'));
@@ -1121,13 +1120,6 @@ function App() {
         >
           Metronome
         </button>
-        <button
-          className={`tool-btn ${eraserMode ? 'active' : ''}`}
-          onClick={() => setEraserMode(m => !m)}
-          title="Eraser: drag to select and delete notes"
-        >
-          Eraser
-        </button>
         <span className="toolbar-label">Inst:</span>
         <select
           className="duration-select"
@@ -1467,7 +1459,6 @@ function App() {
           setChordRoot={setChordRoot}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
-          eraserMode={eraserMode}
           machineGunMode={machineGunMode}
           defaultVelocity={defaultVelocity}
           noteDuration={noteDuration}
