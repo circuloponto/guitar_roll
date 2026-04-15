@@ -854,13 +854,11 @@ function App() {
           });
         });
 
-        // Metronome on bar starts
+        // Metronome clicks every subdivision; downbeat on bar starts
         if (metronomeRef.current) {
           const bStarts = barStartBeats(bs);
-          if (bStarts.includes(beat)) {
-            const isDownbeat = beat === 0;
-            playClickAtTime(nextBeatTime, isDownbeat);
-          }
+          const isDownbeat = bStarts.includes(beat);
+          playClickAtTime(nextBeatTime, isDownbeat);
         }
 
         nextBeatIndex++;
