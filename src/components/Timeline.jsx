@@ -720,12 +720,13 @@ export default function Timeline({
           marqueeDidDragRef.current = true; // prevent handleClick from also firing
 
           if (!toggled) {
-            // Start drag-to-resize the newly placed note
+            // Start drag-to-resize the newly placed note.
+            // No extra snapshot here — the setNotes call above already pushed one,
+            // so a single ctrl+z rolls back placement AND the drag-resize in one step.
             const isFree = freeMode;
             const snap = snapUnit;
             const startX = e.clientX;
             let didDrag = false;
-            saveSnapshot();
 
             let lastDuration = noteDuration;
             const handleMouseMove = (moveE) => {
@@ -739,7 +740,8 @@ export default function Timeline({
               const newDuration = isFree ? Math.max(0.1, rawDuration) : Math.max(snap, Math.round(rawDuration / snap) * snap);
               const maxDuration = totalCols - finalBeat;
               lastDuration = Math.min(newDuration, maxDuration);
-              setNotes(prev => prev.map(n =>
+              // setNotesDrag: update without pushing more undo snapshots during the drag
+              setNotesDrag(prev => prev.map(n =>
                 (n.stringIndex === combo.stringIndex && n.fret === combo.fret && Math.abs(n.beat - finalBeat) < 0.001)
                   ? { ...n, duration: lastDuration }
                   : n
