@@ -636,8 +636,8 @@ input[type="number"] {
 .track-btn-lg:hover { color: #fff; background: #333; }
 .track-btn-lg.active-red { background: #5a1a1a; color: #e74c3c; border-color: #e74c3c; }
 .track-btn-lg.active-yellow { background: #4a3a1a; color: #f1c40f; border-color: #f1c40f; }
-.track-btn-lg.track-delete { color: #666; margin-left: auto; }
-.track-btn-lg.track-delete:hover { color: #e74c3c; background: #2a1a1a; }
+.track-btn-lg.track-delete { color: #e74c3c; margin-left: auto; flex-shrink: 0; }
+.track-btn-lg.track-delete:hover { color: #fff; background: #e74c3c; }
 
 .track-slider-group {
   display: flex;

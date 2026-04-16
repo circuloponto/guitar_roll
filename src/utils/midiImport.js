@@ -116,11 +116,10 @@ export function parseMidi(arrayBuffer) {
  * Returns an array of track arrays, each containing { stringIndex, fret, beat, duration, velocity }.
  *
  * @param {object} midi - parsed MIDI data from parseMidi()
- * @param {number} subdivisionsPerBeat - how many grid subdivisions per quarter note (e.g., 4 for 16th notes)
- * @param {number} bpm - beats per minute (used for tempo map)
+ * @param {number} timeSigDenominator - time signature denominator (4 = quarter, 8 = eighth)
  * @returns {{ tracks: Array<{ name: string, notes: Array }>, detectedBpm: number }}
  */
-export function midiToGuitarNotes(midi, subdivisionsPerBeat = 4) {
+export function midiToGuitarNotes(midi, timeSigDenominator = 4) {
   const { ticksPerQuarter, midiTracks } = midi;
 
   // Collect tempo events from all tracks
@@ -132,16 +131,18 @@ export function midiToGuitarNotes(midi, subdivisionsPerBeat = 4) {
   });
   tempoEvents.sort((a, b) => a.tick - b.tick);
 
-  // Default tempo: 120 BPM = 500000 microseconds per quarter
-  const defaultTempo = 500000;
   const detectedBpm = tempoEvents.length > 0
     ? Math.round(60000000 / tempoEvents[0].tempo)
     : 120;
 
-  // Convert ticks to beats (1 beat = 1 subdivision in the grid)
-  // 1 quarter note = ticksPerQuarter ticks = subdivisionsPerBeat grid beats
+  // Convert ticks to grid columns.
+  // In the grid, each column's duration = (60/bpm) * (4/denominator).
+  // With denominator=4 (4/4 time), each column = 1 quarter note → multiply by 1.
+  // With denominator=8 (6/8 time), each column = 1 eighth note → multiply by 2.
+  // General: columnsPerQuarterNote = denominator / 4.
+  const columnsPerQuarter = timeSigDenominator / 4;
   function tickToBeats(tick) {
-    return (tick / ticksPerQuarter) * subdivisionsPerBeat;
+    return (tick / ticksPerQuarter) * columnsPerQuarter;
   }
 
   const result = [];
@@ -161,7 +162,7 @@ export function midiToGuitarNotes(midi, subdivisionsPerBeat = 4) {
           const start = pending.shift();
           const startBeat = tickToBeats(start.tick);
           const endBeat = tickToBeats(e.tick);
-          const duration = Math.max(endBeat - startBeat, 1 / subdivisionsPerBeat);
+          const duration = Math.max(endBeat - startBeat, 0.01);
 
           // Map MIDI note to guitar string/fret
           const combo = closestComboForPitch(e.note, 0);
@@ -206,7 +207,7 @@ export function midiToGuitarNotes(midi, subdivisionsPerBeat = 4) {
           if (!channelNotes.has(start.channel)) channelNotes.set(start.channel, []);
           const startBeat = tickToBeats(start.tick);
           const endBeat = tickToBeats(e.tick);
-          const duration = Math.max(endBeat - startBeat, 1 / subdivisionsPerBeat);
+          const duration = Math.max(endBeat - startBeat, 0.01);
           const combo = closestComboForPitch(e.note, 0);
           if (combo) {
             channelNotes.get(start.channel).push({

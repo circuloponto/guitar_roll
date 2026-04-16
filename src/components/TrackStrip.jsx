@@ -238,22 +238,31 @@ export default function TrackStrip({
                     title="Duplicate track"
                     style={{ color: '#8bc34a' }}
                   >⧉</button>
-
-                  {tracks.length > 1 && (
-                    <button
-                      className="track-btn-lg track-delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (track.notes && track.notes.length > 0) {
-                          setConfirmDelete(track);
-                        } else {
-                          onDeleteTrack(track.id);
-                        }
-                      }}
-                      title="Delete track"
-                    >×</button>
-                  )}
                 </div>
+
+                <button
+                  style={{
+                    background: '#3a1a1a',
+                    color: '#e74c3c',
+                    border: '1px solid #e74c3c',
+                    borderRadius: 4,
+                    padding: '4px 8px',
+                    fontSize: 12,
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    marginLeft: 'auto',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (track.notes && track.notes.length > 0) {
+                      setConfirmDelete(track);
+                    } else {
+                      onDeleteTrack(track.id);
+                    }
+                  }}
+                  title="Delete track"
+                >DEL</button>
               </div>
             );
           })}

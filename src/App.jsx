@@ -972,17 +972,18 @@ function App() {
 
   const handleDeleteTrack = useCallback((trackId) => {
     setTracksTracked(prev => {
-      if (prev.length <= 1) return prev;
       const filtered = prev.filter(t => t.id !== trackId);
+      // If deleting the last track, create a fresh empty one
+      const result = filtered.length > 0 ? filtered : [createDefaultTrack()];
       if (activeTrackIdRef.current === trackId) {
-        const newActive = filtered[0].id;
+        const newActive = result[0].id;
         activeTrackIdRef.current = newActive;
         setActiveTrackId(newActive);
         setSelectedNotes(new Set());
-        setInstrument(filtered[0].instrument);
-        setInstrumentState(filtered[0].instrument);
+        setInstrument(result[0].instrument);
+        setInstrumentState(result[0].instrument);
       }
-      return filtered;
+      return result;
     });
   }, [setTracksTracked]);
 
@@ -1058,7 +1059,7 @@ function App() {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const midi = parseMidi(arrayBuffer);
-      const { tracks: midiTracks, detectedBpm } = midiToGuitarNotes(midi, subdivisions);
+      const { tracks: midiTracks, detectedBpm } = midiToGuitarNotes(midi, timeSignature[1]);
 
       if (midiTracks.length === 0) {
         alert('No playable guitar notes found in this MIDI file.\nNotes must be in the range E2–E6 (MIDI 40–88).');
@@ -1079,7 +1080,7 @@ function App() {
     } catch (err) {
       alert('Failed to import MIDI file: ' + err.message);
     }
-  }, [setTracksTracked, switchTrack, subdivisions]);
+  }, [setTracksTracked, switchTrack, timeSignature]);
 
   const handleToggleVisible = useCallback((trackId) => {
     setTracksTracked(prev => prev.map(t =>
