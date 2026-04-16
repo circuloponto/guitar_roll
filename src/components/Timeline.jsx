@@ -1438,34 +1438,54 @@ export default function Timeline({
             }} />
           )}
 
-          {/* Vertical bar lines */}
-          {Array.from({ length: totalCols }, (_, i) => (
-            <div
-              key={`col-${i}`}
-              className={`grid-col ${starts.includes(i) ? 'bar-line' : ''}`}
-              style={{ left: beatToX(i, barSubdivisions, cellWidth) }}
-            />
-          ))}
-
-          {/* Tuplet subdivision lines */}
-          {tupletLines.visible && subdivisions > 1 && Array.from({ length: totalCols }, (_, beat) => {
-            const lines = [];
-            for (let t = 0; t < subdivisions; t++) {
-              const subBeat = beat + (t / subdivisions);
-              if (subBeat >= totalCols) break;
-              lines.push(
+          {/* Vertical bar/beat lines — scale brightness with zoom */}
+          {(() => {
+            const zoomFactor = Math.min(1, Math.max(0, (cellWidth - 6) / 40));
+            const beatAlpha = 0.04 + zoomFactor * 0.25;
+            const barAlpha = 0.3 + zoomFactor * 0.5;
+            return Array.from({ length: totalCols }, (_, i) => {
+              const isBar = starts.includes(i);
+              if (!isBar && beatAlpha <= 0.01) return null;
+              return (
                 <div
-                  key={`tup-${beat}-${t}`}
-                  className="grid-col tuplet-line"
+                  key={`col-${i}`}
+                  className="grid-col"
                   style={{
-                    left: beatToX(subBeat, barSubdivisions, cellWidth),
-                    borderLeftColor: `rgba(230, 126, 34, ${tupletLines.opacity})`,
+                    left: beatToX(i, barSubdivisions, cellWidth),
+                    borderLeftColor: isBar
+                      ? `rgba(255, 255, 255, ${barAlpha})`
+                      : `rgba(255, 255, 255, ${beatAlpha})`,
                   }}
                 />
               );
-            }
-            return lines;
-          })}
+            });
+          })()}
+
+          {/* Tuplet subdivision lines — fade in/out with zoom */}
+          {tupletLines.visible && subdivisions > 1 && (() => {
+            const subdivWidth = cellWidth / subdivisions;
+            const zoomFactor = Math.min(1, Math.max(0, (subdivWidth - 4) / 20));
+            const tupletAlpha = zoomFactor * (0.15 + zoomFactor * 0.45) * (tupletLines.opacity / 0.35);
+            if (tupletAlpha <= 0.01) return null;
+            return Array.from({ length: totalCols }, (_, beat) => {
+              const lines = [];
+              for (let t = 0; t < subdivisions; t++) {
+                const subBeat = beat + (t / subdivisions);
+                if (subBeat >= totalCols) break;
+                lines.push(
+                  <div
+                    key={`tup-${beat}-${t}`}
+                    className="grid-col tuplet-line"
+                    style={{
+                      left: beatToX(subBeat, barSubdivisions, cellWidth),
+                      borderLeftColor: `rgba(230, 126, 34, ${tupletAlpha})`,
+                    }}
+                  />
+                );
+              }
+              return lines;
+            });
+          })()}
 
 
           {/* Marker lines through grid */}
