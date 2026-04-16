@@ -111,8 +111,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       n => n.stringIndex === result.stringIndex && n.fret === result.fret
     );
 
-    // Fingering mode marquee: drag on empty space to select active notes in region
-    if (fingeringMode && !activeNote) {
+    // Shift+drag marquee: select active notes in region (works in any mode)
+    if (e.shiftKey) {
       const container = containerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
