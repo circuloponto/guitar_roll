@@ -172,8 +172,9 @@ export default function Timeline({
 
   // Track K key for cursor-only mode (deselect + place cursor, no note input)
   useEffect(() => {
-    const down = (e) => { if (e.key === 'k' || e.key === 'K') { cursorModeRef.current = true; setCursorMode(true); } };
-    const up = (e) => { if (e.key === 'k' || e.key === 'K') { cursorModeRef.current = false; setCursorMode(false); } };
+    const getKey = () => (hotkeysRef.current?.cursorMode?.key || 'k').toLowerCase();
+    const down = (e) => { if (e.key.toLowerCase() === getKey()) { cursorModeRef.current = true; setCursorMode(true); } };
+    const up = (e) => { if (e.key.toLowerCase() === getKey()) { cursorModeRef.current = false; setCursorMode(false); } };
     document.addEventListener('keydown', down);
     document.addEventListener('keyup', up);
     return () => { document.removeEventListener('keydown', down); document.removeEventListener('keyup', up); };

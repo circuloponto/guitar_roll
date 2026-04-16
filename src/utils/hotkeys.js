@@ -36,7 +36,23 @@ const DEFAULT_HOTKEYS = {
   velocityWheel: { label: 'Velocity (Scroll)', description: 'Scroll to adjust note velocity', key: 'Wheel', modifiers: { shift: true }, wheel: true },
   cheatSheet: { label: 'Cheat Sheet', description: 'Show/hide keyboard shortcuts', key: '?' },
   escape: { label: 'Escape', description: 'Cancel current mode', key: 'Escape' },
+  transposeSemiUp: { label: 'Transpose Up (Semitone)', description: 'Move selected notes up one semitone', key: 'u' },
+  transposeSemiDown: { label: 'Transpose Down (Semitone)', description: 'Move selected notes down one semitone', key: 'd' },
+  transposeOctaveUp: { label: 'Transpose Up (Octave)', description: 'Move selected notes up one octave', key: 'u', modifiers: { shift: true } },
+  transposeOctaveDown: { label: 'Transpose Down (Octave)', description: 'Move selected notes down one octave', key: 'd', modifiers: { shift: true } },
+  cursorMode: { label: 'Cursor Mode (Hold)', description: 'Hold to move the timeline cursor without placing a note', key: 'k' },
+  jumpPrevNote: { label: 'Jump to Previous Note', description: 'Move playhead to the previous note position', key: 'ArrowLeft', modifiers: { ctrl: true } },
+  jumpNextNote: { label: 'Jump to Next Note', description: 'Move playhead to the next note position', key: 'ArrowRight', modifiers: { ctrl: true } },
 };
+
+// Non-editable actions shown for reference in the hotkey manager.
+export const REFERENCE_ACTIONS = [
+  { label: 'Set Tuplet', description: 'Set subdivision count for the current bar', display: '1–9' },
+  { label: 'Brush Erase', description: 'Right-click + drag across notes to delete them', display: 'Right Click + Drag' },
+  { label: 'Marquee Erase', description: 'Marquee-select and delete notes', display: 'Shift + Right Click + Drag' },
+  { label: 'Duplicate Notes', description: 'Alt-drag selected notes to duplicate instead of move', display: 'Alt + Drag' },
+  { label: 'Shift-Drag Selection', description: 'Add to / remove from selection while dragging a marquee', display: 'Shift + Drag' },
+];
 
 const STORAGE_KEY = 'guitar-roll-hotkeys';
 
@@ -126,5 +142,11 @@ export function formatHotkey(hotkey) {
 // Editable hotkey IDs (ones users can change)
 export const EDITABLE_HOTKEYS = [
   'noteJump', 'freeMode', 'durationMode', 'moveMode', 'adjacentMode',
-  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'voiceLeading', 'prevMarker', 'nextMarker', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat', 'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel', 'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown', 'escape',
+  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'voiceLeading',
+  'prevMarker', 'nextMarker', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat',
+  'jumpPrevNote', 'jumpNextNote',
+  'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel',
+  'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown',
+  'transposeSemiUp', 'transposeSemiDown', 'transposeOctaveUp', 'transposeOctaveDown',
+  'cursorMode', 'cheatSheet', 'escape',
 ];

@@ -7,7 +7,7 @@ import {
 } from '../utils/storage';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
-  findConflicts, EDITABLE_HOTKEYS,
+  findConflicts, EDITABLE_HOTKEYS, REFERENCE_ACTIONS,
 } from '../utils/hotkeys';
 
 // Editable hex input that allows free typing and applies on valid hex
@@ -568,6 +568,27 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
             </div>
             <span className="hotkey-key fixed">Ctrl + Y / Ctrl + Shift + Z</span>
           </div>
+          <div className="hotkey-row">
+            <div className="hotkey-info">
+              <span className="hotkey-label">Copy</span>
+            </div>
+            <span className="hotkey-key fixed">Ctrl + C</span>
+          </div>
+          <div className="hotkey-row">
+            <div className="hotkey-info">
+              <span className="hotkey-label">Paste</span>
+            </div>
+            <span className="hotkey-key fixed">Ctrl + V</span>
+          </div>
+          {REFERENCE_ACTIONS && REFERENCE_ACTIONS.map((a, i) => (
+            <div key={`ref-${i}`} className="hotkey-row">
+              <div className="hotkey-info">
+                <span className="hotkey-label">{a.label}</span>
+                <span className="hotkey-desc">{a.description}</span>
+              </div>
+              <span className="hotkey-key fixed">{a.display}</span>
+            </div>
+          ))}
         </div>
 
         <div className="settings-row-btns" style={{ marginTop: 12 }}>

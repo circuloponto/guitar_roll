@@ -8,7 +8,7 @@ import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
-import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
+import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { getMidiNote, closestComboForPitch } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
@@ -398,14 +398,14 @@ function App() {
         return;
       }
 
-      // Ctrl+Left/Right: jump to previous/next note
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      // Jump to previous/next note (configurable hotkey)
+      if (matchesHotkey(e, hk.jumpPrevNote) || matchesHotkey(e, hk.jumpNextNote)) {
         e.preventDefault();
         e.stopPropagation();
         const currentNotes = notesRef.current;
         if (currentNotes.length === 0) return;
         const beats = [...new Set(currentNotes.map(n => n.beat))].sort((a, c) => a - c);
-        if (e.key === 'ArrowLeft') {
+        if (matchesHotkey(e, hk.jumpPrevNote)) {
           setSelectedBeat(b => {
             const prev = beats.filter(beat => beat < b - 0.001);
             return prev.length > 0 ? prev[prev.length - 1] : b;
@@ -476,7 +476,8 @@ function App() {
       if (matchesHotkey(e, hk.machineGunMode) && selectedNotesRef.current.size === 0) {
         setMachineGunMode(m => !m);
       }
-      if (e.key === '?') {
+      // Match by key character so shifted symbols like '?' work regardless of modifiers
+      if (e.key === hk.cheatSheet.key) {
         setShowCheatSheet(s => !s);
       }
       if (matchesHotkey(e, hk.fingeringMode)) {
@@ -498,24 +499,24 @@ function App() {
           ));
         }
       }
-      // Transpose selected notes: U = up semitone, D = down semitone, Shift+U/D = octave.
-      const isUpKey = e.code === 'KeyU';
-      const isDownKey = e.code === 'KeyD';
+      // Transpose selected notes via configurable hotkeys.
       let transposeHandled = false;
-      if ((isUpKey || isDownKey) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (selectedNotesRef.current.size > 0) {
-          e.preventDefault();
-          transposeHandled = true;
-          const step = e.shiftKey ? 12 : 1;
-          const delta = (isUpKey ? 1 : -1) * step;
-          setNotes(prev => prev.map((n, i) => {
-            if (!selectedNotesRef.current.has(i)) return n;
-            const newMidi = getMidiNote(n.stringIndex, n.fret) + delta;
-            const combo = closestComboForPitch(newMidi, n.stringIndex);
-            if (!combo) return n;
-            return { ...n, stringIndex: combo.stringIndex, fret: combo.fret };
-          }));
-        }
+      const isSemiUp = matchesHotkey(e, hk.transposeSemiUp);
+      const isSemiDown = matchesHotkey(e, hk.transposeSemiDown);
+      const isOctUp = matchesHotkey(e, hk.transposeOctaveUp);
+      const isOctDown = matchesHotkey(e, hk.transposeOctaveDown);
+      if ((isSemiUp || isSemiDown || isOctUp || isOctDown) && selectedNotesRef.current.size > 0) {
+        e.preventDefault();
+        transposeHandled = true;
+        const step = (isOctUp || isOctDown) ? 12 : 1;
+        const delta = (isSemiUp || isOctUp) ? step : -step;
+        setNotes(prev => prev.map((n, i) => {
+          if (!selectedNotesRef.current.has(i)) return n;
+          const newMidi = getMidiNote(n.stringIndex, n.fret) + delta;
+          const combo = closestComboForPitch(newMidi, n.stringIndex);
+          if (!combo) return n;
+          return { ...n, stringIndex: combo.stringIndex, fret: combo.fret };
+        }));
       }
       if (!transposeHandled && matchesHotkey(e, hk.bendUp)) {
         if (selectedNotesRef.current.size > 0) {
@@ -1550,10 +1551,12 @@ function App() {
                 <span className="cheatsheet-key">Right Click</span>
                 <span className="cheatsheet-desc">Delete note</span>
               </div>
-              <div className="cheatsheet-row">
-                <span className="cheatsheet-key">Alt + Drag</span>
-                <span className="cheatsheet-desc">Duplicate notes</span>
-              </div>
+              {REFERENCE_ACTIONS.map((a, i) => (
+                <div key={`ref-${i}`} className="cheatsheet-row">
+                  <span className="cheatsheet-key">{a.display}</span>
+                  <span className="cheatsheet-desc">{a.label}</span>
+                </div>
+              ))}
               {Object.entries(hotkeys).filter(([, h]) => h.wheel).map(([id, h]) => (
                 <div key={id} className="cheatsheet-row">
                   <span className="cheatsheet-key">{formatHotkey(h)}</span>
