@@ -1377,9 +1377,8 @@ export default function Timeline({
               if (onTimelineHover) onTimelineHover(null);
               return;
             }
-            const pos = { beat: snapped, stringIndex: combo.stringIndex, fret: combo.fret };
-            setHoverPos(pos);
-            if (onTimelineHover) onTimelineHover(pos);
+            setHoverPos({ beat: snapped, stringIndex: combo.stringIndex, fret: combo.fret });
+            if (onTimelineHover) onTimelineHover(null);
           }}
           onMouseLeave={() => {
             setHoverPos(null);
@@ -1575,7 +1574,7 @@ export default function Timeline({
             return canvases;
           })}
 
-          {/* Cursor hover rectangle showing duration at mouse position */}
+          {/* Cursor hover rectangle — visible when hovering the timeline */}
           {hoverPos && !playing && !cursorMode && (
             <div
               className="cursor-hover-rect"
@@ -1588,7 +1587,7 @@ export default function Timeline({
             />
           )}
 
-          {/* Duration preview on hovered row */}
+          {/* Duration preview (green) — only visible when hovering the fretboard */}
           {hoveredNote && selectedBeat !== null && !playing && (
             <div
               className="duration-preview"
