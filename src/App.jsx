@@ -249,6 +249,18 @@ function App() {
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
 
+  // Auto-select notes at the playhead whenever it moves (not during playback).
+  useEffect(() => {
+    if (playing) return;
+    const beat = selectedBeat;
+    const atBeat = new Set();
+    const currentNotes = tracksRef.current.find(t => t.id === activeTrackIdRef.current)?.notes || [];
+    currentNotes.forEach((n, i) => {
+      if (beat >= n.beat && beat < n.beat + (n.duration || 1)) atBeat.add(i);
+    });
+    setSelectedNotes(atBeat);
+  }, [selectedBeat, playing]);
+
   // Build synesthesia lookup: note letter (without octave) -> color
   const synesthesiaMap = {};
   synesthesia.forEach(s => { if (s.note) synesthesiaMap[s.note] = s.color; });
@@ -483,6 +495,15 @@ function App() {
       if (matchesHotkey(e, hk.fingeringMode)) {
         fingeringModeRef.current = !fingeringModeRef.current;
         setFingeringMode(fingeringModeRef.current);
+      }
+      if (matchesHotkey(e, hk.selectAtPlayhead)) {
+        e.preventDefault();
+        const beat = selectedBeatRef.current;
+        const atBeat = new Set();
+        notesRef.current.forEach((n, i) => {
+          if (beat >= n.beat && beat < n.beat + (n.duration || 1)) atBeat.add(i);
+        });
+        setSelectedNotes(atBeat);
       }
       if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
         if (selectedNotesRef.current.size > 0) {

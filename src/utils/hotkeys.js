@@ -40,6 +40,7 @@ const DEFAULT_HOTKEYS = {
   transposeSemiDown: { label: 'Transpose Down (Semitone)', description: 'Move selected notes down one semitone', key: 'd' },
   transposeOctaveUp: { label: 'Transpose Up (Octave)', description: 'Move selected notes up one octave', key: 'u', modifiers: { shift: true } },
   transposeOctaveDown: { label: 'Transpose Down (Octave)', description: 'Move selected notes down one octave', key: 'd', modifiers: { shift: true } },
+  selectAtPlayhead: { label: 'Select Notes at Playhead', description: 'Select all notes at the current playhead position', key: 'Tab' },
   cursorMode: { label: 'Cursor Mode (Hold)', description: 'Hold to move the timeline cursor without placing a note', key: 'k' },
   jumpPrevNote: { label: 'Jump to Previous Note', description: 'Move playhead to the previous note position', key: 'ArrowLeft', modifiers: { ctrl: true } },
   jumpNextNote: { label: 'Jump to Next Note', description: 'Move playhead to the next note position', key: 'ArrowRight', modifiers: { ctrl: true } },
@@ -147,6 +148,6 @@ export const EDITABLE_HOTKEYS = [
   'jumpPrevNote', 'jumpNextNote',
   'zoomIn', 'zoomOut', 'zoomWheel', 'velocityWheel',
   'machineGunMode', 'fingeringMode', 'fingerUp', 'fingerDown',
-  'transposeSemiUp', 'transposeSemiDown', 'transposeOctaveUp', 'transposeOctaveDown',
+  'transposeSemiUp', 'transposeSemiDown', 'transposeOctaveUp', 'transposeOctaveDown', 'selectAtPlayhead',
   'cursorMode', 'cheatSheet', 'escape',
 ];
