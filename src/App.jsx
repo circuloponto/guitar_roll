@@ -9,7 +9,7 @@ import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore'
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey } from './utils/hotkeys';
-import { getMidiNote } from './utils/pitchMap';
+import { getMidiNote, closestComboForPitch } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
@@ -471,7 +471,7 @@ function App() {
       if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
       }
-      if (matchesHotkey(e, hk.machineGunMode)) {
+      if (matchesHotkey(e, hk.machineGunMode) && selectedNotesRef.current.size === 0) {
         setMachineGunMode(m => !m);
       }
       if (e.key === '?') {
@@ -496,7 +496,26 @@ function App() {
           ));
         }
       }
-      if (matchesHotkey(e, hk.bendUp)) {
+      // Transpose selected notes: U = up semitone, D = down semitone, Shift+U/D = octave.
+      const isUpKey = e.code === 'KeyU';
+      const isDownKey = e.code === 'KeyD';
+      let transposeHandled = false;
+      if ((isUpKey || isDownKey) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (selectedNotesRef.current.size > 0) {
+          e.preventDefault();
+          transposeHandled = true;
+          const step = e.shiftKey ? 12 : 1;
+          const delta = (isUpKey ? 1 : -1) * step;
+          setNotes(prev => prev.map((n, i) => {
+            if (!selectedNotesRef.current.has(i)) return n;
+            const newMidi = getMidiNote(n.stringIndex, n.fret) + delta;
+            const combo = closestComboForPitch(newMidi, n.stringIndex);
+            if (!combo) return n;
+            return { ...n, stringIndex: combo.stringIndex, fret: combo.fret };
+          }));
+        }
+      }
+      if (!transposeHandled && matchesHotkey(e, hk.bendUp)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
           setNotes(prev => prev.map((n, i) =>
@@ -504,7 +523,7 @@ function App() {
           ));
         }
       }
-      if (matchesHotkey(e, hk.bendDown)) {
+      if (!transposeHandled && matchesHotkey(e, hk.bendDown)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
           setNotes(prev => prev.map((n, i) =>
