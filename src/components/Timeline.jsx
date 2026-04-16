@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
   CELL_WIDTH
@@ -860,9 +860,54 @@ export default function Timeline({
     }
   }, [hoveredNote, autoScroll]);
 
-  // Scroll zoom — use document-level to prevent browser zoom
+  // Scroll zoom — anchor at the mouse cursor.
+  // We defer the scrollLeft adjustment to a useLayoutEffect so the DOM has already
+  // been expanded to the new content width by the time we set scrollLeft.
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
+  const zoomRef = useRef(timelineZoom);
+  const barSubsRef = useRef(barSubdivisions);
+  const pendingZoomAnchorRef = useRef(null); // { beat, mouseX }
+  const lastMouseOverRef = useRef(null); // { mouseX, timestamp } for keyboard zoom fallback
+  barSubsRef.current = barSubdivisions;
+
+  // Keyboard zoom (Ctrl+/-) — App dispatches a custom event; we anchor on the playhead
+  // centered in the viewport, like Ableton Live does.
+  useEffect(() => {
+    const onZoomEvent = (ev) => {
+      const dir = ev.detail?.dir > 0 ? 1 : -1;
+      if (!bodyRef.current) return;
+      const anchorBeat = (playing && currentBeat != null) ? currentBeat : (selectedBeat ?? 0);
+      const viewportWidth = bodyRef.current.clientWidth;
+      // Record the anchor: after commit, place this beat at viewport center.
+      pendingZoomAnchorRef.current = { beat: anchorBeat, mouseX: viewportWidth / 2 };
+      setTimelineZoom(z => {
+        const factor = dir > 0 ? 1.25 : 1 / 1.25;
+        return Math.max(0.2, Math.min(40, z * factor));
+      });
+    };
+    window.addEventListener('timeline-zoom', onZoomEvent);
+    return () => window.removeEventListener('timeline-zoom', onZoomEvent);
+  }, [playing, currentBeat, selectedBeat, setTimelineZoom]);
+
+  // Track last mouse position AND the beat under it continuously, so keyboard zoom
+  // (Ctrl+/-) can anchor at the cursor even though App.jsx fires the state update.
+  useEffect(() => {
+    const onMove = (e) => {
+      const el = bodyRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const mouseX = e.clientX - rect.left;
+        const cw = CELL_WIDTH * zoomRef.current;
+        const beat = xToBeat(el.scrollLeft + mouseX, barSubsRef.current, cw, false);
+        lastMouseOverRef.current = { mouseX, beat, timestamp: performance.now() };
+      }
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
+  }, []);
   useEffect(() => {
     const handleWheel = (e) => {
       const hk = hotkeysRef.current;
@@ -872,14 +917,40 @@ export default function Timeline({
       if (e.clientX < rect.left || e.clientX > rect.right ||
           e.clientY < rect.top || e.clientY > rect.bottom) return;
       e.preventDefault();
-      setTimelineZoom(z => {
-        const newZ = z * (1 - e.deltaY * 0.005);
-        return Math.max(0.2, Math.min(40, newZ));
-      });
+      // Anchor wheel/trackpad zoom at the playhead centered in the viewport (Ableton-style).
+      const anchorBeat = (playing && currentBeat != null) ? currentBeat : (selectedBeat ?? 0);
+      pendingZoomAnchorRef.current = { beat: anchorBeat, mouseX: bodyRef.current.clientWidth / 2 };
+      setTimelineZoom(z => Math.max(0.2, Math.min(40, z * (1 - e.deltaY * 0.005))));
     };
     document.addEventListener('wheel', handleWheel, { passive: false });
     return () => document.removeEventListener('wheel', handleWheel);
-  }, [setTimelineZoom]);
+  }, [setTimelineZoom, playing, currentBeat, selectedBeat]);
+
+  // After every zoom commit, snap scrollLeft so the anchor beat sits under the mouse.
+  // First render: no prior zoom to anchor against.
+  const prevZoomRef = useRef(timelineZoom);
+  useLayoutEffect(() => {
+    const prevZoom = prevZoomRef.current;
+    prevZoomRef.current = timelineZoom;
+    zoomRef.current = timelineZoom;
+    if (!bodyRef.current) return;
+
+    let anchor = pendingZoomAnchorRef.current;
+    pendingZoomAnchorRef.current = null;
+
+    if (!anchor) {
+      // Keyboard zoom (no wheel event): use the beat captured during mousemove.
+      const last = lastMouseOverRef.current;
+      if (last && performance.now() - last.timestamp < 10000) {
+        anchor = { beat: last.beat, mouseX: last.mouseX };
+      } else {
+        return; // Nothing to anchor against.
+      }
+    }
+
+    const newContentX = beatToX(anchor.beat, barSubsRef.current, CELL_WIDTH * timelineZoom);
+    bodyRef.current.scrollLeft = newContentX - anchor.mouseX;
+  }, [timelineZoom]);
 
   // Alt+scroll to adjust velocity on hovered/selected notes
   useEffect(() => {

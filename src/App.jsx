@@ -460,13 +460,15 @@ function App() {
         e.preventDefault();
         redo();
       }
+      // Keyboard zoom: anchored at the playhead by the Timeline component (which captures
+      // the anchor before the state update commits).
       if (matchesHotkey(e, hk.zoomIn) || ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '='))) {
         e.preventDefault();
-        setTimelineZoom(z => Math.min(40, z * 1.25));
+        window.dispatchEvent(new CustomEvent('timeline-zoom', { detail: { dir: 1 } }));
       }
       if (matchesHotkey(e, hk.zoomOut) || ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_'))) {
         e.preventDefault();
-        setTimelineZoom(z => Math.max(0.2, z / 1.25));
+        window.dispatchEvent(new CustomEvent('timeline-zoom', { detail: { dir: -1 } }));
       }
       if (matchesHotkey(e, hk.freeMode)) {
         setFreeMode(m => !m);
