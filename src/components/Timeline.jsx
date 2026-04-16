@@ -86,6 +86,64 @@ export default function Timeline({
   const bodyPlayheadRef = useRef(null);
   const headerPlayheadRef = useRef(null);
 
+  // ---- Edge auto-pan during drags ----
+  // Any drag handler can call autoPan.start(initialClientX, moveCb) to kick off auto-scroll
+  // when the cursor approaches the timeline body's left/right edge, .update(clientX) on
+  // each mousemove, and .stop() on mouseup. moveCb is invoked after every auto-scroll tick
+  // (with the latest clientX) so the drag's move logic can re-run against the new scroll.
+  const autoPanRef = useRef(null);
+  const autoPan = useRef({
+    start(initialClientX, initialClientY, moveCb) {
+      this.stop();
+      autoPanRef.current = { clientX: initialClientX, clientY: initialClientY, moveCb };
+      const tick = () => {
+        const s = autoPanRef.current;
+        if (!s) return;
+        const body = bodyRef.current;
+        if (body) {
+          const rect = body.getBoundingClientRect();
+          const EDGE = 60;
+          const MAX = 28;
+          let dx = 0, dy = 0;
+          if (s.clientX > rect.right - EDGE) {
+            dx = Math.min(1, (s.clientX - (rect.right - EDGE)) / EDGE) * MAX;
+          } else if (s.clientX < rect.left + EDGE) {
+            dx = -Math.min(1, ((rect.left + EDGE) - s.clientX) / EDGE) * MAX;
+          }
+          if (s.clientY > rect.bottom - EDGE) {
+            dy = Math.min(1, (s.clientY - (rect.bottom - EDGE)) / EDGE) * MAX;
+          } else if (s.clientY < rect.top + EDGE) {
+            dy = -Math.min(1, ((rect.top + EDGE) - s.clientY) / EDGE) * MAX;
+          }
+          let scrolled = false;
+          if (dx !== 0) {
+            const before = body.scrollLeft;
+            body.scrollLeft = Math.max(0, Math.min(body.scrollWidth - body.clientWidth, body.scrollLeft + dx));
+            if (body.scrollLeft !== before) scrolled = true;
+          }
+          if (dy !== 0) {
+            const before = body.scrollTop;
+            body.scrollTop = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, body.scrollTop + dy));
+            if (body.scrollTop !== before) scrolled = true;
+          }
+          if (scrolled && s.moveCb) s.moveCb(s.clientX, s.clientY);
+        }
+        if (autoPanRef.current) autoPanRef.current.rafId = requestAnimationFrame(tick);
+      };
+      autoPanRef.current.rafId = requestAnimationFrame(tick);
+    },
+    update(clientX, clientY) {
+      if (autoPanRef.current) {
+        autoPanRef.current.clientX = clientX;
+        autoPanRef.current.clientY = clientY;
+      }
+    },
+    stop() {
+      if (autoPanRef.current?.rafId) cancelAnimationFrame(autoPanRef.current.rafId);
+      autoPanRef.current = null;
+    },
+  }).current;
+
   // Imperatively move playhead every frame during playback so it stays in sync with audio
   // even when the expensive timeline DOM is slow to re-render at high zoom-out.
   useEffect(() => {
@@ -180,9 +238,11 @@ export default function Timeline({
     const isFree = freeMode;
     const snap = snapUnit;
 
-    const handleMouseMove = (moveE) => {
+    const runResize = (clientX) => {
       if (!draggingRef.current) return;
-      const dx = moveE.clientX - draggingRef.current.startX;
+      // Compensate for auto-pan: convert delta to content-space by including scrollLeft shift.
+      const scrollDelta = (bodyRef.current?.scrollLeft ?? 0) - (draggingRef.current.startScroll ?? 0);
+      const dx = (clientX - draggingRef.current.startX) + scrollDelta;
       const { affectedIndices, startDurations } = draggingRef.current;
       const noteBarIdx = beatToBar(notes[draggingRef.current.noteIndex].beat, barSubdivisions).barIndex;
       const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
@@ -201,8 +261,16 @@ export default function Timeline({
         return { ...n, duration: Math.min(newDuration, maxDuration) };
       }));
     };
+    draggingRef.current.startScroll = bodyRef.current?.scrollLeft ?? 0;
+
+    const handleMouseMove = (moveE) => {
+      autoPan.update(moveE.clientX, moveE.clientY);
+      runResize(moveE.clientX);
+    };
+    autoPan.start(e.clientX, e.clientY, (cx) => runResize(cx));
 
     const handleMouseUp = () => {
+      autoPan.stop();
       const finalDur = draggingRef.current?.lastDuration;
       commitDrag();
       if (finalDur != null && onResizeDuration) {
@@ -215,7 +283,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, onResizeDuration]);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, onResizeDuration, autoPan, barSubdivisions, cellWidth, totalCols]);
 
   // Resize from the left edge: moves start beat right/left while keeping the end fixed.
   const handleResizeStartLeft = useCallback((e, noteIndex) => {
@@ -239,9 +307,11 @@ export default function Timeline({
     const isFree = freeMode;
     const snap = snapUnit;
 
-    const handleMouseMove = (moveE) => {
+    draggingRef.current.startScroll = bodyRef.current?.scrollLeft ?? 0;
+    const runLeftResize = (clientX) => {
       if (!draggingRef.current) return;
-      const dx = moveE.clientX - draggingRef.current.startX;
+      const scrollDelta = (bodyRef.current?.scrollLeft ?? 0) - (draggingRef.current.startScroll ?? 0);
+      const dx = (clientX - draggingRef.current.startX) + scrollDelta;
       const { affectedIndices, startStates } = draggingRef.current;
       const noteBarIdx = beatToBar(note.beat, barSubdivisions).barIndex;
       const cw = colWidth(noteBarIdx, barSubdivisions, cellWidth);
@@ -253,7 +323,6 @@ export default function Timeline({
         const end = base.beat + base.duration;
         const rawBeat = base.beat + dBeats;
         let newBeat = isFree ? rawBeat : Math.round(rawBeat / snap) * snap;
-        // Cap at any earlier note on same string so we don't overlap
         const prevEnd = prev
           .filter((m, j) => j !== i && m.stringIndex === n.stringIndex && m.beat + (m.duration || 1) <= end && m.beat < newBeat + 0.0001)
           .reduce((max, m) => {
@@ -266,7 +335,14 @@ export default function Timeline({
       }));
     };
 
+    const handleMouseMove = (moveE) => {
+      autoPan.update(moveE.clientX, moveE.clientY);
+      runLeftResize(moveE.clientX);
+    };
+    autoPan.start(e.clientX, e.clientY, (cx) => runLeftResize(cx));
+
     const handleMouseUp = () => {
+      autoPan.stop();
       commitDrag();
       setTimeout(() => { draggingRef.current = null; }, 0);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -275,7 +351,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, barSubdivisions, cellWidth]);
+  }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, barSubdivisions, cellWidth, autoPan]);
 
   const rightDragEraseRef = useRef(false);
   const handleNoteContextMenu = useCallback((e, noteIndex) => {
@@ -337,12 +413,16 @@ export default function Timeline({
 
     const isFree = freeMode;
 
-    const handleMouseMove = (moveE) => {
+    noteDragRef.current.startScrollX = bodyRef.current.scrollLeft;
+
+    const runNoteMove = (clientX, clientY, altKey) => {
       if (!noteDragRef.current) return;
       const d = noteDragRef.current;
 
-      const dx = moveE.clientX - d.startX;
-      const dy = moveE.clientY - d.startY;
+      // Include auto-pan scroll delta so dragging past the edge keeps moving the note in content space.
+      const scrollDeltaX = (bodyRef.current?.scrollLeft ?? 0) - (d.startScrollX ?? 0);
+      const dx = (clientX - d.startX) + scrollDeltaX;
+      const dy = clientY - d.startY;
       if (!d.didMove && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
       d.didMove = true;
 
@@ -351,7 +431,7 @@ export default function Timeline({
       const deltaBeat = dx / anchorCw;
 
       const scrollTop = bodyRef.current.scrollTop;
-      const mouseY = moveE.clientY - d.gridTop + scrollTop;
+      const mouseY = clientY - d.gridTop + scrollTop;
       const rowFromTop = Math.floor(mouseY / ROW_HEIGHT);
       const currentPitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
       const deltaRow = currentPitchRow - d.anchorPitchRow;
@@ -368,16 +448,25 @@ export default function Timeline({
 
       d.lastDeltaBeat = deltaBeat;
       d.lastDeltaRow = deltaRow;
-      d.isDuplicate = moveE.altKey;
+      d.isDuplicate = altKey;
       setDragPreview({
         affectedIndices: d.affectedIndices,
         deltaBeat,
         deltaRow,
-        isDuplicate: moveE.altKey,
+        isDuplicate: altKey,
       });
     };
 
+    let lastAlt = false;
+    const handleMouseMove = (moveE) => {
+      lastAlt = moveE.altKey;
+      autoPan.update(moveE.clientX, moveE.clientY);
+      runNoteMove(moveE.clientX, moveE.clientY, moveE.altKey);
+    };
+    autoPan.start(e.clientX, e.clientY, (cx, cy) => runNoteMove(cx, cy, lastAlt));
+
     const handleMouseUp = () => {
+      autoPan.stop();
       const d = noteDragRef.current;
       if (d && d.didMove) {
         const { affectedIndices, startPositions, lastDeltaBeat, lastDeltaRow } = d;
@@ -774,10 +863,11 @@ export default function Timeline({
       setSelectedNotes(new Set());
     }
 
-    const handleMouseMove = (moveE) => {
-      if (!marqueeRef.current) return;
-      const mx = moveE.clientX - rect.left + bodyRef.current.scrollLeft;
-      const my = moveE.clientY - rect.top + bodyRef.current.scrollTop;
+    const runMarqueeMove = (clientX, clientY, shiftKey) => {
+      if (!marqueeRef.current || !bodyRef.current) return;
+      const rect2 = bodyRef.current.getBoundingClientRect();
+      const mx = clientX - rect2.left + bodyRef.current.scrollLeft;
+      const my = clientY - rect2.top + bodyRef.current.scrollTop;
       const dx = mx - marqueeRef.current.startX;
       const dy = my - marqueeRef.current.startY;
       if (!marqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
@@ -804,7 +894,7 @@ export default function Timeline({
       });
       // Shift-drag: final selection is (initialSelection ∪ currentlyInMarquee)
       // so shrinking the marquee deselects notes that are no longer inside it.
-      if (moveE.shiftKey && !isMarqueeErase) {
+      if (shiftKey && !isMarqueeErase) {
         const merged = new Set(marqueeRef.current.initialSelection);
         selected.forEach(i => merged.add(i));
         setSelectedNotes(merged);
@@ -813,7 +903,16 @@ export default function Timeline({
       }
     };
 
+    let lastShiftKey = e.shiftKey;
+    const handleMouseMove = (moveE) => {
+      lastShiftKey = moveE.shiftKey;
+      autoPan.update(moveE.clientX, moveE.clientY);
+      runMarqueeMove(moveE.clientX, moveE.clientY, moveE.shiftKey);
+    };
+    autoPan.start(e.clientX, e.clientY, (cx, cy) => runMarqueeMove(cx, cy, lastShiftKey));
+
     const handleMouseUp = () => {
+      autoPan.stop();
       const wasErase = marqueeRef.current && marqueeRef.current.erase;
       if (wasErase && marqueeRef.current && marqueeRef.current.didMove) {
         setSelectedNotes(prev => {
