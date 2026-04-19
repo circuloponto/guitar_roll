@@ -10,6 +10,7 @@ import {
 } from '../utils/pitchMap';
 import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth, timeToBeat } from '../utils/barLayout';
 import { matchesWheelHotkey } from '../utils/hotkeys';
+import { createAutoPan } from '../utils/autoPan';
 
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -60,6 +61,7 @@ export default function Timeline({
   audioTracks = [],
   bpm = 120,
   timeSignature = [4, 4],
+  bodyRefExternal,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -86,63 +88,8 @@ export default function Timeline({
   const bodyPlayheadRef = useRef(null);
   const headerPlayheadRef = useRef(null);
 
-  // ---- Edge auto-pan during drags ----
-  // Any drag handler can call autoPan.start(initialClientX, moveCb) to kick off auto-scroll
-  // when the cursor approaches the timeline body's left/right edge, .update(clientX) on
-  // each mousemove, and .stop() on mouseup. moveCb is invoked after every auto-scroll tick
-  // (with the latest clientX) so the drag's move logic can re-run against the new scroll.
-  const autoPanRef = useRef(null);
-  const autoPan = useRef({
-    start(initialClientX, initialClientY, moveCb) {
-      this.stop();
-      autoPanRef.current = { clientX: initialClientX, clientY: initialClientY, moveCb };
-      const tick = () => {
-        const s = autoPanRef.current;
-        if (!s) return;
-        const body = bodyRef.current;
-        if (body) {
-          const rect = body.getBoundingClientRect();
-          const EDGE = 60;
-          const MAX = 28;
-          let dx = 0, dy = 0;
-          if (s.clientX > rect.right - EDGE) {
-            dx = Math.min(1, (s.clientX - (rect.right - EDGE)) / EDGE) * MAX;
-          } else if (s.clientX < rect.left + EDGE) {
-            dx = -Math.min(1, ((rect.left + EDGE) - s.clientX) / EDGE) * MAX;
-          }
-          if (s.clientY > rect.bottom - EDGE) {
-            dy = Math.min(1, (s.clientY - (rect.bottom - EDGE)) / EDGE) * MAX;
-          } else if (s.clientY < rect.top + EDGE) {
-            dy = -Math.min(1, ((rect.top + EDGE) - s.clientY) / EDGE) * MAX;
-          }
-          let scrolled = false;
-          if (dx !== 0) {
-            const before = body.scrollLeft;
-            body.scrollLeft = Math.max(0, Math.min(body.scrollWidth - body.clientWidth, body.scrollLeft + dx));
-            if (body.scrollLeft !== before) scrolled = true;
-          }
-          if (dy !== 0) {
-            const before = body.scrollTop;
-            body.scrollTop = Math.max(0, Math.min(body.scrollHeight - body.clientHeight, body.scrollTop + dy));
-            if (body.scrollTop !== before) scrolled = true;
-          }
-          if (scrolled && s.moveCb) s.moveCb(s.clientX, s.clientY);
-        }
-        if (autoPanRef.current) autoPanRef.current.rafId = requestAnimationFrame(tick);
-      };
-      autoPanRef.current.rafId = requestAnimationFrame(tick);
-    },
-    update(clientX, clientY) {
-      if (autoPanRef.current) {
-        autoPanRef.current.clientX = clientX;
-        autoPanRef.current.clientY = clientY;
-      }
-    },
-    stop() {
-      if (autoPanRef.current?.rafId) cancelAnimationFrame(autoPanRef.current.rafId);
-      autoPanRef.current = null;
-    },
-  }).current;
+  // Edge auto-pan during drags — see src/utils/autoPan.js
+  const autoPan = useRef(createAutoPan(() => bodyRef.current)).current;
 
   // Imperatively move playhead every frame during playback so it stays in sync with audio
   // even when the expensive timeline DOM is slow to re-render at high zoom-out.
@@ -1363,7 +1310,10 @@ export default function Timeline({
         {/* Grid body */}
         <div
           className="timeline-body"
-          ref={bodyRef}
+          ref={(el) => {
+            bodyRef.current = el;
+            if (bodyRefExternal) bodyRefExternal.current = el;
+          }}
           onClick={handleClick}
           onMouseDown={handleGridMouseDown}
           onContextMenu={(e) => e.preventDefault()}

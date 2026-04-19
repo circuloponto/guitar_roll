@@ -153,6 +153,8 @@ function App() {
   // Imperative playhead ref — updated every audio frame, consumed by Timeline
   // without going through React state so smooth motion survives slow renders.
   const playheadBeatRef = useRef(null);
+  // Shared ref to the Timeline's scroll body so Fretboard drags can trigger its auto-pan.
+  const timelineBodyRef = useRef(null);
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
   const snapUnit = 1 / subdivisions; // smallest grid step
@@ -1466,6 +1468,9 @@ function App() {
           voicingPreview={voicingPreview}
           autoScroll={autoScroll}
           hoverPill={hoverPill}
+          timelineBodyRef={timelineBodyRef}
+          timelineZoom={timelineZoom}
+          barSubdivisions={barSubdivisions}
         />
         <Timeline
           notes={notes}
@@ -1534,6 +1539,7 @@ function App() {
           }))}
           bpm={bpm}
           timeSignature={timeSignature}
+          bodyRefExternal={timelineBodyRef}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
           <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>

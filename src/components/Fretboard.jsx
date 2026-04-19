@@ -2,6 +2,8 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
 import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
+import { createAutoPan } from '../utils/autoPan';
+import { beatToX } from '../utils/barLayout';
 
 // totalBeats passed as prop (totalBeats)
 
@@ -14,7 +16,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4 }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -35,6 +37,18 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const moveDragRef = useRef(null);
   const [fretMarquee, setFretMarquee] = useState(null); // { x1, y1, x2, y2 } in px
   const fretMarqueeRef = useRef(null);
+
+  // Auto-pan the timeline when a duration/move drag reaches the timeline body's edges
+  const timelineAutoPan = useRef(createAutoPan(() => timelineBodyRef?.current || null)).current;
+  // Convert a beat position to its current client X inside the timeline body, so
+  // autoPan can watch the edited note's tail (rather than the cursor) against the edge.
+  const beatToClientX = useCallback((beat) => {
+    const body = timelineBodyRef?.current;
+    if (!body) return null;
+    const rect = body.getBoundingClientRect();
+    const x = beatToX(beat, barSubdivisions, CELL_WIDTH * timelineZoom);
+    return { clientX: rect.left + x - body.scrollLeft, safeY: rect.top + rect.height / 2 };
+  }, [timelineBodyRef, barSubdivisions, timelineZoom]);
 
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
@@ -176,6 +190,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           startX: e.clientX,
           startDuration: activeNote.duration || 1,
           noteBeat: activeNote.beat,
+          startScrollX: timelineBodyRef?.current?.scrollLeft ?? 0,
         };
         setDurationDrag({
           stringIndex: result.stringIndex,
@@ -185,10 +200,12 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         saveSnapshot();
         const isFree = freeMode;
-        const handleDurationMove = (moveE) => {
+        let lastMouseX = e.clientX;
+        const runDurationMove = () => {
           const d = durationDragRef.current;
           if (!d) return;
-          const dx = moveE.clientX - d.startX;
+          const scrollDelta = (timelineBodyRef?.current?.scrollLeft ?? 0) - d.startScrollX;
+          const dx = (lastMouseX - d.startX) + scrollDelta;
           const dBeats = dx / CELL_WIDTH;
           const rawDuration = d.startDuration + dBeats;
           const snap = snapUnit;
@@ -197,14 +214,28 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             : Math.max(snap, Math.min(totalBeats - d.noteBeat, Math.round(rawDuration / snap) * snap));
           setDurationDrag({ stringIndex: d.stringIndex, fret: d.fret, duration: newDuration });
           onDurationChange(d.stringIndex, d.fret, newDuration);
+          // Drive auto-pan from the note's tail position rather than the cursor
+          const tail = beatToClientX(d.noteBeat + newDuration);
+          if (tail) timelineAutoPan.update(tail.clientX, tail.safeY);
+        };
+        const handleDurationMove = (moveE) => {
+          lastMouseX = moveE.clientX;
+          runDurationMove();
         };
         const handleDurationUp = () => {
+          timelineAutoPan.stop();
           commitDrag();
           durationDragRef.current = null;
           setDurationDrag(null);
           window.removeEventListener('mousemove', handleDurationMove);
           window.removeEventListener('mouseup', handleDurationUp);
         };
+        const initialTail = beatToClientX(activeNote.beat + (activeNote.duration || 1));
+        timelineAutoPan.start(
+          initialTail?.clientX ?? e.clientX,
+          initialTail?.safeY ?? e.clientY,
+          () => runDurationMove(),
+        );
         window.addEventListener('mousemove', handleDurationMove);
         window.addEventListener('mouseup', handleDurationUp);
       }
@@ -221,6 +252,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           startBeat: activeNote.beat,
           currentBeat: activeNote.beat,
           noteDuration: activeNote.duration || 1,
+          startScrollX: timelineBodyRef?.current?.scrollLeft ?? 0,
         };
         setMoveDrag({
           stringIndex: result.stringIndex,
@@ -230,10 +262,12 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         saveSnapshot();
         const isFree = freeMode;
 
-        const handleMoveMove = (moveE) => {
+        let lastMouseX = e.clientX;
+        const runMoveMove = () => {
           const d = moveDragRef.current;
           if (!d) return;
-          const dx = moveE.clientX - d.startX;
+          const scrollDelta = (timelineBodyRef?.current?.scrollLeft ?? 0) - d.startScrollX;
+          const dx = (lastMouseX - d.startX) + scrollDelta;
           const dBeats = dx / CELL_WIDTH;
           const rawBeat = d.startBeat + dBeats;
           const snap = snapUnit;
@@ -245,14 +279,32 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             d.currentBeat = newBeat;
             setMoveDrag({ stringIndex: d.stringIndex, fret: d.fret, beat: newBeat });
           }
+          // Drive auto-pan from the note's leading edge in the drag direction:
+          // note end when moving right, note start when moving left.
+          const targetBeat = dx >= 0
+            ? d.currentBeat + (d.noteDuration || 1)
+            : d.currentBeat;
+          const edge = beatToClientX(targetBeat);
+          if (edge) timelineAutoPan.update(edge.clientX, edge.safeY);
+        };
+        const handleMoveMove = (moveE) => {
+          lastMouseX = moveE.clientX;
+          runMoveMove();
         };
         const handleMoveUp = () => {
+          timelineAutoPan.stop();
           commitDrag();
           moveDragRef.current = null;
           setMoveDrag(null);
           window.removeEventListener('mousemove', handleMoveMove);
           window.removeEventListener('mouseup', handleMoveUp);
         };
+        const initialTail = beatToClientX(activeNote.beat + (activeNote.duration || 1));
+        timelineAutoPan.start(
+          initialTail?.clientX ?? e.clientX,
+          initialTail?.safeY ?? e.clientY,
+          () => runMoveMove(),
+        );
         window.addEventListener('mousemove', handleMoveMove);
         window.addEventListener('mouseup', handleMoveUp);
       }
