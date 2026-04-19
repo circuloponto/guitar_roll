@@ -1,4 +1,55 @@
-import { closestComboForPitch } from './pitchMap';
+import { pitchRowCombos, midiToPitchRow } from './pitchMap';
+import { findBestVoicings } from './voiceLeading';
+
+// Assign string+fret to a sequence of note groups (chords) using voice leading.
+// Each group is an array of { midi, ... } records sharing a start tick.
+// Mutates each note in-place, adding .stringIndex and .fret.
+// Notes that can't be placed (out of range) have stringIndex = null.
+function assignFretboardPositions(groups) {
+  let prevVoicing = [];
+  for (const group of groups) {
+    const midis = group.map(n => n.midi);
+    const best = findBestVoicings(prevVoicing, midis, 1);
+
+    if (best.length > 0) {
+      const voicing = best[0].voicing;
+      // Match each voicing entry back to a note by midi pitch.
+      const used = new Set();
+      for (const v of voicing) {
+        const idx = group.findIndex((n, i) => !used.has(i) && n.midi === v.midi);
+        if (idx >= 0) {
+          group[idx].stringIndex = v.stringIndex;
+          group[idx].fret = v.fret;
+          used.add(idx);
+        }
+      }
+      prevVoicing = voicing.slice();
+      continue;
+    }
+
+    // Fallback — group is unvoiceable as a single chord (too many notes,
+    // impossible fret span, or notes out of range). Place each note individually
+    // onto a free string nearest to the previous voicing's fret center.
+    const centerFret = prevVoicing.length > 0
+      ? prevVoicing.reduce((s, v) => s + v.fret, 0) / prevVoicing.length
+      : 5;
+    const usedStrings = new Set();
+    const placed = [];
+    for (const n of group) {
+      const row = midiToPitchRow(n.midi);
+      if (row < 0) continue;
+      const combos = pitchRowCombos(row).filter(c => !usedStrings.has(c.stringIndex));
+      if (combos.length === 0) continue;
+      combos.sort((a, b) => Math.abs(a.fret - centerFret) - Math.abs(b.fret - centerFret));
+      const pick = combos[0];
+      n.stringIndex = pick.stringIndex;
+      n.fret = pick.fret;
+      usedStrings.add(pick.stringIndex);
+      placed.push({ ...pick, midi: n.midi });
+    }
+    if (placed.length > 0) prevVoicing = placed;
+  }
+}
 
 /**
  * Parse a MIDI file ArrayBuffer into tracks of note events.
@@ -148,9 +199,9 @@ export function midiToGuitarNotes(midi, timeSigDenominator = 4) {
   const result = [];
 
   midiTracks.forEach((events, trackIdx) => {
-    // Match noteOn/noteOff pairs
+    // First pass: collect completed notes as pitch-only records (no string/fret yet).
     const activeNotes = new Map(); // note -> [{ tick, velocity }]
-    const notes = [];
+    const raw = []; // { midi, startTick, startBeat, duration, velocity }
 
     events.forEach(e => {
       if (e.type === 'noteOn' && e.velocity > 0) {
@@ -163,21 +214,48 @@ export function midiToGuitarNotes(midi, timeSigDenominator = 4) {
           const startBeat = tickToBeats(start.tick);
           const endBeat = tickToBeats(e.tick);
           const duration = Math.max(endBeat - startBeat, 0.01);
-
-          // Map MIDI note to guitar string/fret
-          const combo = closestComboForPitch(e.note, 0);
-          if (combo) {
-            notes.push({
-              stringIndex: combo.stringIndex,
-              fret: combo.fret,
-              beat: Math.round(startBeat * 10000) / 10000,
-              duration: Math.round(duration * 10000) / 10000,
-              velocity: Math.min(1, start.velocity / 127),
-            });
-          }
+          raw.push({
+            midi: e.note,
+            startTick: start.tick,
+            startBeat,
+            duration,
+            velocity: start.velocity,
+          });
         }
       }
     });
+
+    if (raw.length === 0) return;
+
+    // Group simultaneous notes (same startTick) into chord groups, sorted in time.
+    raw.sort((a, b) => a.startTick - b.startTick);
+    const groups = [];
+    let cursor = 0;
+    while (cursor < raw.length) {
+      const tick = raw[cursor].startTick;
+      const group = [];
+      while (cursor < raw.length && raw[cursor].startTick === tick) {
+        group.push(raw[cursor++]);
+      }
+      groups.push(group);
+    }
+
+    // Second pass: assign string/fret per chord group using voice leading.
+    assignFretboardPositions(groups);
+
+    const notes = [];
+    for (const group of groups) {
+      for (const n of group) {
+        if (n.stringIndex == null) continue;
+        notes.push({
+          stringIndex: n.stringIndex,
+          fret: n.fret,
+          beat: Math.round(n.startBeat * 10000) / 10000,
+          duration: Math.round(n.duration * 10000) / 10000,
+          velocity: Math.min(1, n.velocity / 127),
+        });
+      }
+    }
 
     if (notes.length > 0) {
       result.push({
@@ -189,8 +267,8 @@ export function midiToGuitarNotes(midi, timeSigDenominator = 4) {
 
   // For format 0 (single track), try splitting by channel
   if (midi.format === 0 && result.length === 1 && result[0].notes.length > 0) {
-    // Check if multiple channels are used
-    const channelNotes = new Map();
+    // First pass: collect pitch-only notes per channel.
+    const channelRaw = new Map(); // channel -> raw[]
     const events = midiTracks[0];
     const activeByChannel = new Map();
 
@@ -204,30 +282,52 @@ export function midiToGuitarNotes(midi, timeSigDenominator = 4) {
         const pending = activeByChannel.get(key);
         if (pending && pending.length > 0) {
           const start = pending.shift();
-          if (!channelNotes.has(start.channel)) channelNotes.set(start.channel, []);
+          if (!channelRaw.has(start.channel)) channelRaw.set(start.channel, []);
           const startBeat = tickToBeats(start.tick);
           const endBeat = tickToBeats(e.tick);
           const duration = Math.max(endBeat - startBeat, 0.01);
-          const combo = closestComboForPitch(e.note, 0);
-          if (combo) {
-            channelNotes.get(start.channel).push({
-              stringIndex: combo.stringIndex,
-              fret: combo.fret,
-              beat: Math.round(startBeat * 10000) / 10000,
-              duration: Math.round(duration * 10000) / 10000,
-              velocity: Math.min(1, start.velocity / 127),
-            });
-          }
+          channelRaw.get(start.channel).push({
+            midi: e.note,
+            startTick: start.tick,
+            startBeat,
+            duration,
+            velocity: start.velocity,
+          });
         }
       }
     });
 
-    if (channelNotes.size > 1) {
+    if (channelRaw.size > 1) {
       const channelResult = [];
-      channelNotes.forEach((notes, ch) => {
-        if (notes.length > 0) {
-          channelResult.push({ name: `Channel ${ch + 1}`, notes });
+      channelRaw.forEach((raw, ch) => {
+        if (raw.length === 0) return;
+        // Group by startTick and assign voice-leading positions per channel.
+        raw.sort((a, b) => a.startTick - b.startTick);
+        const groups = [];
+        let cursor = 0;
+        while (cursor < raw.length) {
+          const tick = raw[cursor].startTick;
+          const group = [];
+          while (cursor < raw.length && raw[cursor].startTick === tick) {
+            group.push(raw[cursor++]);
+          }
+          groups.push(group);
         }
+        assignFretboardPositions(groups);
+        const notes = [];
+        for (const group of groups) {
+          for (const n of group) {
+            if (n.stringIndex == null) continue;
+            notes.push({
+              stringIndex: n.stringIndex,
+              fret: n.fret,
+              beat: Math.round(n.startBeat * 10000) / 10000,
+              duration: Math.round(n.duration * 10000) / 10000,
+              velocity: Math.min(1, n.velocity / 127),
+            });
+          }
+        }
+        if (notes.length > 0) channelResult.push({ name: `Channel ${ch + 1}`, notes });
       });
       if (channelResult.length > 1) return { tracks: channelResult, detectedBpm };
     }

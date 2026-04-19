@@ -1275,19 +1275,27 @@ export default function Timeline({
                   e.stopPropagation();
                   e.preventDefault();
                   const headerRect = headerRef.current.getBoundingClientRect();
-                  const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
+                  const bodyRect = bodyRef.current ? bodyRef.current.getBoundingClientRect() : null;
+                  const safeY = bodyRect ? bodyRect.top + bodyRect.height / 2 : e.clientY;
 
-                  const handleMove = (moveE) => {
-                    const x = moveE.clientX - headerRect.left + scrollLeft;
+                  const runMove = (clientX) => {
+                    const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
+                    const x = clientX - headerRect.left + scrollLeft;
                     const rawBeat = xToBeat(x, barSubdivisions, cellWidth, false);
                     const beat = freeMode ? rawBeat : Math.round(rawBeat / snapUnit) * snapUnit;
                     const clamped = Math.max(0, Math.min(totalCols - 1, beat));
                     setSelectedBeat(clamped);
                   };
+                  const handleMove = (moveE) => {
+                    autoPan.update(moveE.clientX, safeY);
+                    runMove(moveE.clientX);
+                  };
                   const handleUp = () => {
+                    autoPan.stop();
                     window.removeEventListener('mousemove', handleMove);
                     window.removeEventListener('mouseup', handleUp);
                   };
+                  autoPan.start(e.clientX, safeY, (cx) => runMove(cx));
                   window.addEventListener('mousemove', handleMove);
                   window.addEventListener('mouseup', handleUp);
                 }}
