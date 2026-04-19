@@ -50,7 +50,7 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [schemes, setSchemes] = useState(listColorSchemes);
   const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
@@ -173,6 +173,20 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 </label>
               </div>
             ))}
+          </div>
+
+          <div className="settings-section">
+            <h3>Timeline</h3>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showTimelineVerticalZoomButtons !== false}
+                  onChange={(e) => onShowTimelineVerticalZoomButtonsChange(e.target.checked)}
+                />
+                Dock vertical zoom buttons (top-right)
+              </label>
+            </div>
           </div>
 
           <div className="settings-section">

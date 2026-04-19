@@ -204,6 +204,18 @@ function App() {
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
+  const [timelineVerticalZoom, setTimelineVerticalZoom] = useState(() => {
+    try {
+      const saved = parseFloat(localStorage.getItem('guitar-roll-timeline-vertical-zoom'));
+      return Number.isFinite(saved) && saved > 0 ? saved : 1;
+    } catch { return 1; }
+  });
+  const [showTimelineVerticalZoomButtons, setShowTimelineVerticalZoomButtons] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-timeline-vzoom-buttons');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
+  });
   const [fretboardZoom, setFretboardZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
@@ -475,12 +487,17 @@ function App() {
         redo();
       }
       // Keyboard zoom: anchored at the playhead by the Timeline component (which captures
-      // the anchor before the state update commits).
-      if (matchesHotkey(e, hk.zoomIn) || ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '='))) {
+      // the anchor before the state update commits). Shift modifier switches to vertical.
+      if (matchesHotkey(e, hk.verticalZoomIn) || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '+' || e.key === '='))) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('timeline-vertical-zoom', { detail: { dir: 1 } }));
+      } else if (matchesHotkey(e, hk.verticalZoomOut) || ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '-' || e.key === '_'))) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('timeline-vertical-zoom', { detail: { dir: -1 } }));
+      } else if (matchesHotkey(e, hk.zoomIn) || ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === '+' || e.key === '='))) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('timeline-zoom', { detail: { dir: 1 } }));
-      }
-      if (matchesHotkey(e, hk.zoomOut) || ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_'))) {
+      } else if (matchesHotkey(e, hk.zoomOut) || ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === '-' || e.key === '_'))) {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent('timeline-zoom', { detail: { dir: -1 } }));
       }
@@ -1483,6 +1500,15 @@ function App() {
           commitDrag={commitDrag}
           freeMode={freeMode}
           timelineZoom={timelineZoom}
+          timelineVerticalZoom={timelineVerticalZoom}
+          setTimelineVerticalZoom={(updater) => {
+            setTimelineVerticalZoom(prev => {
+              const next = typeof updater === 'function' ? updater(prev) : updater;
+              try { localStorage.setItem('guitar-roll-timeline-vertical-zoom', String(next)); } catch {}
+              return next;
+            });
+          }}
+          showVerticalZoomButtons={showTimelineVerticalZoomButtons}
           barSubdivisions={barSubdivisions}
           setBarSubdivisions={setBarSubdivisions}
           setTimelineZoom={setTimelineZoom}
@@ -1660,6 +1686,11 @@ function App() {
           onHoverPillChange={(v) => { setHoverPill(v); localStorage.setItem('guitar-roll-hover-pill', JSON.stringify(v)); }}
           autoSave={autoSave}
           onAutoSaveChange={(v) => { setAutoSave(v); localStorage.setItem('guitar-roll-auto-save', JSON.stringify(v)); }}
+          showTimelineVerticalZoomButtons={showTimelineVerticalZoomButtons}
+          onShowTimelineVerticalZoomButtonsChange={(v) => {
+            setShowTimelineVerticalZoomButtons(v);
+            try { localStorage.setItem('guitar-roll-timeline-vzoom-buttons', String(v)); } catch {}
+          }}
           onHotkeysChange={setHotkeys}
         />
       )}

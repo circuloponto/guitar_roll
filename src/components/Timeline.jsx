@@ -15,22 +15,15 @@ import { createAutoPan } from '../utils/autoPan';
 const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
 const totalRows = TOTAL_PITCH_ROWS;
-const ROW_HEIGHT = 20; // pixels per pitch row
-const GRID_TOTAL_HEIGHT = totalRows * ROW_HEIGHT;
-
-// Convert stringIndex + fret to pixel position (bass at bottom)
-function rowTopPx(stringIndex, fret) {
-  const row = noteToPitchRow(stringIndex, fret);
-  return (totalRows - 1 - row) * ROW_HEIGHT;
-}
-
-function pitchRowTopPx(pitchRow) {
-  return (totalRows - 1 - pitchRow) * ROW_HEIGHT;
-}
+const BASE_ROW_HEIGHT = 20; // pixels per pitch row at 1x vertical zoom
+export const VERTICAL_ZOOM_MIN = 0.4;
+export const VERTICAL_ZOOM_MAX = 4;
 
 export default function Timeline({
   notes, backgroundNotes = [], setNotes, saveSnapshot, setNotesDrag, commitDrag, freeMode = false,
   timelineZoom = 1, setTimelineZoom,
+  timelineVerticalZoom = 1, setTimelineVerticalZoom,
+  showVerticalZoomButtons = true,
   barSubdivisions, setBarSubdivisions,
   currentBeat, playheadBeatRef, selectedBeat, setSelectedBeat,
   playing, onDeleteNote,
@@ -67,6 +60,10 @@ export default function Timeline({
   const headerRef = useRef(null);
   const [headerScrollLeft, setHeaderScrollLeft] = useState(0);
   const cellWidth = CELL_WIDTH * timelineZoom;
+  const rowHeight = BASE_ROW_HEIGHT * timelineVerticalZoom;
+  const gridTotalHeight = totalRows * rowHeight;
+  const rowTopPx = (stringIndex, fret) => (totalRows - 1 - noteToPitchRow(stringIndex, fret)) * rowHeight;
+  const pitchRowTopPx = (pitchRow) => (totalRows - 1 - pitchRow) * rowHeight;
   const totalCols = totalColumns(barSubdivisions);
   const gridWidth = gridTotalWidth(barSubdivisions, cellWidth);
   const starts = barStartBeats(barSubdivisions);
@@ -110,12 +107,12 @@ export default function Timeline({
   }, [playing, playheadBeatRef, barSubdivisions, cellWidth]);
 
   const yToPitch = useCallback((y) => {
-    const rowFromTop = Math.floor(y / ROW_HEIGHT);
+    const rowFromTop = Math.floor(y / rowHeight);
     const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
     const midi = pitchRowToMidi(pitchRow);
     const combo = closestComboForPitch(midi, 0);
     return combo;
-  }, []);
+  }, [rowHeight]);
 
   // Track K key for cursor-only mode (deselect + place cursor, no note input)
   useEffect(() => {
@@ -380,7 +377,7 @@ export default function Timeline({
 
       const scrollTop = bodyRef.current.scrollTop;
       const mouseY = clientY - d.gridTop + scrollTop;
-      const rowFromTop = Math.floor(mouseY / ROW_HEIGHT);
+      const rowFromTop = Math.floor(mouseY / rowHeight);
       const currentPitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
       const deltaRow = currentPitchRow - d.anchorPitchRow;
 
@@ -459,7 +456,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, selectedNotes, freeMode]);
+  }, [notes, setNotes, selectedNotes, freeMode, rowHeight]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -710,7 +707,7 @@ export default function Timeline({
       if (beat >= 0 && beat < totalCols) {
         // Pick a string that isn't already occupied at this beat so chords can be placed
         const finalBeatForCombo = Math.round(beat * 10000) / 10000;
-        const rowFromTop = Math.floor(y / ROW_HEIGHT);
+        const rowFromTop = Math.floor(y / rowHeight);
         const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
         const midiTarget = pitchRowToMidi(pitchRow);
         const allCombos = pitchRowCombos(pitchRow);
@@ -834,7 +831,7 @@ export default function Timeline({
         const noteLeft = beatToX(note.beat, barSubdivisions, cellWidth);
         const noteRight = noteLeft + durationToWidth(note.beat, note.duration || 1, barSubdivisions, cellWidth);
         const noteTop = rowTopPx(note.stringIndex, note.fret);
-        const noteBottom = noteTop + ROW_HEIGHT;
+        const noteBottom = noteTop + rowHeight;
 
         if (noteRight > x1 && noteLeft < x2 && noteBottom > y1 && noteTop < y2) {
           selected.add(i);
@@ -879,7 +876,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat]);
+  }, [playing, notes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -893,7 +890,7 @@ export default function Timeline({
     if (!(autoScroll?.onInput ?? true)) return;
     if (!hoveredNote || !bodyRef.current) return;
     const noteTop = rowTopPx(hoveredNote.stringIndex, hoveredNote.fret);
-    const noteBottom = noteTop + ROW_HEIGHT;
+    const noteBottom = noteTop + rowHeight;
     const container = bodyRef.current;
     const viewTop = container.scrollTop;
     const viewBottom = viewTop + container.clientHeight;
@@ -958,11 +955,19 @@ export default function Timeline({
   useEffect(() => {
     const handleWheel = (e) => {
       const hk = hotkeysRef.current;
-      if (!hk || !matchesWheelHotkey(e, hk.zoomWheel)) return;
-      if (!bodyRef.current) return;
+      if (!hk || !bodyRef.current) return;
       const rect = bodyRef.current.getBoundingClientRect();
       if (e.clientX < rect.left || e.clientX > rect.right ||
           e.clientY < rect.top || e.clientY > rect.bottom) return;
+      // Ctrl+Shift+wheel → vertical zoom. Checked before Ctrl+wheel because the
+      // vertical combo is a strict superset of the horizontal one.
+      if (matchesWheelHotkey(e, hk.verticalZoomWheel)) {
+        e.preventDefault();
+        queueVerticalZoomAnchor();
+        applyVerticalZoom(v => v * (1 - e.deltaY * 0.005));
+        return;
+      }
+      if (!matchesWheelHotkey(e, hk.zoomWheel)) return;
       e.preventDefault();
       // Anchor wheel/trackpad zoom at the playhead centered in the viewport (Ableton-style).
       const anchorBeat = (playing && currentBeat != null) ? currentBeat : (selectedBeat ?? 0);
@@ -972,6 +977,44 @@ export default function Timeline({
     document.addEventListener('wheel', handleWheel, { passive: false });
     return () => document.removeEventListener('wheel', handleWheel);
   }, [setTimelineZoom, playing, currentBeat, selectedBeat]);
+
+  // Vertical zoom: custom event (keyboard) + shared helpers used by wheel handler.
+  const pendingVZoomAnchorRef = useRef(null);
+  const queueVerticalZoomAnchor = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const centerContentY = el.scrollTop + el.clientHeight / 2;
+    const centerRow = centerContentY / (BASE_ROW_HEIGHT * timelineVerticalZoom);
+    pendingVZoomAnchorRef.current = { row: centerRow };
+  };
+  const applyVerticalZoom = (fn) => {
+    if (!setTimelineVerticalZoom) return;
+    setTimelineVerticalZoom(v => {
+      const raw = typeof fn === 'function' ? fn(v) : fn;
+      return Math.max(VERTICAL_ZOOM_MIN, Math.min(VERTICAL_ZOOM_MAX, raw));
+    });
+  };
+  useEffect(() => {
+    const onVZoom = (ev) => {
+      const dir = ev.detail?.dir > 0 ? 1 : -1;
+      queueVerticalZoomAnchor();
+      applyVerticalZoom(v => v * (dir > 0 ? 1.2 : 1 / 1.2));
+    };
+    window.addEventListener('timeline-vertical-zoom', onVZoom);
+    return () => window.removeEventListener('timeline-vertical-zoom', onVZoom);
+  }, [timelineVerticalZoom, setTimelineVerticalZoom]);
+
+  // After vertical-zoom commits, snap scrollTop so the previously centered row stays centered.
+  useLayoutEffect(() => {
+    const anchor = pendingVZoomAnchorRef.current;
+    pendingVZoomAnchorRef.current = null;
+    const el = bodyRef.current;
+    if (!anchor || !el) return;
+    const newCenterY = anchor.row * (BASE_ROW_HEIGHT * timelineVerticalZoom);
+    const target = Math.max(0, newCenterY - el.clientHeight / 2);
+    el.scrollTop = target;
+    if (typeof setVerticalScroll === 'function') setVerticalScroll(target);
+  }, [timelineVerticalZoom]);
 
   // After every zoom commit, snap scrollLeft so the anchor beat sits under the mouse.
   // First render: no prior zoom to anchor against.
@@ -1021,7 +1064,7 @@ export default function Timeline({
         const noteLeft = beatToX(note.beat, barSubdivisions, cellWidth);
         const noteRight = noteLeft + durationToWidth(note.beat, note.duration || 1, barSubdivisions, cellWidth);
         const noteTop = rowTopPx(note.stringIndex, note.fret);
-        const noteBottom = noteTop + ROW_HEIGHT;
+        const noteBottom = noteTop + rowHeight;
         if (mx >= noteLeft && mx <= noteRight && my >= noteTop && my <= noteBottom) {
           hoveredIndices.push(i);
         }
@@ -1087,7 +1130,26 @@ export default function Timeline({
   }
 
   return (
-    <div className="timeline-container">
+    <div className="timeline-container" style={{ position: 'relative' }}>
+      {showVerticalZoomButtons && setTimelineVerticalZoom && (
+        <div className="timeline-vzoom-dock" style={{
+          position: 'absolute', top: 4, right: 8, zIndex: 5,
+          display: 'flex', flexDirection: 'column', gap: 2, pointerEvents: 'auto',
+        }}>
+          <button
+            className="timeline-vzoom-btn"
+            title="Increase row height (Ctrl+Shift++)"
+            onClick={() => { queueVerticalZoomAnchor(); applyVerticalZoom(v => v * 1.2); }}
+            style={{ width: 22, height: 18, padding: 0, fontSize: 12, lineHeight: 1, cursor: 'pointer' }}
+          >+</button>
+          <button
+            className="timeline-vzoom-btn"
+            title="Decrease row height (Ctrl+Shift+-)"
+            onClick={() => { queueVerticalZoomAnchor(); applyVerticalZoom(v => v / 1.2); }}
+            style={{ width: 22, height: 18, padding: 0, fontSize: 12, lineHeight: 1, cursor: 'pointer' }}
+          >−</button>
+        </div>
+      )}
       {/* Header row: piano spacer + bar numbers */}
       <div style={{ display: 'flex', flexShrink: 0 }}>
         <div className="piano-spacer" />
@@ -1266,7 +1328,7 @@ export default function Timeline({
           }}
           onMouseLeave={() => setHoveredNote(null)}
         >
-          <div className="piano-roll-inner" style={{ height: GRID_TOTAL_HEIGHT }}>
+          <div className="piano-roll-inner" style={{ height: gridTotalHeight }}>
             {pianoRows.map((row, i) => {
               const isHovered = hoveredNote &&
                 noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
@@ -1280,7 +1342,7 @@ export default function Timeline({
                   key={i}
                   className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''} ${isChordRoot ? 'chord-root' : ''}`}
                   style={{
-                    height: ROW_HEIGHT,
+                    height: rowHeight,
                     borderTop: row.isC ? '1px solid #555' : undefined,
                   }}
                   onMouseEnter={() => {
@@ -1345,7 +1407,7 @@ export default function Timeline({
           onScroll={(e) => { setVerticalScroll(e.target.scrollTop); setHeaderScrollLeft(e.target.scrollLeft); }}
           style={{ flex: 1, cursor: machineGunMode ? 'cell' : undefined }}
         >
-        <div className="timeline-grid" style={{ width: gridWidth, height: GRID_TOTAL_HEIGHT }}>
+        <div className="timeline-grid" style={{ width: gridWidth, height: gridTotalHeight }}>
           {/* Loop region highlight in grid */}
           {loop && <>
             <div
@@ -1389,7 +1451,7 @@ export default function Timeline({
               left: 0,
               right: 0,
               top: rowTopPx(hoveredNote.stringIndex, hoveredNote.fret),
-              height: ROW_HEIGHT,
+              height: rowHeight,
               background: 'rgba(100, 160, 255, 0.15)',
               pointerEvents: 'none',
               zIndex: 1,
@@ -1479,13 +1541,13 @@ export default function Timeline({
                 <canvas
                   key={`waveform-${at.trackId}-${ti}`}
                   width={Math.round(tileWidth)}
-                  height={GRID_TOTAL_HEIGHT}
+                  height={gridTotalHeight}
                   style={{
                     position: 'absolute',
                     left: startX + tileOffset,
                     top: 0,
                     width: tileWidth,
-                    height: GRID_TOTAL_HEIGHT,
+                    height: gridTotalHeight,
                     opacity: at.isActive ? 0.5 : (at.bgOpacity ?? 0.2),
                     pointerEvents: 'none',
                     zIndex: 2,
@@ -1560,7 +1622,7 @@ export default function Timeline({
                 left: beatToX(hoverPos.beat, barSubdivisions, cellWidth),
                 top: rowTopPx(hoverPos.stringIndex, hoverPos.fret),
                 width: durationToWidth(hoverPos.beat, noteDuration, barSubdivisions, cellWidth),
-                height: ROW_HEIGHT,
+                height: rowHeight,
               }}
             />
           )}
@@ -1573,7 +1635,7 @@ export default function Timeline({
                 left: beatToX(selectedBeat, barSubdivisions, cellWidth),
                 top: rowTopPx(hoveredNote.stringIndex, hoveredNote.fret),
                 width: durationToWidth(selectedBeat, noteDuration, barSubdivisions, cellWidth),
-                height: ROW_HEIGHT,
+                height: rowHeight,
               }}
             />
           )}
@@ -1587,7 +1649,7 @@ export default function Timeline({
                 left: beatToX(selectedBeat + (cn.beatOffset || 0), barSubdivisions, cellWidth),
                 top: rowTopPx(cn.stringIndex, cn.fret),
                 width: durationToWidth(selectedBeat + (cn.beatOffset || 0), cn.duration || noteDuration, barSubdivisions, cellWidth),
-                height: ROW_HEIGHT,
+                height: rowHeight,
               }}
             />
           ))}
@@ -1605,7 +1667,7 @@ export default function Timeline({
                   left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                   top: topPx,
                   width: noteWidth,
-                  height: ROW_HEIGHT,
+                  height: rowHeight,
                   minHeight: 4,
                   backgroundColor: note._trackColor || '#888',
                   opacity: note._trackOpacity ?? 0.2,
@@ -1631,7 +1693,7 @@ export default function Timeline({
                 left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                 top: topPx,
                 width: noteWidth,
-                height: ROW_HEIGHT,
+                height: rowHeight,
                 minHeight: 4,
                 background: color,
                 filter: 'blur(8px)',
@@ -1668,7 +1730,7 @@ export default function Timeline({
                   left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                   top: topPx,
                   width: noteWidth,
-                  height: ROW_HEIGHT,
+                  height: rowHeight,
                   minHeight: 4,
                   backgroundColor: isGhost ? 'transparent' : color,
                   borderColor: isGhost ? color : undefined,
@@ -1718,7 +1780,7 @@ export default function Timeline({
                   backgroundColor: getNoteColor(combo.stringIndex, combo.fret),
                   top: topPct,
                   width: noteWidth,
-                  height: ROW_HEIGHT,
+                  height: rowHeight,
                   minHeight: 4,
                   opacity: 0.7,
                   zIndex: 20,
