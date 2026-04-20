@@ -1520,9 +1520,12 @@ export default function Timeline({
             />
           ))}
 
-          {/* Audio waveforms — split into tiles so each pixel maps 1:1 with display */}
+          {/* Audio waveforms — split into tiles so each pixel maps 1:1 with display.
+              Width is locked to the track's originalBpm so tempo changes stretch playback
+              but keep the waveform aligned to the beat grid that was in effect at import. */}
           {audioTracks.flatMap(at => {
-            const durationBeats = timeToBeat(at.audioDuration, bpm, timeSignature[1]);
+            const refBpm = at.originalBpm || bpm;
+            const durationBeats = timeToBeat(at.audioDuration, refBpm, timeSignature[1]);
             const startX = beatToX(at.audioOffset, barSubdivisions, cellWidth);
             const endX = beatToX(at.audioOffset + durationBeats, barSubdivisions, cellWidth);
             const totalWidth = Math.max(1, endX - startX);
