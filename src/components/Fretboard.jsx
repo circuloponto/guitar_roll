@@ -16,7 +16,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4 }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4 }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -60,7 +60,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       if (matchesHotkey(e, hk.durationMode)) { setDurationMode(m => !m); setMoveMode(false); setAdjacentMode(false); }
       if (matchesHotkey(e, hk.moveMode)) { setMoveMode(m => !m); setDurationMode(false); setAdjacentMode(false); }
       if (matchesHotkey(e, hk.adjacentMode)) { setAdjacentMode(m => !m); setDurationMode(false); setMoveMode(false); }
-      if (matchesHotkey(e, hk.escape)) { setDurationMode(false); setMoveMode(false); setAdjacentMode(false); }
+      if (matchesHotkey(e, hk.escape)) {
+        console.info('[fretboard] esc → clearing modes (duration/move/adjacent/fingering)');
+        setDurationMode(false);
+        setMoveMode(false);
+        setAdjacentMode(false);
+        onExitFingeringMode?.();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
