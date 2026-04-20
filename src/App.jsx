@@ -1554,6 +1554,7 @@ function App() {
           setHoveredNote={setHoveredNote}
           fingeringMode={fingeringMode}
           onExitFingeringMode={() => { fingeringModeRef.current = false; setFingeringMode(false); }}
+          onDeleteNote={handleDeleteNote}
           notes={notes}
           selectedBeat={selectedBeat}
           selectedNotes={selectedNotes}
