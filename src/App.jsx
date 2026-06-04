@@ -285,6 +285,7 @@ function App() {
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
 
+  /*
   // Auto-select notes at the playhead whenever it moves (not during playback).
   useEffect(() => {
     if (playing) return;
@@ -296,6 +297,7 @@ function App() {
     });
     setSelectedNotes(atBeat);
   }, [selectedBeat, playing]);
+  */
 
   // Build synesthesia lookup: note letter (without octave) -> color
   const synesthesiaMap = {};
@@ -549,6 +551,13 @@ function App() {
         });
         setSelectedNotes(atBeat);
       }
+      //Added event listener for the clear selections hotkey...
+        if (matchesHotkey(e, hk.clearSelection)) {
+        e.preventDefault();
+        setSelectedNotes(new Set());
+      }
+      // ... which sets the selected note state to empty
+      
       if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
