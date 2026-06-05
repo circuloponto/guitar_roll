@@ -110,15 +110,36 @@ export function deleteColorScheme(name) {
 }
 
 // --- File export/import ---
-export function exportToFile(state, filename = 'guitar-roll-session.json') {
+export async function exportToFile(state, suggestedFilename = 'guitar-roll-session.json') {
+  // Try using File System Access API for save dialog
+  if ('showSaveFilePicker' in window) {
+    try {
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: suggestedFilename,
+        types: [{
+          description: 'JSON Files',
+          accept: { 'application/json': ['.json'] }
+        }]
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(JSON.stringify(state, null, 2));
+      await writable.close();
+      return;
+    } catch (err) {
+      // User cancelled the dialog
+      if (err.name === 'AbortError') return;
+    }
+  }
+  
+  // Fallback to traditional download for browsers without File System Access API
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = suggestedFilename;
   a.click();
   URL.revokeObjectURL(url);
-}
+} // Note: This function becomes async, so update the call in SettingsModal.jsx
 
 export function importFromFile() {
   return new Promise((resolve, reject) => {
