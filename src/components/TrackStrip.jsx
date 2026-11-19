@@ -11,6 +11,7 @@ export default function TrackStrip({
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
   onLoadAudio, onRemoveAudio,
+  sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
@@ -37,7 +38,10 @@ export default function TrackStrip({
   // eslint-disable-next-line no-unused-vars
   const _v = schemesVersion;
   const schemes = listColorSchemes();
-  const schemeNames = Object.keys(schemes);
+  const schemeNames = Array.from(new Set([
+    ...Object.keys(schemes),
+    ...Object.keys(sessionSchemes || {}),
+  ]));
 
   return (
     <div className={`track-panel ${expanded ? 'expanded' : ''}`}>
@@ -204,14 +208,14 @@ export default function TrackStrip({
 
                   {track.type === 'audio' && track.audioFileName ? (
                     <div className="track-slider-group">
-                      <span className="track-slider-label" style={{ color: '#3498db' }} title={track.audioFileName}>
+                      <span className="track-slider-label" style={{ color: 'var(--accent-hi)' }} title={track.audioFileName}>
                         🎵 {track.audioFileName.length > 12 ? track.audioFileName.slice(0, 12) + '…' : track.audioFileName}
                       </span>
                       <button
                         className="track-btn-lg"
                         onClick={(e) => { e.stopPropagation(); onRemoveAudio(track.id); }}
                         title="Remove audio"
-                        style={{ color: '#e74c3c', fontSize: 11 }}
+                        style={{ color: 'var(--danger)', fontSize: 11 }}
                       >✕</button>
                     </div>
                   ) : (
@@ -228,7 +232,7 @@ export default function TrackStrip({
                         input.click();
                       }}
                       title="Load audio file"
-                      style={{ color: '#3498db', fontSize: 11 }}
+                      style={{ color: 'var(--accent-hi)', fontSize: 11 }}
                     >🎵</button>
                   )}
 
@@ -236,15 +240,15 @@ export default function TrackStrip({
                     className="track-btn-lg"
                     onClick={(e) => { e.stopPropagation(); onDuplicateTrack(track.id); }}
                     title="Duplicate track"
-                    style={{ color: '#8bc34a' }}
+                    style={{ color: 'var(--ok)' }}
                   >⧉</button>
                 </div>
 
                 <button
                   style={{
-                    background: '#3a1a1a',
-                    color: '#e74c3c',
-                    border: '1px solid #e74c3c',
+                    background: 'var(--danger-bg)',
+                    color: 'var(--danger)',
+                    border: '1px solid var(--danger)',
                     borderRadius: 4,
                     padding: '4px 8px',
                     fontSize: 12,

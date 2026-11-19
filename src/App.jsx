@@ -3,14 +3,14 @@ import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
-import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, timeToBeat, colDurationAtBeat, remapNotes, barStartBeats } from './utils/barLayout';
+import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo } from './utils/rubberbandStretch';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
-import { stateFromUrl, saveColorScheme, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes } from './utils/storage';
+import { stateFromUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
-import { getMidiNote, closestComboForPitch } from './utils/pitchMap';
+import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
@@ -22,7 +22,7 @@ import NumberInput from './components/NumberInput';
 import './App.css';
 
 function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
-  return { id: crypto.randomUUID(), name, instrument, type: 'notes', notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2, schemeName: null, audioFileName: null, audioDuration: 0, audioOffset: 0, waveformPeaks: null };
+  return { id: crypto.randomUUID(), name, instrument, type: 'notes', notes: [], volume: 1, muted: false, solo: false, visible: true, bgOpacity: 0.2, schemeName: null, activeInstanceScheme: null, audioFileName: null, audioDuration: 0, audioOffset: 0, waveformPeaks: null };
 }
 
 function getPlayableTracks(tracks) {
@@ -57,6 +57,7 @@ function App() {
   const notes = activeTrack ? activeTrack.notes : [];
   const notesRef = useRef(notes);
   notesRef.current = notes;
+  const activeScheme = activeTrack?.activeInstanceScheme ?? null;
 
   // Helper: update only the active track's notes
   const setActiveNotes = useCallback((updater) => {
@@ -69,6 +70,7 @@ function App() {
 
   const undoStackRef = useRef([]);
   const redoStackRef = useRef([]);
+  const autoForwardLastActionRef = useRef(false);
 
   // Snapshot helpers for undo/redo
   const takeSnapshot = useCallback(() => ({
@@ -76,6 +78,9 @@ function App() {
     activeTrackId: activeTrackIdRef.current,
     timeSignature: timeSigRef.current,
     barSubdivisions: barSubsRef.current,
+    selectedBeat: selectedBeatRef.current,
+    selectedNotes: [...selectedNotesRef.current],    
+    autoForward: autoForwardLastActionRef.current,
   }), []);
 
   const restoreSnapshot = useCallback((snap) => {
@@ -89,6 +94,8 @@ function App() {
       setActiveNotes(() => snap.notes);
       if (snap.timeSignature) setTimeSignature(snap.timeSignature);
       if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
+      if (snap.selectedBeat !== undefined && snap.autoForward) setSelectedBeat(snap.selectedBeat);
+      if (snap.selectedNotes) setSelectedNotes(new Set(snap.selectedNotes));
       return;
     }
     setTracksTracked(() => snap.tracks);
@@ -98,8 +105,10 @@ function App() {
     }
     if (snap.timeSignature) setTimeSignature(snap.timeSignature);
     if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
+    if (snap.selectedBeat !== undefined && snap.autoForward) setSelectedBeat(snap.selectedBeat);
+    if (snap.selectedNotes) setSelectedNotes(new Set(snap.selectedNotes));
   }, [setTracksTracked, setActiveNotes]);
-
+  
   // setNotes: pushes undo, for one-shot operations
   const setNotes = useCallback((updater) => {
     undoStackRef.current.push(takeSnapshot());
@@ -156,19 +165,88 @@ function App() {
   const playheadBeatRef = useRef(null);
   // Shared ref to the Timeline's scroll body so Fretboard drags can trigger its auto-pan.
   const timelineBodyRef = useRef(null);
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+  useEffect(() => {
+    const handler = (e) => { lastMousePosRef.current = { x: e.clientX, y: e.clientY }; };
+    window.addEventListener('mousemove', handler);
+    return () => window.removeEventListener('mousemove', handler);
+  }, []);
   const [selectedBeat, setSelectedBeat] = useState(0);
   const [subdivisions, setSubdivisions] = useState(4); // how many subdivisions per beat
-  const snapUnit = 1 / subdivisions; // smallest grid step
-  const [noteDuration, setNoteDuration] = useState(snapUnit);
-  const noteDurationRef = useRef(noteDuration);
-  noteDurationRef.current = noteDuration;
+  const [rhythmUnit, setRhythmUnit] = useState('beat'); // 'beat' | 'bar'
+  const [rhythmMult, setRhythmMult] = useState(1); // 1-32
+  const [xHeld, setXHeld] = useState(false);
+  const xHeldRef = useRef(false); // ref for synchronous X key access
+  // Position-system-style rhythm entry: buffer accumulates digits on keydown,
+  // commits on keyup (all keys released). Second digit allowed only if
+  // firstDigit * 10 <= max (e.g. subdiv max 32 → first digit 1-3 can extend;
+  // mult max 32 → first digit 1-3 can extend).
+  const rhythmBufRef = useRef({ kind: null, str: '' });
+  const rhythmKeysDownRef = useRef(new Set());
+  const rhythmPendingRef = useRef(null);
+  const [rhythmLiveValue, setRhythmLiveValue] = useState(null);
+  const [rhythmLiveKind, setRhythmLiveKind] = useState(null);
+  const RHYTHM_MAX_DIV = 32;
+  const RHYTHM_MAX_MULT = 32;
+  const RHYTHM_PENDING_WINDOW = 200;
+  // Whether changing the subdivision (÷) resets the multiplier (×) to 1.
+  const [resetMultOnSubdiv, setResetMultOnSubdiv] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-reset-mult-on-subdiv');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
+  });
+  const resetMultOnSubdivRef = useRef(resetMultOnSubdiv);
+  resetMultOnSubdivRef.current = resetMultOnSubdiv;
+  useEffect(() => {
+    try { localStorage.setItem('guitar-roll-reset-mult-on-subdiv', String(resetMultOnSubdiv)); } catch {}
+  }, [resetMultOnSubdiv]);
+  // Whether changing ÷ or × updates the duration of selected notes.
+  const [rhythmAltersSelected, setRhythmAltersSelected] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-rhythm-alters-selected');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
+  });
+  const rhythmAltersSelectedRef = useRef(rhythmAltersSelected);
+  rhythmAltersSelectedRef.current = rhythmAltersSelected;
+  useEffect(() => {
+    try { localStorage.setItem('guitar-roll-rhythm-alters-selected', String(rhythmAltersSelected)); } catch {}
+  }, [rhythmAltersSelected]);
+  const [selectingSchemeClosesMenu, setSelectingSchemeClosesMenu] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-selecting-scheme-closes-menu');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('guitar-roll-selecting-scheme-closes-menu', String(selectingSchemeClosesMenu)); } catch {}
+  }, [selectingSchemeClosesMenu]);
+  const [timeSignature, setTimeSignature] = useState([4, 4]); // [numerator, denominator]
+  const unitBeats = rhythmUnit === 'bar' ? (timeSignature[0] || 4) : 1;
+  const baseSubdivBeats = unitBeats / subdivisions;
+  const effectiveNoteLength = baseSubdivBeats * rhythmMult;
+  const snapUnit = baseSubdivBeats; // grid snaps to base subdivision (not multiplied length)
+  const [noteDuration, setNoteDuration] = useState(effectiveNoteLength);
+  const noteDurationRef = useRef(effectiveNoteLength);
   const snapUnitRef = useRef(snapUnit);
-  snapUnitRef.current = snapUnit;
+  
+  // Keep refs in sync with derived values
+  useEffect(() => { noteDurationRef.current = effectiveNoteLength; }, [effectiveNoteLength]);
+  useEffect(() => { snapUnitRef.current = snapUnit; }, [snapUnit]);
+  
+  // Sync noteDuration state when effectiveNoteLength changes (e.g. rhythmUnit, rhythmMult, timeSignature)
+  // Use epsilon to avoid unnecessary updates that could cause render loops
+  useEffect(() => {
+    setNoteDuration(prev => Math.abs(prev - effectiveNoteLength) > 1e-6 ? effectiveNoteLength : prev);
+  }, [effectiveNoteLength]);
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
-  const [timeSignature, setTimeSignature] = useState([4, 4]); // [numerator, denominator]
   const [bpm, setBpm] = useState(DEFAULT_BPM);
+  const [swing, setSwing] = useState(50);
+  const swingRef = useRef(swing);
+  swingRef.current = swing;
 
   // Live tempo on bpm change: BufferSource.playbackRate does the time-stretch, rubberband
   // corrects the resulting pitch shift via pitch_scale. Update both so they track bpm.
@@ -208,20 +286,38 @@ function App() {
   const [tupletLines, setTupletLines] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-tuplet-lines'));
-      return { visible: true, opacity: 0.35, ...saved };
-    } catch { return { visible: true, opacity: 0.35 }; }
+      return { visible: false, opacity: 0.35, ...saved };
+    } catch { return { visible: false, opacity: 0.35 }; }
   });
   const [autoScroll, setAutoScroll] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-auto-scroll'));
-      return { onHover: true, onInput: true, onPlayback: true, ...saved };
-    } catch { return { onHover: true, onInput: true, onPlayback: true }; }
+      return { onHover: false, onInput: false, onPlayback: false, ...saved };
+    } catch { return { onHover: false, onInput: false, onPlayback: false }; }
   });
   const [hoverPill, setHoverPill] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-hover-pill'));
-      return { fretboard: true, pianoRoll: true, ...saved };
-    } catch { return { fretboard: true, pianoRoll: true }; }
+      return { fretboard: true, pianoRoll: false, ...saved };
+    } catch { return { fretboard: true, pianoRoll: false }; }
+  });
+  const [swungDisplay, setSwungDisplay] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-swung-display');
+      return saved === null ? false : saved === 'true';
+    } catch { return false; }
+  });
+  const [fretboardAutoForward, setFretboardAutoForward] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-fretboard-auto-forward');
+      return saved === null ? false : saved === 'true';
+    } catch { return false; }
+  });
+  const [fretboardAutoForwardExcludeAdjacent, setFretboardAutoForwardExcludeAdjacent] = useState(() => {
+    try {
+      const saved = localStorage.getItem('guitar-roll-fretboard-auto-forward-exclude-adjacent');
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
   });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
@@ -241,6 +337,8 @@ function App() {
   const [fretboardZoom, setFretboardZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
   const [showSettings, setShowSettings] = useState(false);
+  const showSettingsRef = useRef(showSettings);
+  showSettingsRef.current = showSettings;
   const [hotkeys, setHotkeys] = useState(loadHotkeys);
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
@@ -249,6 +347,12 @@ function App() {
   const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [showSubdivDial, setShowSubdivDial] = useState(false);
   const subdivDialRef = useRef(null);
+  const [showInstanceColorMenu, setShowInstanceColorMenu] = useState(false);
+  const instanceColorMenuRef = useRef(showInstanceColorMenu);
+  instanceColorMenuRef.current = showInstanceColorMenu;
+  const [instanceColorMenuPos, setInstanceColorMenuPos] = useState({ left: window.innerWidth / 2, top: window.innerHeight / 2, right: null });
+  const [showMultDial, setShowMultDial] = useState(false);
+  const multDialRef = useRef(null);
   const [showSynthEditor, setShowSynthEditor] = useState(false);
   const [chordPreview, setChordPreview] = useState(null);
   const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
@@ -258,7 +362,8 @@ function App() {
   const [instrumentList, setInstrumentList] = useState(getAllInstruments);
   const [verticalScroll, setVerticalScroll] = useState(0);
   const [synesthesia, setSynesthesia] = useState([]); // [{ note: 'C', color: '#ff0000' }, ...]
-  const [activeColorScheme, setActiveColorScheme] = useState(null); // { name, colors }
+  const [sessionScheme, setSessionScheme] = useState(() => loadSessionSchemeState().sessionScheme || null);
+  const [sessionSchemes, setSessionSchemes] = useState(() => loadSessionSchemeState().sessionSchemes || {});
   const [barSubdivisions, setBarSubdivisions] = useState(defaultBarSubdivisions);
   const barSubsRef = useRef(barSubdivisions);
   barSubsRef.current = barSubdivisions;
@@ -266,6 +371,17 @@ function App() {
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(totalColumns(defaultBarSubdivisions()));
   const playingRef = useRef(false);
+
+  useEffect(() => {
+    saveSessionSchemeState(sessionScheme, sessionSchemes);
+  }, [sessionScheme, sessionSchemes]);
+
+  useEffect(() => {
+    if (showInstanceColorMenu) {
+      setShowInstanceColorMenu(false);
+    }
+  }, [selectedNotes.size]);
+
   const bpmRef = useRef(bpm);
   const metronomeRef = useRef(metronome);
   const loopRef = useRef(false);
@@ -273,6 +389,18 @@ function App() {
   const loopEndRef = useRef(totalColumns(defaultBarSubdivisions()));
   const selectedBeatRef = useRef(selectedBeat);
   const animFrameRef = useRef(null);
+
+  const [position, setPosition] = useState(() => 0);
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const [playheadPreview, setPlayheadPreview] = useState(false);
+  const [positionMode, setPositionMode] = useState(false);
+  const positionModeRef = useRef(false);
+  positionModeRef.current = positionMode;
+  const [positionModeValue, setPositionModeValue] = useState(null);
+  const positionBufferRef = useRef([]);
+  const numberKeysDownRef = useRef(new Set());
+  const positionTimeoutRef = useRef(null);
 
   const timeSigRef = useRef(timeSignature);
 
@@ -285,6 +413,7 @@ function App() {
   loopStartRef.current = loopStart;
   loopEndRef.current = loopEnd;
 
+  /*
   // Auto-select notes at the playhead whenever it moves (not during playback).
   useEffect(() => {
     if (playing) return;
@@ -296,26 +425,50 @@ function App() {
     });
     setSelectedNotes(atBeat);
   }, [selectedBeat, playing]);
+  */
 
   // Build synesthesia lookup: note letter (without octave) -> color
   const synesthesiaMap = {};
   synesthesia.forEach(s => { if (s.note) synesthesiaMap[s.note] = s.color; });
 
-  // Track schemes are stored by name in localStorage; load active track's scheme map
+  // Track schemes are resolved from session-local schemes first, then saved schemes.
   const activeTrackScheme = activeTrack?.schemeName
-    ? (listColorSchemes()[activeTrack.schemeName] || null)
+    ? (sessionSchemes?.[activeTrack.schemeName] || listColorSchemes()[activeTrack.schemeName] || null)
     : null;
 
-  const getNoteColor = useCallback((stringIndex, fret) => {
+  const getNoteColor = useCallback((stringIndexOrNote, fretOrMaybe, noteIndexOrMaybe) => {
+    let stringIndex, fret, note;
+    if (typeof stringIndexOrNote === 'object' && stringIndexOrNote !== null) {
+      stringIndex = stringIndexOrNote.stringIndex;
+      fret = stringIndexOrNote.fret;
+      note = stringIndexOrNote;
+    } else {
+      stringIndex = stringIndexOrNote;
+      fret = fretOrMaybe;
+      if (typeof noteIndexOrMaybe === 'number') {
+        note = notesRef.current[noteIndexOrMaybe];
+      }
+    }
     const name = getNoteName(stringIndex, fret);
     const letter = name.replace(/[0-9]/g, '');
+    if (note?.instanceSchemeName) {
+      const scheme = (sessionSchemes?.[note.instanceSchemeName] || listColorSchemes()[note.instanceSchemeName]) || null;
+      if (scheme && scheme[letter]) return scheme[letter];
+    }
     if (activeTrackScheme && activeTrackScheme[letter]) return activeTrackScheme[letter];
+    if (sessionScheme?.name) {
+      const gscheme = (sessionSchemes?.[sessionScheme.name] || listColorSchemes()[sessionScheme.name] || sessionScheme.colors || null);
+      if (gscheme && gscheme[letter]) return gscheme[letter];
+    } else if (sessionScheme?.colors && sessionScheme.colors[letter]) {
+      return sessionScheme.colors[letter];
+    }
     if (synesthesiaMap[letter]) return synesthesiaMap[letter];
     return stringColors[stringIndex];
-  }, [stringColors, synesthesia, activeTrackScheme]);
+  }, [stringColors, synesthesia, activeTrackScheme, sessionSchemes, sessionScheme]);
 
   // Apply partial state from settings/load/URL
   const applyState = useCallback((data) => {
+    setPosition(0);  // reset position on any new session load or import
     if (data.tracks !== undefined) {
       setTracksTracked(data.tracks);
       const firstId = data.tracks[0]?.id;
@@ -347,23 +500,41 @@ function App() {
       });
     }
     if (data.bpm !== undefined) setBpm(data.bpm);
+    if (data.swing !== undefined) setSwing(data.swing);
     if (data.loop !== undefined) setLoop(data.loop);
     if (data.loopStart !== undefined) setLoopStart(data.loopStart);
     if (data.loopEnd !== undefined) setLoopEnd(data.loopEnd);
     if (data.stringColors !== undefined) setStringColors(data.stringColors);
     if (data.synesthesia !== undefined) setSynesthesia(data.synesthesia);
-    if (data.subdivisions !== undefined) setSubdivisions(data.subdivisions);
+    if (data.subdivisions !== undefined) {
+      setSubdivisions(data.subdivisions);
+      setRhythmMult(1);
+      // noteDuration is now derived from effectiveNoteLength
+    }
+    if (data.rhythmUnit !== undefined) setRhythmUnit(data.rhythmUnit);
+    if (data.rhythmMult !== undefined) setRhythmMult(data.rhythmMult);
     if (data.markers !== undefined) setMarkers(data.markers);
     if (data.metronome !== undefined) setMetronome(data.metronome);
-    if (data.activeColorScheme !== undefined) setActiveColorScheme(data.activeColorScheme);
+    if (data.sessionSchemes !== undefined) {
+      setSessionSchemes(data.sessionSchemes || {});
+    } else if (data.colorSchemes !== undefined) {
+      setSessionSchemes(data.colorSchemes || {});
+    }
+    const globalScheme = data.globalScheme !== undefined
+      ? data.globalScheme
+      : data.sessionScheme !== undefined
+        ? data.sessionScheme
+        : data.activeColorScheme;
+
+    if (globalScheme !== undefined) {
+      setSessionScheme(globalScheme);
+      if (globalScheme?.name && globalScheme?.colors) {
+        setSessionSchemes(prev => ({ ...prev, [globalScheme.name]: globalScheme.colors }));
+      }
+    }
     if (data.barSubdivisions !== undefined) setBarSubdivisions(data.barSubdivisions);
     if (data.timeSignature !== undefined) setTimeSignature(data.timeSignature);
     if (data.projectName !== undefined) setProjectName(data.projectName);
-    if (data.colorSchemes) {
-      Object.entries(data.colorSchemes).forEach(([name, scheme]) => {
-        saveColorScheme(name, scheme);
-      });
-    }
     if (data.synthPresets) {
       Object.entries(data.synthPresets).forEach(([id, preset]) => {
         saveCustomPreset(id, preset);
@@ -387,6 +558,18 @@ function App() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showSubdivDial]);
 
+  // Close mult dial on outside click
+  useEffect(() => {
+    if (!showMultDial) return;
+    const handleClick = (e) => {
+      if (multDialRef.current && !multDialRef.current.contains(e.target)) {
+        setShowMultDial(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMultDial]);
+
   // Load from URL or autosave on mount
   useEffect(() => {
     const urlState = stateFromUrl();
@@ -395,7 +578,14 @@ function App() {
       window.history.replaceState(null, '', window.location.pathname);
     } else {
       const auto = loadAutosave();
-      if (auto) applyState(auto);
+      if (auto) {
+        const sessionSchemeState = loadSessionSchemeState();
+        applyState({
+          ...auto,
+          sessionScheme: sessionSchemeState.sessionScheme || null,
+          sessionSchemes: sessionSchemeState.sessionSchemes || {},
+        });
+      }
     }
   }, []);
 
@@ -426,28 +616,147 @@ function App() {
     const interval = setInterval(() => {
       const state = getSessionState({
         tracks: tracksRef.current,
-        bpm, loop, loopStart, loopEnd,
-        stringColors, synesthesia, activeColorScheme,
+        bpm, swing, loop, loopStart, loopEnd,
+        stringColors, synesthesia, sessionScheme, sessionSchemes,
         projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
       });
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [autoSave, bpm, loop, loopStart, loopEnd, stringColors, synesthesia, activeColorScheme, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
+  }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
   const handleSetSubdivisionsRef = useRef(null);
+  const handleSetRhythmMultRef = useRef(null);
+  const handleToggleSoloRef = useRef(null);
+  // Commit the rhythm entry buffer to the appropriate state value.
+  const commitRhythmEntry = useCallback(() => {
+    const buf = rhythmBufRef.current;
+    if (!buf.kind || buf.str === '') return;
+    const max = buf.kind === 'mult' ? RHYTHM_MAX_MULT : RHYTHM_MAX_DIV;
+    let num = parseInt(buf.str, 10);
+    if (!Number.isFinite(num) || num < 1) num = 1;
+    if (num > max) num = max;
+    if (buf.kind === 'mult') {
+      handleSetRhythmMultRef.current?.(num);
+    } else {
+      handleSetSubdivisionsRef.current?.(num);
+    }
+    rhythmBufRef.current = { kind: null, str: '' };
+    rhythmKeysDownRef.current.clear();
+    setRhythmLiveValue(null);
+    setRhythmLiveKind(null);
+  }, []);
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
       const hk = hotkeysRef.current;
 
-      // Number keys 1-9: set tuplet subdivision
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '9') {
-        handleSetSubdivisionsRef.current(Number(e.key));
+      // Position selection mode: number keys accumulate position value
+      if (positionModeRef.current) {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          if (positionTimeoutRef.current) {
+            clearTimeout(positionTimeoutRef.current);
+            positionTimeoutRef.current = null;
+          }
+          if (!numberKeysDownRef.current.has(e.key)) {
+            const canAdd =
+              positionBufferRef.current.length === 0 ||
+              (positionBufferRef.current.length === 1 &&
+              (positionBufferRef.current[0] === '1' || positionBufferRef.current[0] === '2'));
+            if (canAdd) {
+              numberKeysDownRef.current.add(e.key);
+              positionBufferRef.current.push(e.key);
+              setPositionModeValue(parseInt(positionBufferRef.current.join(''), 10));
+            }
+          }
+          return;
+        }
+        if (e.key === 'Backspace') {
+          e.preventDefault();
+          if (positionTimeoutRef.current) {
+            clearTimeout(positionTimeoutRef.current);
+            positionTimeoutRef.current = null;
+          }
+          positionBufferRef.current.pop();
+          setPositionModeValue(positionBufferRef.current.length > 0 ? parseInt(positionBufferRef.current.join(''), 10) : null);
+          return;
+        }
+        // This chunk makes it so that position mode can be canceled...
+        if (e.key === 'Escape' || matchesHotkey(e, hk.positionMode)) {
+          e.preventDefault();
+          if (positionTimeoutRef.current) {
+            clearTimeout(positionTimeoutRef.current);
+            positionTimeoutRef.current = null;
+          }
+          setPositionMode(false);
+          positionModeRef.current = false;
+          positionBufferRef.current = [];
+setPositionModeValue(null);
+        numberKeysDownRef.current.clear();
         return;
+      }       
+      // ...with Esc or the Position mode Hot key 
+      return;
+    }
+
+    // X key held as modifier for multiplier input
+    if (e.code === 'KeyX' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (!xHeldRef.current) {
+        xHeldRef.current = true;
+        setXHeld(true);
       }
+      return;
+    }
+
+    // Enter position mode on P
+    if (matchesHotkey(e, hk.positionMode)) {
+      e.preventDefault();
+      setPositionMode(true);
+      positionModeRef.current = true;
+      positionBufferRef.current = [];
+      setPositionModeValue(null);
+      numberKeysDownRef.current.clear();
+      return;
+    }
+
+    // Number keys 1-9: set subdivision (default) or multiplier (when X held)
+    // Position-system-style: buffer accumulates on keydown, commits on keyup.
+    // A second digit is allowed only when firstDigit * 10 <= max.
+    if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key >= '1' && e.key <= '9') {
+      if (positionModeRef.current) {
+        // Position mode handles its own number keys
+      } else {
+        e.preventDefault();
+        if (e.repeat) return;
+        // Clear any pending single-digit commit — a new keydown extends/cancels it
+        if (rhythmPendingRef.current) {
+          clearTimeout(rhythmPendingRef.current);
+          rhythmPendingRef.current = null;
+        }
+        const digit = Number(e.key);
+        const buf = rhythmBufRef.current;
+        // Kind is fixed by the first digit of the buffer; X only sets it when
+        // the buffer is empty.
+        const kind = buf.kind || (xHeldRef.current ? 'mult' : 'div');
+        const max = kind === 'mult' ? RHYTHM_MAX_MULT : RHYTHM_MAX_DIV;
+        const bufEmpty = buf.str === '';
+        const firstDigit = bufEmpty ? digit : Number(buf.str[0]);
+        // Allow: empty buffer, or single digit that can still be extended
+        const canAdd = bufEmpty || (buf.str.length === 1 && firstDigit * 10 <= max);
+        if (canAdd) {
+          rhythmKeysDownRef.current.add(e.key);
+          const newStr = bufEmpty ? String(digit) : buf.str + String(digit);
+          rhythmBufRef.current = { kind, str: newStr };
+          setRhythmLiveKind(kind);
+          setRhythmLiveValue(parseInt(newStr, 10));
+        }
+      }
+      return;
+    }
 
       // Jump to previous/next note (configurable hotkey)
       if (matchesHotkey(e, hk.jumpPrevNote) || matchesHotkey(e, hk.jumpNextNote)) {
@@ -472,14 +781,22 @@ function App() {
       if (matchesHotkey(e, hk.prevBeat)) {
         e.preventDefault();
         const step = noteDurationRef.current;
-        setSelectedBeat(b => Math.max(0, b - step));
+        const snap = snapUnitRef.current;
+        setSelectedBeat(b => {
+          const next = Math.max(0, b - step);
+          return next <= 0 ? 0 : Math.round(next / snap) * snap;
+        });
       }
       if (matchesHotkey(e, hk.nextBeat)) {
         e.preventDefault();
         const step = noteDurationRef.current;
-        setSelectedBeat(b => Math.min(totalBeats - 1, b + step));
+        const snap = snapUnitRef.current;
+        setSelectedBeat(b => {
+          const next = Math.min(totalBeats - 1, b + step);
+          return next >= totalBeats - 1 ? totalBeats - 1 : Math.round(next / snap) * snap;
+        });
       }
-      if (matchesHotkey(e, hk.returnToStart)) {
+      if (matchesHotkey(e, hk.returnToStart) && !instanceColorMenuRef.current) {
         e.preventDefault();
         setSelectedBeat(0);
       }
@@ -540,6 +857,38 @@ function App() {
         fingeringModeRef.current = !fingeringModeRef.current;
         setFingeringMode(fingeringModeRef.current);
       }
+      if (matchesHotkey(e, hk.rhythmUnit)) {
+        e.preventDefault();
+        setRhythmUnit(u => u === 'beat' ? 'bar' : 'beat');
+      }
+      if (matchesHotkey(e, hk.instanceColor)) {
+        e.preventDefault();
+        if (showSettingsRef.current) return;
+        const next = !instanceColorMenuRef.current;
+        setShowInstanceColorMenu(next);
+        if (next) {
+          const body = timelineBodyRef.current;
+          const pos = lastMousePosRef.current;
+          let x = window.innerWidth / 2;
+          let y = window.innerHeight / 2;
+          if (body) {
+            const rect = body.getBoundingClientRect();
+            if (pos.x >= rect.left && pos.x <= rect.right && pos.y >= rect.top && pos.y <= rect.bottom) {
+              const midX = rect.left + rect.width / 2;
+              if (pos.x < midX) {
+                setInstanceColorMenuPos({ left: pos.x + 12, top: pos.y + 12, right: null });
+                return;
+              } else {
+                setInstanceColorMenuPos({ left: null, top: pos.y + 12, right: window.innerWidth - pos.x + 12 });
+                return;
+              }
+            }
+          }
+          setInstanceColorMenuPos({ left: x, top: y, right: null });
+        } else if (selectedNotesRef.current.size === 0) {
+          setTracksTracked(prev => prev.map(t => t.id === activeTrackId ? { ...t, activeInstanceScheme: null } : t));
+        }
+      }
       if (matchesHotkey(e, hk.selectAtPlayhead)) {
         e.preventDefault();
         const beat = selectedBeatRef.current;
@@ -549,6 +898,60 @@ function App() {
         });
         setSelectedNotes(atBeat);
       }
+      
+      //Added event listener for the clear selections hotkey, which sets the selected note state to empty.
+      if (matchesHotkey(e, hk.clearSelection)) {
+        e.preventDefault();
+        setSelectedNotes(new Set());
+      }
+
+      //Event listener for Select-All hotkey
+      if (matchesHotkey(e, hk.selectAll)) {
+        e.preventDefault();
+        const all = new Set(notesRef.current.map((_, i) => i));
+        setSelectedNotes(all);
+      }
+
+      //Split-note handler...
+      if (matchesHotkey(e, hk.splitNote)) {
+        e.preventDefault();
+        const beat = selectedBeatRef.current;
+        const currentNotes = notesRef.current;
+        const selected = selectedNotesRef.current;
+        const targets = selected.size > 0
+          ? [...selected].filter(i => i < currentNotes.length)
+          : currentNotes.map((_, i) => i);
+
+        const newNotes = [];
+        const newSelected = new Set();
+
+        currentNotes.forEach((note, i) => {
+          if (!targets.includes(i)) {
+            newNotes.push(note);
+            return;
+          }
+
+          const start = note.beat;
+          const end = note.beat + (note.duration || 1);
+          if (beat > start + 0.001 && beat < end - 0.001) {
+            const leftDur = beat - start;
+            const rightDur = end - beat;
+            const leftNote = { ...note, duration: leftDur };
+            const rightNote = { ...note, beat: beat, duration: rightDur };
+            newNotes.push(leftNote, rightNote);
+            newSelected.add(newNotes.length - 2);
+            newSelected.add(newNotes.length - 1);
+          } else {
+            newNotes.push(note);
+          }
+        });
+
+        if (newNotes.length !== currentNotes.length) {
+          setNotes(newNotes);
+          setSelectedNotes(newSelected);
+        }
+      }    // ...end of split-note handler
+      
       if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
@@ -564,6 +967,7 @@ function App() {
           ));
         }
       }
+      
       // Transpose selected notes via configurable hotkeys.
       let transposeHandled = false;
       const isSemiUp = matchesHotkey(e, hk.transposeSemiUp);
@@ -599,6 +1003,12 @@ function App() {
           ));
         }
       }
+      /* Solo: hotkey solos only current track. If there's only 1
+      soloed track, using the hotkey on it un-solos that track */
+      if (matchesHotkey(e, hk.soloTrack)) {
+        e.preventDefault();
+        if (handleToggleSoloRef.current) handleToggleSoloRef.current();
+      }
       if (matchesHotkey(e, hk.toggleSlide)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
@@ -617,11 +1027,11 @@ function App() {
         e.preventDefault();
         setShowVoiceLeading(true);
       }
-      // Fingering: shift selected notes to adjacent string, same pitch (only in fingering mode)
-      if (fingeringModeRef.current && (matchesHotkey(e, hk.fingerUp) || matchesHotkey(e, hk.fingerDown))) {
+      // Fingering: shift selected notes to an adjacent string, same pitch (only in fingering mode)
+      if (fingeringModeRef.current && (matchesHotkey(e, hk.stringUp) || matchesHotkey(e, hk.stringDown))) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
-          const dir = matchesHotkey(e, hk.fingerUp) ? -1 : 1;
+          const dir = matchesHotkey(e, hk.stringUp) ? 1 : -1;
           const MAX_FRET_SPAN = 4;
           setNotes(prev => {
             // Collect selected notes with their indices
@@ -682,37 +1092,126 @@ function App() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    const handleKeyUp = (e) => {
+      if (e.code === 'KeyX') {
+        xHeldRef.current = false;
+        setXHeld(false);
+        return;
+      }
+      if (positionModeRef.current) {
+        if (e.key >= '0' && e.key <= '9') {
+          numberKeysDownRef.current.delete(e.key);
+          // Only arm timeout if all number keys are released AND buffer has exactly one digit of '1' or '2'
+          if (numberKeysDownRef.current.size === 0 && positionBufferRef.current.length === 1) {
+            const buffered = positionBufferRef.current[0];
+            if (buffered === '1' || buffered === '2') {
+              positionTimeoutRef.current = setTimeout(() => {
+                numberKeysDownRef.current.clear();
+                const pos = Math.min(NUM_FRETS, Math.max(0, parseInt(positionBufferRef.current.join(''), 10)));
+                setPosition(pos);
+                positionBufferRef.current = [];
+                setPositionModeValue(null);
+                setPositionMode(false);
+                positionModeRef.current = false;
+                positionTimeoutRef.current = null;
+              }, 1000); // 1 second grace window
+              return;
+            }
+          }
+          // Normal commit: all keys up and buffer has a complete number (or no timeout window applies)
+          if (numberKeysDownRef.current.size === 0 && positionTimeoutRef.current === null && positionBufferRef.current.length > 0) {
+            const pos = Math.min(NUM_FRETS, Math.max(0, parseInt(positionBufferRef.current.join(''), 10)));
+            setPosition(pos);
+            positionBufferRef.current = [];
+            setPositionModeValue(null);
+            setPositionMode(false);
+            positionModeRef.current = false;
+          }
+        }
+        return;
+      }
+      // Rhythm entry: commit on keyup when all rhythm keys are released
+      if (e.key >= '1' && e.key <= '9' && rhythmKeysDownRef.current.has(e.key)) {
+        rhythmKeysDownRef.current.delete(e.key);
+        if (rhythmKeysDownRef.current.size === 0 && rhythmBufRef.current.str !== '') {
+          const buf = rhythmBufRef.current;
+          const max = buf.kind === 'mult' ? RHYTHM_MAX_MULT : RHYTHM_MAX_DIV;
+          const firstDigit = Number(buf.str[0]);
+          // Single digit that can still be extended → arm a grace window in case
+          // a second digit arrives. Otherwise commit immediately.
+          if (buf.str.length === 1 && firstDigit * 10 <= max) {
+            rhythmPendingRef.current = setTimeout(() => {
+              commitRhythmEntry();
+              rhythmPendingRef.current = null;
+            }, RHYTHM_PENDING_WINDOW);
+          } else {
+            commitRhythmEntry();
+          }
+        }
+      }
+    };
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      if (positionTimeoutRef.current) clearTimeout(positionTimeoutRef.current);
+      if (rhythmPendingRef.current) clearTimeout(rhythmPendingRef.current);
+    };
   }, [totalBeats, undo, redo, setNotes]);
 
-  const handleFretClick = useCallback((stringIndex, fret) => {
-    const beat = Math.round(selectedBeat * 10000) / 10000; // avoid float drift
+  const handleFretClick = useCallback((stringIndex, fret, stayInPlace = false) => {
+    const beat = Math.round(selectedBeat / snapUnit) * snapUnit;
+    const exactMatch = notes.findIndex(
+      n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
+    );
+    const willAutoForward = exactMatch < 0 && fretboardAutoForward !== stayInPlace;
+      if (willAutoForward) {
+        autoForwardLastActionRef.current = true;
+      }
     setNotes(prev => {
-      const exactMatch = prev.findIndex(
-        n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
-      );
       if (exactMatch >= 0) {
         return prev.filter((_, i) => i !== exactMatch);
       }
       const filtered = prev.filter(
         n => !(n.stringIndex === stringIndex && Math.abs(n.beat - beat) < 0.001)
       );
-      return [...filtered, { stringIndex, fret, beat, duration: noteDuration, velocity: defaultVelocity }];
+      return [...filtered, { stringIndex, fret, beat, duration: effectiveNoteLength, velocity: defaultVelocity, instanceSchemeName: activeTrack?.activeInstanceScheme ?? null }];
     });
-  }, [selectedBeat, noteDuration, defaultVelocity]);
-
-  const handleAdjacentClick = useCallback((stringIndex, fret) => {
-    const beat = Math.round(selectedBeat * 10000) / 10000;
+    // Only advance playhead when adding a note, not when erasing
+    if (willAutoForward) {
+      setSelectedBeat(b => {
+        const next = Math.min(totalBeats - 1, b + effectiveNoteLength);
+        return next >= totalBeats - 1 ? totalBeats - 1 : Math.round(next / snapUnit) * snapUnit;
+      });
+      autoForwardLastActionRef.current = false;
+    }
+  }, [selectedBeat, effectiveNoteLength, snapUnit, totalBeats, defaultVelocity, fretboardAutoForward, notes, activeScheme]);
+  const handleAdjacentClick = useCallback((stringIndex, fret, stayInPlace = false) => {
+    const beat = Math.round(selectedBeat / snapUnit) * snapUnit;
+    const exactMatch = notes.findIndex(
+      n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
+    );
+    const willAutoForward = fretboardAutoForward && stayInPlace === fretboardAutoForwardExcludeAdjacent && exactMatch < 0;
+    if (willAutoForward) {
+      autoForwardLastActionRef.current = true;
+    }
     setNotes(prev => {
-      const exactMatch = prev.findIndex(
+      const idx = prev.findIndex(
         n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
       );
-      if (exactMatch >= 0) {
-        return prev.filter((_, i) => i !== exactMatch);
+      if (idx >= 0) {
+        return prev.filter((_, i) => i !== idx);
       }
-      return [...prev, { stringIndex, fret, beat, duration: noteDuration, velocity: defaultVelocity }];
+      return [...prev, { stringIndex, fret, beat, duration: effectiveNoteLength, velocity: defaultVelocity, instanceSchemeName: activeScheme }];
     });
-  }, [selectedBeat, noteDuration]);
+    if (willAutoForward) {
+      setSelectedBeat(b => {
+        const next = Math.min(totalBeats - 1, b + effectiveNoteLength);
+        return next >= totalBeats - 1 ? totalBeats - 1 : Math.round(next / snapUnit) * snapUnit;
+      });
+      autoForwardLastActionRef.current = false;
+    }
+  }, [selectedBeat, effectiveNoteLength, snapUnit, totalBeats, defaultVelocity, fretboardAutoForward, fretboardAutoForwardExcludeAdjacent, notes, activeScheme]);
 
   const handleMoveNote = useCallback((fromString, fromFret, toString, toFret) => {
     setNotes(prev => {
@@ -732,15 +1231,28 @@ function App() {
 
   const handleSetSubdivisions = useCallback((subs) => {
     setSubdivisions(subs);
-    setNoteDuration(1 / subs);
-    if (selectedNotes.size > 0) {
-      const dur = 1 / subs;
+    const newMult = resetMultOnSubdivRef.current ? 1 : rhythmMult;
+    if (resetMultOnSubdivRef.current) setRhythmMult(1);
+    // noteDuration is now derived from effectiveNoteLength
+    if (rhythmAltersSelectedRef.current && selectedNotes.size > 0) {
+      const dur = (unitBeats / subs) * newMult;
       setNotes(prev => prev.map((n, i) =>
         selectedNotes.has(i) ? { ...n, duration: dur } : n
       ));
     }
-  }, [selectedNotes]);
+  }, [selectedNotes, rhythmMult, unitBeats]);
   handleSetSubdivisionsRef.current = handleSetSubdivisions;
+
+  const handleSetRhythmMult = useCallback((mult) => {
+    setRhythmMult(mult);
+    if (rhythmAltersSelectedRef.current && selectedNotes.size > 0) {
+      const dur = baseSubdivBeats * mult;
+      setNotes(prev => prev.map((n, i) =>
+        selectedNotes.has(i) ? { ...n, duration: dur } : n
+      ));
+    }
+  }, [selectedNotes, baseSubdivBeats]);
+  handleSetRhythmMultRef.current = handleSetRhythmMult;
 
 
   const handleNoteDurationChange = useCallback((stringIndex, fret, newDuration) => {
@@ -987,10 +1499,14 @@ function App() {
 
         currentPlayable.forEach(track => {
           if (track.type === 'audio') return;
+          const swing = swingRef.current;
+          const swungBeat = applySwingBeat(beat, swing, 0.5);
           track.notes.forEach(note => {
             if (note.beat >= beat && note.beat < beat + 1) {
-              const offset = (note.beat - beat) * colDur;
-              const noteDur = (note.duration || 1) * colDur;
+              const swungNoteStart = applySwingBeat(note.beat, swing, 0.5);
+              const swungNoteEnd = applySwingBeat(note.beat + (note.duration || 1), swing, 0.5);
+              const offset = (swungNoteStart - swungBeat) * colDur;
+              const noteDur = Math.max(0.06, (swungNoteEnd - swungNoteStart) * colDur);
               playNoteAtTime(note.stringIndex, note.fret, nextBeatTime + offset, noteDur, note.velocity ?? 0.8, track.instrument, track.volume, note);
             }
           });
@@ -1120,6 +1636,21 @@ function App() {
     ));
   }, [setTracksTracked]);
 
+  const handleToggleSoloActiveTrack = useCallback(() => {
+    setTracksTracked(prev => {
+      const target = prev.find(t => t.id === activeTrackIdRef.current);
+      if (!target) return prev;
+      // Unsolo when this track is already the only soloed track.
+      if (target.solo && prev.every(t => !t.solo || t.id === target.id)) {
+        return prev.map(t => (t.solo ? { ...t, solo: false } : t));
+      }
+      // Otherwise solo exclusively this track.
+      return prev.map(t => (t.id === target.id ? { ...t, solo: true } : (t.solo ? { ...t, solo: false } : t)));
+    });
+  }, [setTracksTracked]);
+
+  handleToggleSoloRef.current = handleToggleSoloActiveTrack;
+
   const handleSetTrackVolume = useCallback((trackId, volume) => {
     setTracksTracked(prev => prev.map(t =>
       t.id === trackId ? { ...t, volume } : t
@@ -1230,7 +1761,7 @@ function App() {
         id: crypto.randomUUID(),
         name: 'Marker',
         beat,
-        color: '#3498db',
+        color: '#b24fcc',
       };
       return [...prev, newMarker].sort((a, b) => a.beat - b.beat);
     });
@@ -1298,9 +1829,9 @@ function App() {
             const track = createDefaultTrack();
             applyState({
               tracks: [track],
-              bpm: 120, loop: false, loopStart: 0, loopEnd: totalColumns(defaultBarSubdivisions()),
+              bpm: 120, swing: 50, loop: false, loopStart: 0, loopEnd: totalColumns(defaultBarSubdivisions()),
               stringColors: ['#ffffff','#ffffff','#ffffff','#ffffff','#ffffff','#ffffff'],
-              synesthesia: [], activeColorScheme: null,
+              synesthesia: [], sessionScheme: null, sessionSchemes: {},
               subdivisions: 4, markers: [], metronome: false,
               barSubdivisions: defaultBarSubdivisions(),
               timeSignature: [4, 4], projectName: 'Untitled',
@@ -1330,7 +1861,7 @@ function App() {
         </button>
         <button
           className="tool-btn"
-          onClick={() => setShowSettings(true)}
+          onClick={() => { setShowSettings(true);}}
           title="Settings"
         >
           Settings
@@ -1403,56 +1934,119 @@ function App() {
           max={300}
           onChange={setBpm}
         />
-        <button className="play-btn" onClick={() => {
+        <span className="toolbar-label">Swing %:</span>
+        <NumberInput
+          className="bpm-input"
+          value={Math.round(ratioToAmount(swing / 100) * 100)}
+          min={-100}
+          max={100}
+          step={1}
+          onChange={(amt) => setSwing(amountToRatio(amt / 100) * 100)}
+        />
+        <button className="tool-btn" onClick={() => {
           if (notes.length > 0) setConfirmClear(true);
           else handleClear();
         }}>
           Clear
         </button>
         <span className="toolbar-separator" />
-        <div className="subdiv-picker" ref={subdivDialRef}>
+        <div className="rhythm-cluster">
           <button
-            className={`subdiv-btn ${showSubdivDial ? 'open' : ''}`}
-            onClick={() => setShowSubdivDial(o => !o)}
+            type="button"
+            className="rhythm-unit-btn"
+            onClick={() => setRhythmUnit(u => u === 'beat' ? 'bar' : 'beat')}
+            title="Toggle whether the division refers to a beat or a bar"
           >
-            ÷{subdivisions}
+            {rhythmUnit === 'bar' ? 'BAR' : 'BEAT'}
           </button>
-          {showSubdivDial && (
-            <div className="subdiv-popup">
-              <div className="subdiv-dial-large">
-                <svg width={120} height={120} viewBox="0 0 120 120">
-                  <circle cx={60} cy={60} r={48} fill="none" stroke="#333" strokeWidth={2} />
-                  {Array.from({ length: 16 }, (_, i) => i + 1).map(val => {
-                    const angle = ((val - 1) / 16) * 2 * Math.PI - Math.PI / 2;
-                    const x = 60 + 48 * Math.cos(angle);
-                    const y = 60 + 48 * Math.sin(angle);
-                    const isActive = val === subdivisions;
-                    return (
-                      <g key={val} style={{ cursor: 'pointer' }} onClick={() => { handleSetSubdivisions(val); }}>
-                        <circle cx={x} cy={y} r={isActive ? 10 : 7}
-                          fill={isActive ? '#e67e22' : '#2a2a2a'}
-                          stroke={isActive ? '#e67e22' : '#555'} strokeWidth={1}
-                        />
-                        <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
-                          fontSize={10} fontWeight="bold"
-                          fill={isActive ? '#000' : '#999'}
-                          style={{ pointerEvents: 'none' }}
-                        >{val}</text>
-                      </g>
-                    );
-                  })}
-                </svg>
-                <NumberInput
-                  className="subdiv-center-input"
-                  value={subdivisions}
-                  min={1}
-                  max={64}
-                  onChange={handleSetSubdivisions}
-                  onClick={(e) => e.stopPropagation()}
-                />
+          <div className="subdiv-picker" ref={subdivDialRef}>
+            <button
+              className={`subdiv-btn ${showSubdivDial ? 'open' : ''} ${rhythmLiveKind === 'div' ? 'live' : ''}`}
+              onClick={() => setShowSubdivDial(o => !o)}
+            >
+              ÷{rhythmLiveKind === 'div' && rhythmLiveValue != null ? rhythmLiveValue : subdivisions}
+            </button>
+            {showSubdivDial && (
+              <div className="subdiv-popup">
+                <div className="subdiv-dial-large">
+                  <svg width={120} height={120} viewBox="0 0 120 120">
+                    <circle cx={60} cy={60} r={48} fill="none" stroke="#26262a" strokeWidth={2} />
+                    {Array.from({ length: 16 }, (_, i) => i + 1).map(val => {
+                      const angle = ((val - 1) / 16) * 2 * Math.PI - Math.PI / 2;
+                      const x = 60 + 48 * Math.cos(angle);
+                      const y = 60 + 48 * Math.sin(angle);
+                      const isActive = val === subdivisions;
+                      return (
+                        <g key={val} style={{ cursor: 'pointer' }} onClick={() => { handleSetSubdivisions(val); }}>
+                          <circle cx={x} cy={y} r={isActive ? 10 : 7}
+                            fill={isActive ? '#e6a15b' : '#1c1c1f'}
+                            stroke={isActive ? '#e6a15b' : '#2c2c31'} strokeWidth={1}
+                          />
+                          <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                            fontSize={10} fontWeight="bold"
+                            fill={isActive ? '#0b0b0c' : '#a3a2a0'}
+                            style={{ pointerEvents: 'none' }}
+                          >{val}</text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  <NumberInput
+                    className="subdiv-center-input"
+                    value={subdivisions}
+                    min={1}
+                    max={32}
+                    onChange={handleSetSubdivisions}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+          <div className="subdiv-picker" ref={multDialRef}>
+            <button
+              className={`subdiv-btn ${showMultDial ? 'open' : ''} ${rhythmLiveKind === 'mult' || xHeld ? 'live' : ''}`}
+              onClick={() => setShowMultDial(o => !o)}
+            >
+              ×{rhythmLiveKind === 'mult' && rhythmLiveValue != null ? rhythmLiveValue : rhythmMult}
+            </button>
+            {showMultDial && (
+              <div className="subdiv-popup">
+                <div className="subdiv-dial-large">
+                  <svg width={120} height={120} viewBox="0 0 120 120">
+                    <circle cx={60} cy={60} r={48} fill="none" stroke="#26262a" strokeWidth={2} />
+                    {Array.from({ length: 8 }, (_, i) => i + 1).map(val => {
+                      const angle = ((val - 1) / 8) * 2 * Math.PI - Math.PI / 2;
+                      const x = 60 + 48 * Math.cos(angle);
+                      const y = 60 + 48 * Math.sin(angle);
+                      const isActive = val === rhythmMult;
+                      return (
+                          <g key={val} style={{ cursor: 'pointer' }} onClick={() => { handleSetRhythmMult(val); }}>
+                           <circle cx={x} cy={y} r={isActive ? 10 : 7}
+                             fill={isActive ? '#e6a15b' : '#1c1c1f'}
+                             stroke={isActive ? '#e6a15b' : '#2c2c31'} strokeWidth={1}
+                           />
+                           <text x={x} y={y} textAnchor="middle" dominantBaseline="central"
+                             fontSize={10} fontWeight="bold"
+                             fill={isActive ? '#0b0b0c' : '#a3a2a0'}
+                             style={{ pointerEvents: 'none' }}
+                           >{val}</text>
+                         </g>
+                      );
+                    })}
+                  </svg>
+                  <NumberInput
+                    className="subdiv-center-input"
+                    value={rhythmMult}
+                    min={1}
+                    max={32}
+                    onChange={handleSetRhythmMult}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <TrackStrip
@@ -1472,11 +2066,17 @@ function App() {
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}
         onSetTrackScheme={handleSetTrackScheme}
+        sessionSchemes={sessionSchemes}
       />
       <div className="status-bar">
         <span style={{ color: (freeMode || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
           {freeMode ? 'FREE ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
         </span>
+        {positionMode ? <span style={{ color: 'var(--accent-hi)', marginLeft: 8 }}>Select Position {positionModeValue != null ? `(${positionModeValue})` : ''}</span> : null}
+        {!positionMode && (() => {
+          const romanNumerals = ['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'];
+          return <span style={{ color: 'var(--soft)', marginLeft: 8 }}>Pos: {romanNumerals[Math.min(position, romanNumerals.length - 1)]}</span>;
+        })()}
         <span className="status-separator" />
         <span className="toolbar-label">Vel:</span>
         <input
@@ -1487,7 +2087,7 @@ function App() {
           value={Math.round(defaultVelocity * 100)}
           onChange={(e) => setDefaultVelocity(Number(e.target.value) / 100)}
         />
-        <span style={{ fontSize: '11px', color: '#888', minWidth: 28 }}>{Math.round(defaultVelocity * 100)}%</span>
+        <span style={{ fontSize: '11px', color: 'var(--mute)', minWidth: 28 }}>{Math.round(defaultVelocity * 100)}%</span>
       </div>
       {/* Mobile action bar */}
       <div className="mobile-actions">
@@ -1573,6 +2173,15 @@ function App() {
           timelineBodyRef={timelineBodyRef}
           timelineZoom={timelineZoom}
           barSubdivisions={barSubdivisions}
+          position={position}
+          setPosition={setPosition}
+          playheadPreview={playheadPreview}
+          setPlayheadPreview={setPlayheadPreview}
+          setSelectedBeat={setSelectedBeat}
+          fretboardAutoForward={fretboardAutoForward}
+          swing={swing}
+          swungDisplay={swungDisplay}
+          activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
         />
         <Timeline
           notes={notes}
@@ -1596,12 +2205,16 @@ function App() {
           showVerticalZoomButtons={showTimelineVerticalZoomButtons}
           barSubdivisions={barSubdivisions}
           setBarSubdivisions={setBarSubdivisions}
+          onGrowBars={(n) => setBarSubdivisions(prev => prev.length >= 999 ? prev : [...prev, ...Array(n).fill(timeSignature[0])])}
           setTimelineZoom={setTimelineZoom}
+          position={position}
           currentBeat={currentBeat}
           playheadBeatRef={playheadBeatRef}
           selectedBeat={selectedBeat}
           setSelectedBeat={setSelectedBeat}
           playing={playing}
+          playheadPreview={playheadPreview}
+          setPlayheadPreview={setPlayheadPreview}
           onDeleteNote={handleDeleteNote}
           loopStart={loopStart}
           loopEnd={loopEnd}
@@ -1621,11 +2234,13 @@ function App() {
           setVerticalScroll={setVerticalScroll}
           machineGunMode={machineGunMode}
           defaultVelocity={defaultVelocity}
-          noteDuration={noteDuration}
+          noteDuration={effectiveNoteLength}
           setNoteDuration={setNoteDuration}
           onResizeDuration={setNoteDuration}
           snapUnit={snapUnit}
           subdivisions={subdivisions}
+          rhythmMult={rhythmMult}
+          rhythmUnit={rhythmUnit}
           hotkeys={hotkeys}
           hoverPreviewPiano={hoverPreview.pianoRoll}
           hoverPreviewNotes={hoverPreview.timelineNotes}
@@ -1652,6 +2267,11 @@ function App() {
           bpm={bpm}
           timeSignature={timeSignature}
           bodyRefExternal={timelineBodyRef}
+          position={position}
+          setPosition={setPosition}
+          swing={swing}
+          swungDisplay={swungDisplay}
+          activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
         />
         <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
           <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>
@@ -1663,7 +2283,7 @@ function App() {
               selectedNotes={selectedNotes}
               selectedBeat={selectedBeat}
               chordRoot={chordRoot}
-              noteDuration={noteDuration}
+              noteDuration={effectiveNoteLength}
               onStampChord={handleStampChord}
               onPreviewChange={setChordPreview}
             />
@@ -1704,7 +2324,7 @@ function App() {
                 </div>
               ))}
             </div>
-            <div style={{ textAlign: 'center', marginTop: 12, color: '#666', fontSize: 11 }}>
+            <div style={{ textAlign: 'center', marginTop: 12, color: 'var(--mute)', fontSize: 11 }}>
               Press <b>?</b> or click outside to close
             </div>
           </div>
@@ -1757,7 +2377,7 @@ function App() {
         <SettingsModal
           appState={{
             tracks, bpm, loop, loopStart, loopEnd,
-            stringColors, synesthesia, activeColorScheme,
+            stringColors, synesthesia, sessionScheme, sessionSchemes,
             projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
           }}
           onApplyState={applyState}
@@ -1772,14 +2392,242 @@ function App() {
           onHoverPillChange={(v) => { setHoverPill(v); localStorage.setItem('guitar-roll-hover-pill', JSON.stringify(v)); }}
           autoSave={autoSave}
           onAutoSaveChange={(v) => { setAutoSave(v); localStorage.setItem('guitar-roll-auto-save', JSON.stringify(v)); }}
+          fretboardAutoForward={fretboardAutoForward}
+          onFretboardAutoForwardChange={(v) => { setFretboardAutoForward(v); localStorage.setItem('guitar-roll-fretboard-auto-forward', String(v)); }}
+          fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
+          onFretboardAutoForwardExcludeAdjacentChange={(v) => { setFretboardAutoForwardExcludeAdjacent(v); localStorage.setItem('guitar-roll-fretboard-auto-forward-exclude-adjacent', String(v)); }}
           showTimelineVerticalZoomButtons={showTimelineVerticalZoomButtons}
           onShowTimelineVerticalZoomButtonsChange={(v) => {
             setShowTimelineVerticalZoomButtons(v);
             try { localStorage.setItem('guitar-roll-timeline-vzoom-buttons', String(v)); } catch {}
           }}
+          swungDisplay={swungDisplay}
+          onSwungDisplayChange={(v) => { setSwungDisplay(v); try { localStorage.setItem('guitar-roll-swung-display', String(v)); } catch {} }}
+          resetMultOnSubdiv={resetMultOnSubdiv}
+          onResetMultOnSubdivChange={(v) => { setResetMultOnSubdiv(v); try { localStorage.setItem('guitar-roll-reset-mult-on-subdiv', String(v)); } catch {} }}
+          rhythmAltersSelected={rhythmAltersSelected}
+          onRhythmAltersSelectedChange={(v) => { setRhythmAltersSelected(v); try { localStorage.setItem('guitar-roll-rhythm-alters-selected', String(v)); } catch {} }}
+          selectingSchemeClosesMenu={selectingSchemeClosesMenu}
+          onSelectingSchemeClosesMenuChange={(v) => { setSelectingSchemeClosesMenu(v); try { localStorage.setItem('guitar-roll-selecting-scheme-closes-menu', String(v)); } catch {} }}
           onHotkeysChange={setHotkeys}
         />
       )}
+      {showInstanceColorMenu && (
+        <InstanceColorMenu
+          position={instanceColorMenuPos}
+          sessionSchemes={sessionSchemes}
+          selectedNotes={selectedNotes}
+          highlightScheme={
+            (() => {
+              if (selectedNotes.size > 0) {
+                const schemes = new Set();
+                selectedNotes.forEach(i => schemes.add(notes[i]?.instanceSchemeName));
+                return schemes.size === 1 ? [...schemes][0] : null;
+              }
+              return activeTrack?.activeInstanceScheme ?? null;
+            })()
+          }
+          onClose={() => setShowInstanceColorMenu(false)}
+          onApply={(schemeName) => {
+            if (selectedNotes.size > 0) {
+              setNotes(prev => prev.map((n, i) => selectedNotes.has(i) ? { ...n, instanceSchemeName: schemeName } : n));
+            } else {
+              setTracksTracked(prev => prev.map(t => t.id === activeTrackId ? { ...t, activeInstanceScheme: schemeName } : t));
+            }
+            if (selectingSchemeClosesMenu) {
+              setShowInstanceColorMenu(false);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const INSTANCE_MENU_HEIGHT_KEY = 'guitar-roll-instance-color-menu-height';
+const MIN_INSTANCE_MENU_HEIGHT = 100;
+const DEFAULT_INSTANCE_MENU_HEIGHT = 260;
+
+function readStoredInstanceMenuHeight() {
+  try {
+    const v = parseInt(localStorage.getItem(INSTANCE_MENU_HEIGHT_KEY) || '', 10);
+    if (Number.isFinite(v) && v >= MIN_INSTANCE_MENU_HEIGHT) {
+      return Math.min(v, Math.max(MIN_INSTANCE_MENU_HEIGHT, window.innerHeight - 40));
+    }
+  } catch {}
+  return null;
+}
+
+function InstanceColorMenu({ position, sessionSchemes, selectedNotes, highlightScheme, onClose, onApply }) {
+  const schemes = { ...sessionSchemes };
+  try {
+    const saved = JSON.parse(localStorage.getItem('guitar-roll-color-schemes') || '{}');
+    Object.assign(schemes, saved);
+  } catch {}
+  const schemeNames = Object.keys(schemes);
+  const containerRef = useRef(null);
+  const contentRef = useRef(null);
+  const focusedIndexRef = useRef(0);
+  const suppressOverlayClickRef = useRef(false);
+  const [menuHeight, setMenuHeight] = useState(readStoredInstanceMenuHeight);
+  const [menuTop, setMenuTop] = useState(() => {
+    const stored = readStoredInstanceMenuHeight();
+    const effective = stored ?? DEFAULT_INSTANCE_MENU_HEIGHT;
+    const base = Math.min(position.top, window.innerHeight - effective - 12);
+    return Math.max(0, base);
+  });
+  const [resizing, setResizing] = useState(null);
+  const dragHeightRef = useRef(null);
+  const dragChangedRef = useRef(false);
+  const [focusedIndex, setFocusedIndex] = useState(() => {
+    if (highlightScheme === null) return 0;
+    const idx = schemeNames.indexOf(highlightScheme);
+    return idx >= 0 ? idx + 1 : 0;
+  });
+  focusedIndexRef.current = focusedIndex;
+  const scrollFocusedIntoView = (selector) => {
+    const content = contentRef.current;
+    const btn = content?.querySelector(selector);
+    if (!content || !btn) return;
+    const contentRect = content.getBoundingClientRect();
+    const btnRect = btn.getBoundingClientRect();
+    if (btnRect.top < contentRect.top) {
+      content.scrollTop -= (contentRect.top - btnRect.top) + 4;
+    } else if (btnRect.bottom > contentRect.bottom) {
+      content.scrollTop += (btnRect.bottom - contentRect.bottom) + 4;
+    }
+  };
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    const nav = (e) => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        const total = 1 + schemeNames.length;
+        const delta = e.key === 'ArrowUp' ? -1 : 1;
+        const next = (focusedIndexRef.current + delta + total) % total;
+        focusedIndexRef.current = next;
+        setFocusedIndex(next);
+        setTimeout(() => {
+          const btn = containerRef.current?.querySelector('.instance-color-button-navigate-style');
+          btn?.scrollIntoView({ block: 'nearest' });
+        }, 0);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const scheme = focusedIndexRef.current === 0 ? null : schemeNames[focusedIndexRef.current - 1];
+        onApply(scheme);
+      }
+    };
+    document.addEventListener('keydown', esc);
+    document.addEventListener('keydown', nav);
+    return () => {
+      document.removeEventListener('keydown', esc);
+      document.removeEventListener('keydown', nav);
+    };
+  }, [onClose, schemeNames.length, onApply]);
+  useEffect(() => {
+     const btn = containerRef.current?.querySelector('.selected-instance-color-button');
+     btn?.scrollIntoView({ block: 'nearest' });
+  }, [highlightScheme]);
+  useEffect(() => {
+    if (!resizing) return;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+    const onMove = (e) => {
+      const dy = e.clientY - resizing.startY;
+       if (resizing.mode === 'bottom') {
+         const maxH = Math.min(window.innerHeight - resizing.startTop - 12, resizing.maxContentHeight);
+         const h = Math.max(MIN_INSTANCE_MENU_HEIGHT, Math.min(maxH, resizing.startHeight + dy));
+        dragHeightRef.current = h;
+        dragChangedRef.current = true;
+        setMenuHeight(h);
+      } else {
+        const bottom = resizing.startTop + resizing.startHeight;
+         let h = resizing.startHeight - dy;
+         let top = resizing.startTop + dy;
+         const maxH = resizing.maxContentHeight;
+         if (h > maxH) {
+           h = maxH;
+           top = resizing.startTop + resizing.startHeight - maxH;
+         }
+         if (h < MIN_INSTANCE_MENU_HEIGHT) {
+          h = MIN_INSTANCE_MENU_HEIGHT;
+          top = bottom - h;
+        }
+        if (top < 0) {
+          top = 0;
+          h = bottom;
+        }
+        dragHeightRef.current = h;
+        dragChangedRef.current = true;
+        setMenuHeight(h);
+        setMenuTop(top);
+      }
+    };
+    const onUp = () => {
+      if (dragChangedRef.current && dragHeightRef.current) {
+        try { localStorage.setItem(INSTANCE_MENU_HEIGHT_KEY, String(Math.round(dragHeightRef.current))); } catch {}
+      }
+      dragHeightRef.current = null;
+      dragChangedRef.current = false;
+      setResizing(null);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = prevUserSelect;
+    };
+  }, [resizing]);
+  const getPreviewColors = (name) => {
+    const sc = schemes[name];
+    if (!sc) return [];
+    const notes = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    return notes.map(n => sc[n]).filter(Boolean).slice(0, 12);
+  };
+  const startResize = (mode) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    suppressOverlayClickRef.current = false;
+     const el = containerRef.current;
+     if (!el) return;
+     const rect = el.getBoundingClientRect();
+     const content = contentRef.current;
+     const maxContentHeight = (content?.scrollHeight ?? 0) + (rect.height - (content?.clientHeight ?? 0));
+     setResizing({ mode, startY: e.clientY, startTop: rect.top, startHeight: rect.height, maxContentHeight });
+  };
+  const left = position.left !== null && position.left !== undefined ? Math.min(position.left, window.innerWidth - 260) : 'auto';
+  const right = position.right !== null && position.right !== undefined ? position.right : 'auto';
+  const top = menuTop;
+  const menuStyle = menuHeight
+    ? { position: 'absolute', left, top, right, height: menuHeight, maxHeight: 'none' }
+    : { position: 'absolute', left, top, right };
+  return (
+      <div className="instance-color-menu-overlay" onClick={(e) => { if (e.target.classList.contains('instance-color-menu-overlay')) onClose(); }}>
+      <div ref={containerRef} className="instance-color-menu" style={menuStyle}>
+        <div className="instance-color-menu-resize-handle instance-color-menu-resize-handle-top" onMouseDown={startResize('top')} title="Drag to resize" />
+        <div className="instance-color-menu-title">
+          {selectedNotes.size > 0 ? 'Instance color for selection' : 'Instance color for new notes'}
+        </div>
+        <div className="instance-color-menu-content" ref={contentRef}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button className={`settings-btn-sm ${focusedIndex === 0 ? 'instance-color-button-navigate-style' : ''} ${highlightScheme === null ? 'selected-instance-color-button' : ''}`} onClick={() => onApply(null)} style={{ textAlign: 'left' }}>None</button>
+            {schemeNames.map((name, i) => (
+              <button key={name} className={`settings-btn-sm ${focusedIndex === i + 1 ? 'instance-color-button-navigate-style' : ''} ${highlightScheme === name ? 'selected-instance-color-button' : ''}`} onClick={() => onApply(name)} style={{ textAlign: 'left', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, maxWidth: '100%' }}>
+                <div className="scheme-colors-preview" style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                  {getPreviewColors(name).map((c, ci) => (
+                    <div key={ci} className="scheme-color-dot" style={{ width: 10, height: 10, background: c, border: '1px solid var(--line)' }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: 'var(--fg)', wordBreak: 'break-word', maxWidth: '100%' }}>{name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="instance-color-menu-resize-handle instance-color-menu-resize-handle-bottom" onMouseDown={startResize('bottom')} title="Drag to resize" />
+      </div>
     </div>
   );
 }

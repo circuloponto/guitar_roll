@@ -116,7 +116,7 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
           </div>
           {hiddenList.length > 0 && (
             <div style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 10, color: '#666' }}>Hidden: </span>
+              <span style={{ fontSize: 10, color: 'var(--mute)' }}>Hidden: </span>
               {hiddenList.map(id => (
                 <button key={id} className="settings-btn-sm" style={{ marginLeft: 4, fontSize: 10 }}
                   onClick={() => handleRestorePreset(id)}

@@ -1,9 +1,10 @@
+import { getMidiNote, getComboForPosition } from '../utils/pitchMap';
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
 import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
-import { beatToX } from '../utils/barLayout';
+import { beatToX as beatToXUtil } from '../utils/barLayout';
 
 // totalBeats passed as prop (totalBeats)
 
@@ -16,7 +17,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4 }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -31,12 +32,15 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   const [durationMode, setDurationMode] = useState(false);
   const [durationDrag, setDurationDrag] = useState(null);
   const durationDragRef = useRef(null);
+  const ctrlPressedRef = useRef(false);
   const [moveMode, setMoveMode] = useState(false);
   const [adjacentMode, setAdjacentMode] = useState(false);
   const [moveDrag, setMoveDrag] = useState(null); // { stringIndex, fret, beat }
   const moveDragRef = useRef(null);
   const [fretMarquee, setFretMarquee] = useState(null); // { x1, y1, x2, y2 } in px
   const fretMarqueeRef = useRef(null);
+  const swingActive = swungDisplay && swing !== 50;
+  const beatToX = (beat, barSubs, cw) => beatToXUtil(beat, barSubs, cw, swingActive ? swing : null, swingActive);
 
   // Auto-pan the timeline when a duration/move drag reaches the timeline body's edges
   const timelineAutoPan = useRef(createAutoPan(() => timelineBodyRef?.current || null)).current;
@@ -139,8 +143,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       const startX = e.clientX - rect.left;
       const startY = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0);
       fretMarqueeRef.current = { startX, startY, didMove: false };
-      setSelectedNotes(new Set());
-
+      
+      // Capture current selection so shift-drag accumulates instead of replacing
+      const initialSelection = selectedNotes.size > 0 ? new Set(selectedNotes) : new Set();
+    
       const handleMarqueeMove = (moveE) => {
         if (!fretMarqueeRef.current) return;
         const mx = moveE.clientX - rect.left;
@@ -149,14 +155,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         const dy = my - fretMarqueeRef.current.startY;
         if (!fretMarqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
         fretMarqueeRef.current.didMove = true;
-
+    
         const x1 = Math.min(fretMarqueeRef.current.startX, mx);
         const y1 = Math.min(fretMarqueeRef.current.startY, my);
         const x2 = Math.max(fretMarqueeRef.current.startX, mx);
         const y2 = Math.max(fretMarqueeRef.current.startY, my);
         setFretMarquee({ x1, y1, x2, y2 });
-
-        // Select active notes whose fretboard position falls within the marquee
+    
         const selected = new Set();
         const containerW = container.clientWidth;
         const usableW = containerW * (100 - PADDING_LEFT - PADDING_RIGHT) / 100;
@@ -172,7 +177,11 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             if (idx >= 0) selected.add(idx);
           }
         });
-        setSelectedNotes(selected);
+
+        // Merge previous selection with current marquee (additive behavior)
+        const merged = new Set(initialSelection);
+        selected.forEach(i => merged.add(i));
+        setSelectedNotes(merged);
       };
 
       const handleMarqueeUp = () => {
@@ -181,7 +190,6 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         window.removeEventListener('mousemove', handleMarqueeMove);
         window.removeEventListener('mouseup', handleMarqueeUp);
       };
-
       window.addEventListener('mousemove', handleMarqueeMove);
       window.addEventListener('mouseup', handleMarqueeUp);
       e.preventDefault();
@@ -190,6 +198,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
     if (durationMode) {
       if (activeNote) {
+        // Initialize Ctrl state at the start of the drag
+        ctrlPressedRef.current = e.ctrlKey || e.metaKey;
         durationDragRef.current = {
           stringIndex: result.stringIndex,
           fret: result.fret,
@@ -206,6 +216,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         saveSnapshot();
         const isFree = freeMode;
+
         let lastMouseX = e.clientX;
         const runDurationMove = () => {
           const d = durationDragRef.current;
@@ -219,8 +230,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             ? Math.max(0.1, Math.min(totalBeats - d.noteBeat, rawDuration))
             : Math.max(snap, Math.min(totalBeats - d.noteBeat, Math.round(rawDuration / snap) * snap));
           setDurationDrag({ stringIndex: d.stringIndex, fret: d.fret, duration: newDuration });
+          d.duration = newDuration;
           onDurationChange(d.stringIndex, d.fret, newDuration);
-          // Drive auto-pan from the note's tail position rather than the cursor
           const tail = beatToClientX(d.noteBeat + newDuration);
           if (tail) timelineAutoPan.update(tail.clientX, tail.safeY);
         };
@@ -228,11 +239,26 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           lastMouseX = moveE.clientX;
           runDurationMove();
         };
+        const handleKeyDown = (keyE) => {
+          if (keyE.key === 'Control' || keyE.key === 'Meta') ctrlPressedRef.current = true;
+        };
+        const handleKeyUp = (keyE) => {
+          if (keyE.key === 'Control' || keyE.key === 'Meta') ctrlPressedRef.current = false;
+        };
         const handleDurationUp = () => {
           timelineAutoPan.stop();
+          const dur = durationDragRef.current?.duration;
+          const ctrlKeyHeld = ctrlPressedRef.current ?? false;
+          const original = activeNote?.duration || 1;
+          const finalDuration = dur ?? original;
           commitDrag();
           durationDragRef.current = null;
           setDurationDrag(null);
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
+          if (activeNote && setSelectedBeat && (fretboardAutoForward !== ctrlKeyHeld)) {
+            setSelectedBeat(b => Math.min(totalBeats - 1, b + finalDuration));
+          }
           window.removeEventListener('mousemove', handleDurationMove);
           window.removeEventListener('mouseup', handleDurationUp);
         };
@@ -244,6 +270,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         );
         window.addEventListener('mousemove', handleDurationMove);
         window.addEventListener('mouseup', handleDurationUp);
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
       }
       e.preventDefault();
       return;
@@ -324,7 +352,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, setSelectedNotes]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes]);
 
   const handleMouseUp = useCallback((e) => {
     // Block all other interactions in modifier modes (except adjacent)
@@ -371,12 +399,23 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         return;
       }
       if (adjacentMode) {
-        onAdjacentClick(result.stringIndex, result.fret);
+        onAdjacentClick(result.stringIndex, result.fret, e.ctrlKey || e.metaKey);
       } else {
-        onNoteClick(result.stringIndex, result.fret);
+        onNoteClick(result.stringIndex, result.fret, e.ctrlKey || e.metaKey);
+      }
+      const fret = result.fret;
+      const posEnd = Math.min(position + 4, NUM_FRETS);
+      let newPos = position;
+      if (fret < position) {
+        newPos = Math.max(0, fret);
+      } else if (fret > posEnd) {
+        newPos = Math.max(0, Math.min(NUM_FRETS - 4, fret - 4));
+      }
+      if (newPos !== position && setPosition) {
+        setPosition(newPos);
       }
     }
-  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode, fingeringMode, notes, selectedBeat, setSelectedNotes]);
+  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode, fingeringMode, notes, selectedBeat, setSelectedNotes, position, setPosition, fretboardAutoForward]);
 
 
   // Auto-scroll fretboard to show hovered note (from piano roll — only when local hover is null)
@@ -443,8 +482,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   return (
     <div className="fretboard-container">
       <div className="fretboard-note-box">
-        {durationMode ? <span style={{ color: '#3498db' }}>Duration Mode ({hotkeys ? formatHotkey(hotkeys.durationMode) : 'L'})</span>
-          : moveMode ? <span style={{ color: '#e67e22' }}>Move Mode ({hotkeys ? formatHotkey(hotkeys.moveMode) : 'M'})</span>
+        {durationMode ? <span style={{ color: 'var(--accent-hi)' }}>Duration Mode ({hotkeys ? formatHotkey(hotkeys.durationMode) : 'L'})</span>
+          : moveMode ? <span style={{ color: 'var(--amber)' }}>Move Mode ({hotkeys ? formatHotkey(hotkeys.moveMode) : 'M'})</span>
           : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode ({hotkeys ? formatHotkey(hotkeys.adjacentMode) : 'A'})</span>
           : noteName || '\u00A0'}
       </div>
@@ -460,8 +499,20 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           cursor: (durationMode || moveMode) ? 'ew-resize' : adjacentMode ? 'cell' : undefined,
         }}
         onMouseMove={handleMouseMove}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          if (!durationMode && !moveMode && !adjacentMode && !fingeringMode && setPlayheadPreview && !playing) {
+            setPlayheadPreview(true);
+          }
+          handleMouseDown(e);
+        }}
+        onMouseUp={(e) => {
+          if (e.button !== 0) return;
+          if (setPlayheadPreview) {
+            setPlayheadPreview(false);
+          }
+          handleMouseUp(e);
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           if (!onDeleteNote) return;
@@ -565,7 +616,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             right: 10,
             top: cellCenterPx(fret),
             fontSize: 13,
-            color: '#ccc',
+            color: 'var(--soft)',
             transform: 'translateY(-50%)',
             pointerEvents: 'none',
           }}>
@@ -724,7 +775,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
                 <circle
                   cx={size / 2} cy={size / 2} r={radius}
                   fill="rgba(0,0,0,0.85)"
-                  stroke="#444"
+                  stroke="#2c2c31"
                   strokeWidth={strokeWidth}
                 />
                 <circle
@@ -755,14 +806,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         {/* D-key hint on hovered active note */}
         {durationMode && !durationDrag && hover && activeNotes.some(
-          n => n.stringIndex === hover.stringIndex && n.fret === hover.fret
-        ) && (
+          n => n.stringIndex === hover.stringIndex && n.fret === hover.fret) && (
           <div style={{
             position: 'absolute',
             left: `calc(${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}% + 18px)`,
             top: cellCenterPx(hover.fret) - 8,
             fontSize: 10,
-            color: '#aaa',
+            color: 'var(--soft)',
             pointerEvents: 'none',
             zIndex: 12,
             whiteSpace: 'nowrap',
@@ -773,7 +823,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         {/* Move drag indicator - circular gauge */}
         {moveDrag && (() => {
-          const color = '#e67e22';
+          const color = '#e6a15b';
           const beat = moveDrag.beat;
           const bar = Math.floor(beat / SUBDIVISIONS) + 1;
           const beatInBar = freeMode ? (beat % SUBDIVISIONS + 1).toFixed(1) : (beat % SUBDIVISIONS) + 1;
@@ -797,7 +847,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
                 <circle
                   cx={size / 2} cy={size / 2} r={radius}
                   fill="rgba(0,0,0,0.85)"
-                  stroke="#444"
+                  stroke="#2c2c31"
                   strokeWidth={strokeWidth}
                 />
                 <circle
@@ -828,14 +878,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
         {/* Move mode hint on hovered active note */}
         {moveMode && !moveDrag && hover && activeNotes.some(
-          n => n.stringIndex === hover.stringIndex && n.fret === hover.fret
-        ) && (
+          n => n.stringIndex === hover.stringIndex && n.fret === hover.fret) && (
           <div style={{
             position: 'absolute',
             left: `calc(${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}% + 18px)`,
             top: cellCenterPx(hover.fret) - 8,
             fontSize: 10,
-            color: '#aaa',
+            color: 'var(--soft)',
             pointerEvents: 'none',
             zIndex: 12,
             whiteSpace: 'nowrap',
@@ -977,3 +1026,4 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     </div>
   );
 }
+

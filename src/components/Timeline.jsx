@@ -5,14 +5,13 @@ import {
 } from '../utils/constants';
 import { getNoteName, playNote } from '../utils/audio';
 import {
-  TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi,
-  midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos
+  TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi, midiToPitchRow,
+  midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos, getComboForPosition
 } from '../utils/pitchMap';
-import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX, xToBeat, gridTotalWidth, colWidth, durationToWidth, timeToBeat } from '../utils/barLayout';
+import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX as beatToXUtil, xToBeat as xToBeatUtil, gridTotalWidth, colWidth, durationToWidth as durationToWidthUtil, timeToBeat } from '../utils/barLayout';
 import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
 
-const BLACK_NOTES = new Set(['C#', 'D#', 'F#', 'G#', 'A#']);
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
 const totalRows = TOTAL_PITCH_ROWS;
 const BASE_ROW_HEIGHT = 20; // pixels per pitch row at 1x vertical zoom
@@ -38,6 +37,8 @@ export default function Timeline({
   setNoteDuration,
   snapUnit = 1,
   subdivisions = 1,
+  rhythmMult = 1,
+  rhythmUnit = 'beat',
   hotkeys,
   hoverPreviewPiano = false,
   hoverPreviewNotes = false,
@@ -55,6 +56,12 @@ export default function Timeline({
   bpm = 120,
   timeSignature = [4, 4],
   bodyRefExternal,
+  position = 0,
+  setPosition,
+  swing,
+  swungDisplay,
+  activeInstanceScheme = null,
+  onGrowBars,
 }) {
   const bodyRef = useRef(null);
   const headerRef = useRef(null);
@@ -65,7 +72,11 @@ export default function Timeline({
   const rowTopPx = (stringIndex, fret) => (totalRows - 1 - noteToPitchRow(stringIndex, fret)) * rowHeight;
   const pitchRowTopPx = (pitchRow) => (totalRows - 1 - pitchRow) * rowHeight;
   const totalCols = totalColumns(barSubdivisions);
-  const gridWidth = gridTotalWidth(barSubdivisions, cellWidth);
+  const swingActive = swungDisplay && swing !== 50;
+  const beatToX = (beat, barSubs, cw) => beatToXUtil(beat, barSubs, cw, swingActive ? swing : null, swingActive);
+  const xToBeat = (x, barSubs, cw, snap = true) => xToBeatUtil(x, barSubs, cw, snap, swingActive ? swing : null, swingActive);
+  const durationToWidth = (beat, duration, barSubs, cw) => durationToWidthUtil(beat, duration, barSubs, cw, swingActive ? swing : null, swingActive);
+  const gridWidth = swingActive ? beatToX(totalCols, barSubdivisions, cellWidth) : gridTotalWidth(barSubdivisions, cellWidth);
   const starts = barStartBeats(barSubdivisions);
   const draggingRef = useRef(null);   // resize drag
   const noteDragRef = useRef(null);   // note move drag
@@ -110,9 +121,10 @@ export default function Timeline({
     const rowFromTop = Math.floor(y / rowHeight);
     const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
     const midi = pitchRowToMidi(pitchRow);
-    const combo = closestComboForPitch(midi, 0);
-    return combo;
-  }, [rowHeight]);
+    const result = getComboForPosition(midi, position);
+    if (!result) return null;
+    return { stringIndex: result.stringIndex, fret: result.fret, _newPosition: result.position };
+  }, [rowHeight, position]);
 
   // Track K key for cursor-only mode (deselect + place cursor, no note input)
   useEffect(() => {
@@ -415,6 +427,10 @@ export default function Timeline({
       const d = noteDragRef.current;
       if (d && d.didMove) {
         const { affectedIndices, startPositions, lastDeltaBeat, lastDeltaRow } = d;
+        const oldPitchRow = noteToPitchRow(startPositions.get(affectedIndices[0]).stringIndex, startPositions.get(affectedIndices[0]).fret);
+        const newPitchRow = Math.max(0, Math.min(totalRows - 1, oldPitchRow + lastDeltaRow));
+        const newMidi = pitchRowToMidi(newPitchRow);
+        const smartCombo = newMidi != null ? getComboForPosition(newMidi, position) : null;
         if (d.isDuplicate) {
           // Duplicate: keep originals, add copies at new positions
           setNotes(old => {
@@ -447,6 +463,9 @@ export default function Timeline({
             return { ...n, beat: newBeat, stringIndex: combo.stringIndex, fret: combo.fret };
           }));
         }
+        if (smartCombo && smartCombo.position != null && smartCombo.position !== position && setPosition) {
+          setPosition(smartCombo.position);
+        }
       }
       setDragPreview(null);
       noteDragRef.current = null;
@@ -456,7 +475,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, selectedNotes, freeMode, rowHeight]);
+  }, [notes, setNotes, selectedNotes, freeMode, rowHeight, position, setPosition]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -714,8 +733,12 @@ export default function Timeline({
         const occupied = new Set(
           notes.filter(n => Math.abs(n.beat - finalBeatForCombo) < 0.001).map(n => n.stringIndex)
         );
-        const free = allCombos.find(c => !occupied.has(c.stringIndex));
-        const combo = free || closestComboForPitch(midiTarget, 0);
+
+        const posEnd = Math.min(position + 4, NUM_FRETS);
+        const inPosition = allCombos.filter(c => c.fret >= position && c.fret <= posEnd);
+        const freeInPosition = inPosition.find(c => !occupied.has(c.stringIndex));
+        const combo = freeInPosition || getComboForPosition(midiTarget, position);
+
         if (combo) {
           const finalBeat = finalBeatForCombo;
           // Check if toggling off an existing note
@@ -740,18 +763,25 @@ export default function Timeline({
               .filter(n => n.stringIndex === combo.stringIndex && n.beat > finalBeat)
               .reduce((min, n) => n.beat < min ? n.beat : min, Infinity);
             const maxDur = Math.max(0.01, nextOnString - finalBeat);
-            return [...truncated, {
+            const newNote = {
               stringIndex: combo.stringIndex,
               fret: combo.fret,
               beat: finalBeat,
               duration: Math.min(noteDuration, maxDur),
               velocity: defaultVelocity,
-            }];
+            };
+            if (activeInstanceScheme) {
+              newNote.instanceSchemeName = activeInstanceScheme;
+            }
+            return [...truncated, newNote];
           });
           setSelectedBeat(beat);
           setSelectedNotes(new Set());
           playNote(combo.stringIndex, combo.fret, 0.2);
           marqueeDidDragRef.current = true; // prevent handleClick from also firing
+          if (combo.position != null && combo.position !== position && setPosition) {
+            setPosition(combo.position);
+          }
 
           if (!toggled) {
             // Start drag-to-resize the newly placed note.
@@ -876,7 +906,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight]);
+  }, [playing, notes, selectedNotes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight, position, setPosition, activeInstanceScheme]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -1085,15 +1115,87 @@ export default function Timeline({
     return () => document.removeEventListener('wheel', handleWheel);
   }, [notes, setNotes, selectedNotes, barSubdivisions, cellWidth]);
 
-  // Shift+wheel to pan horizontally, plain wheel scrolls vertically only
+  // --- Auto-growing timeline -------------------------------------------------
+  // Right edge behaves as a wall first. Growth only arms after the user has hit
+  // the edge, paused EDGE_PAUSE_MS, and then started a *fresh* scroll stream
+  // (inertia tails and continuous scrolling never arm it).
+  const growRef = useRef({ edgeSince: 0, timer: null, timerDone: false, armed: false, lastT: 0, lastAbs: 0, pending: 0 });
+  const growLiveRef = useRef({});
+  growLiveRef.current = { onGrowBars, barWidth: cellWidth * (timeSignature?.[0] || 4), playing, noteCount: notes.length };
+
+  const resetGrow = () => {
+    const g = growRef.current;
+    clearTimeout(g.timer);
+    g.timer = null; g.timerDone = false; g.armed = false;
+  };
+
+  // Reset on play and on note entry
+  useEffect(() => { if (playing) resetGrow(); }, [playing]);
+  const prevNoteCount = useRef(notes.length);
+  useEffect(() => {
+    if (notes.length > prevNoteCount.current) resetGrow();
+    prevNoteCount.current = notes.length;
+  }, [notes.length]);
+  useEffect(() => () => clearTimeout(growRef.current.timer), []);
+
+  // Apply scroll that was requested while the grid was still too short
+  useLayoutEffect(() => {
+    const g = growRef.current;
+    if (g.pending && bodyRef.current) {
+      bodyRef.current.scrollLeft += g.pending;
+      g.pending = 0;
+    }
+  }, [barSubdivisions.length]);
+
+  // Shift+wheel (or horizontal trackpad) pans; plain wheel scrolls vertically only
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
+    const EDGE_PAUSE_MS = 500;
+    const STREAM_GAP_MS = 90;
+    const MAX_BARS_PER_EVENT = 2;
     const handleWheel = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return; // let zoom/velocity handlers take over
-      if (e.shiftKey) {
-        e.preventDefault();
-        el.scrollLeft += e.deltaY;
+      const g = growRef.current;
+      const live = growLiveRef.current;
+
+      // Track every wheel event so we can tell where a stream begins
+      const mag = Math.max(Math.abs(e.deltaX), Math.abs(e.deltaY));
+      const now = performance.now();
+      const newStream = now - g.lastT > STREAM_GAP_MS || mag > g.lastAbs * 1.5 + 2;
+      g.lastT = now; g.lastAbs = mag;
+
+      let dx = 0;
+      if (e.shiftKey) dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) dx = e.deltaX;
+      else return; // vertical scroll — native
+
+      if (e.shiftKey) { e.preventDefault(); el.scrollLeft += dx; }
+
+      if (dx < 0) { resetGrow(); return; }               // scrolling left resets
+      if (dx === 0) return;
+
+      const atEdge = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+      if (!atEdge) return;                                // armed state survives while growing
+      e.preventDefault();                                 // no rubber-band / back-swipe at the wall
+
+      if (g.armed) {
+        const bars = Math.min(MAX_BARS_PER_EVENT, Math.max(1, Math.ceil(dx / live.barWidth)));
+        g.pending += dx;
+        live.onGrowBars?.(bars);
+        return;
+      }
+      if (!g.timer && !g.timerDone) {                     // first hit: start the pause timer
+        g.timer = setTimeout(() => { g.timer = null; g.timerDone = true; }, EDGE_PAUSE_MS);
+        return;
+      }
+      if (newStream) {
+        if (g.timerDone) {                                // fresh stream after the pause → arm
+          g.armed = true;
+        } else {                                          // deliberate re-scroll before expiry → restart
+          clearTimeout(g.timer);
+          g.timer = setTimeout(() => { g.timer = null; g.timerDone = true; }, EDGE_PAUSE_MS);
+        }
       }
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
@@ -1118,15 +1220,39 @@ export default function Timeline({
   const loopLeftPx = beatToX(loopStart, barSubdivisions, cellWidth);
   const loopWidthPx = beatToX(loopEnd, barSubdivisions, cellWidth) - loopLeftPx;
 
-  // Build piano roll rows from unique pitches (top = highest, bottom = lowest)
-  const pianoRows = [];
-  for (let r = totalRows - 1; r >= 0; r--) {
-    const midi = pitchRowToMidi(r);
-    const name = midiToNoteName(midi);
-    const noteLetter = name.replace(/[0-9]/g, '');
-    const isBlack = BLACK_NOTES.has(noteLetter);
-    const isC = noteLetter === 'C';
-    pianoRows.push({ pitchRow: r, midi, name, isBlack, isC });
+  // Piano-look keys, all uniform: every white key is exactly 12/7 lanes
+  // (seven equal keys tiling each octave) and every black key is exactly its
+  // one-semitone lane (60% wide, overlapping the whites). Each key is its own
+  // hover/click element, so hover/chord-root highlighting fills exactly the
+  // key under the cursor; the grid echoes the note's lane with a subtle band.
+  const lowestMidi = pitchRowToMidi(0);
+  const highestMidi = pitchRowToMidi(totalRows - 1);
+  const whiteKeyHeight = (12 / 7) * rowHeight;
+  const WHITE_SEMITONES = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
+  const BLACK_KEY_SEMITONES = [1, 3, 6, 8, 10];
+  const pianoKeys = [];
+  for (let cMidi = Math.floor(lowestMidi / 12) * 12; cMidi <= highestMidi; cMidi += 12) {
+    const cBottomY = (totalRows - (cMidi - lowestMidi)) * rowHeight;
+    WHITE_SEMITONES.forEach((s, k) => {
+      const midi = cMidi + s;
+      if (midi < lowestMidi || midi > highestMidi) return;
+      // Clamp faces partially cut off at the pane edges
+      const top = Math.max(0, cBottomY - (k + 1) * whiteKeyHeight);
+      const bottom = Math.min(gridTotalHeight, cBottomY - k * whiteKeyHeight);
+      if (bottom <= top) return;
+      pianoKeys.push({
+        midi, name: midiToNoteName(midi), pitchRow: midiToPitchRow(midi),
+        isBlack: false, top, height: bottom - top, isC: s === 0,
+      });
+    });
+    BLACK_KEY_SEMITONES.forEach((s) => {
+      const midi = cMidi + s;
+      if (midi < lowestMidi || midi > highestMidi) return;
+      pianoKeys.push({
+        midi, name: midiToNoteName(midi), pitchRow: midiToPitchRow(midi),
+        isBlack: true, top: cBottomY - (s + 1) * rowHeight, height: rowHeight, isC: false,
+      });
+    });
   }
 
   return (
@@ -1329,21 +1455,26 @@ export default function Timeline({
           onMouseLeave={() => setHoveredNote(null)}
         >
           <div className="piano-roll-inner" style={{ height: gridTotalHeight }}>
-            {pianoRows.map((row, i) => {
+            {pianoKeys.map((key) => {
               const isHovered = hoveredNote &&
-                noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === row.pitchRow;
+                noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === key.pitchRow;
               const isChordRoot = chordRoot &&
-                noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === row.pitchRow;
-              const combos = pitchRowCombos(row.pitchRow);
+                noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === key.pitchRow;
+              const combos = pitchRowCombos(key.pitchRow);
               // Pick the combo with lowest fret (first position playing)
               const repCombo = combos.reduce((best, c) => (!best || c.fret < best.fret) ? c : best, null);
               return (
                 <div
-                  key={i}
-                  className={`piano-key ${row.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''} ${isChordRoot ? 'chord-root' : ''}`}
+                  key={key.midi}
+                  className={`piano-key ${key.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''} ${isChordRoot ? 'chord-root' : ''}`}
                   style={{
-                    height: rowHeight,
-                    borderTop: row.isC ? '1px solid #555' : undefined,
+                    position: 'absolute',
+                    top: key.top,
+                    height: key.height,
+                    left: 0,
+                    right: key.isBlack ? undefined : 0,
+                    // Octave marker on the C/B boundary, aligned with the grid's
+                    borderBottomColor: key.isC ? '#46464a' : undefined,
                   }}
                   onMouseEnter={() => {
                     if (repCombo) {
@@ -1354,7 +1485,7 @@ export default function Timeline({
                   onClick={() => {
                     if (repCombo && setChordRoot) {
                       // Toggle: click same key to deselect
-                      if (chordRoot && noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === row.pitchRow) {
+                      if (chordRoot && noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === key.pitchRow) {
                         setChordRoot(null);
                       } else {
                         setChordRoot({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
@@ -1362,7 +1493,7 @@ export default function Timeline({
                     }
                   }}
                 >
-                  <span className="piano-key-label">{row.name}</span>
+                  <span className="piano-key-label">{key.name}</span>
                 </div>
               );
             })}
@@ -1428,41 +1559,65 @@ export default function Timeline({
             <div className="loop-boundary" style={{ left: loopLeftPx + loopWidthPx }} />
           </>}
 
-          {/* Octave separator lines at each C note */}
-          {pianoRows.filter(r => r.isC).map(r => (
+          {/* Subtle stripes on white-note lanes, mirroring the keyboard so
+              the key-to-lane correspondence is visible */}
+          {pianoKeys.filter(k => !k.isBlack).map(k => (
             <div
-              key={`oct-${r.pitchRow}`}
+              key={`lane-${k.pitchRow}`}
               style={{
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                top: pitchRowTopPx(r.pitchRow),
+                top: pitchRowTopPx(k.pitchRow),
+                height: rowHeight,
+                background: 'rgba(255, 255, 255, 0.04)',
+                zIndex: 0,
+                pointerEvents: 'none',
+              }}
+            />
+          ))}
+
+          {/* Hovered-note lane band, continuous with the keyboard's band */}
+          {hoveredNote && (() => {
+            const r = noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret);
+            return r >= 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: pitchRowTopPx(r),
+                  height: rowHeight,
+                  background: 'rgba(100, 160, 255, 0.12)',
+                  zIndex: 1,
+                  pointerEvents: 'none',
+                }}
+              />
+            );
+          })()}
+
+          {/* Octave separator lines on each C/B boundary, matching the
+              keyboard's octave marker */}
+          {pianoKeys.filter(k => k.isC).map(k => (
+            <div
+              key={`oct-${k.pitchRow}`}
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: pitchRowTopPx(k.pitchRow) + rowHeight,
                 height: '1px',
-                background: '#444',
+                background: '#2c2c31',
                 zIndex: 1,
               }}
             />
           ))}
 
-          {/* Hovered row highlight */}
-          {hoveredNote && (
-            <div style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              top: rowTopPx(hoveredNote.stringIndex, hoveredNote.fret),
-              height: rowHeight,
-              background: 'rgba(100, 160, 255, 0.15)',
-              pointerEvents: 'none',
-              zIndex: 1,
-            }} />
-          )}
-
           {/* Vertical bar/beat lines — scale brightness with zoom */}
           {(() => {
             const zoomFactor = Math.min(1, Math.max(0, (cellWidth - 6) / 40));
-            const beatAlpha = 0.04 + zoomFactor * 0.25;
-            const barAlpha = 0.3 + zoomFactor * 0.5;
+            const beatAlpha = 0.03 + zoomFactor * 0.09;
+            const barAlpha = 0.14 + zoomFactor * 0.26;
             return Array.from({ length: totalCols }, (_, i) => {
               const isBar = starts.includes(i);
               if (!isBar && beatAlpha <= 0.01) return null;
@@ -1473,8 +1628,8 @@ export default function Timeline({
                   style={{
                     left: beatToX(i, barSubdivisions, cellWidth),
                     borderLeftColor: isBar
-                      ? `rgba(255, 255, 255, ${barAlpha})`
-                      : `rgba(255, 255, 255, ${beatAlpha})`,
+                      ? `rgba(232, 230, 225, ${barAlpha})`
+                      : `rgba(232, 230, 225, ${beatAlpha})`,
                   }}
                 />
               );
@@ -1531,7 +1686,7 @@ export default function Timeline({
             const totalWidth = Math.max(1, endX - startX);
             const TILE_W = 4096;
             const tileCount = Math.ceil(totalWidth / TILE_W);
-            const color = at.isActive ? '#3498db' : '#888';
+            const color = at.isActive ? '#b24fcc' : '#6b6b70';
             const peaks = at.waveformPeaks;
             const buffer = at.audioBuffer;
             const canvases = [];
@@ -1689,7 +1844,7 @@ export default function Timeline({
             const topPx = rowTopPx(note.stringIndex, note.fret);
             const duration = note.duration || 1;
             const noteWidth = durationToWidth(note.beat, duration, barSubdivisions, cellWidth) - 2;
-            const color = getNoteColor(note.stringIndex, note.fret);
+            const color = getNoteColor(note, i);
             return (
               <div key={`blur-${i}`} style={{
                 position: 'absolute',
@@ -1717,7 +1872,7 @@ export default function Timeline({
             const noteWidth = durationToWidth(note.beat, duration, barSubdivisions, cellWidth) - 2;
             const isPlaying = playing && currentBeat !== null &&
               currentBeat >= note.beat && currentBeat < note.beat + duration;
-            const color = getNoteColor(note.stringIndex, note.fret);
+            const color = getNoteColor(note, i);
             const vel = note.velocity ?? 0.8;
 
             const isGhost = note.ghost;

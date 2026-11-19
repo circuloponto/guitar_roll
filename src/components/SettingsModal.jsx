@@ -50,42 +50,258 @@ function defaultSchemeColors() {
   return colors;
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange }) {
+function colorsToSynesthesia(colors) {
+  return Object.entries(colors)
+    .filter(entry => entry[1] !== '#ffffff')
+    .map(([note, color]) => ({ note, color }));
+}
+
+function getSessionSchemes(appState, savedSchemes) {
+  const sessionSchemes = appState.sessionSchemes || {};
+  const tracks = appState.tracks || [];
+  const orderedNames = [];
+
+  const addName = (name) => {
+    if (name && !orderedNames.includes(name)) {
+      orderedNames.push(name);
+    }
+  };
+
+  if (appState.sessionScheme?.name) {
+    addName(appState.sessionScheme.name);
+  }
+
+  tracks.forEach(track => {
+    addName(track.schemeName);
+  });
+
+  Object.keys(sessionSchemes)
+    .sort((a, b) => a.localeCompare(b))
+    .forEach(addName);
+
+  return orderedNames.map(name => {
+    const sources = [];
+    let isActive = false;
+
+    if (appState.sessionScheme?.name === name) {
+      sources.push('Global scheme');
+      isActive = true;
+    }
+
+    tracks.forEach(track => {
+      if (track.schemeName === name) {
+        sources.push(`Track: ${track.name || track.id}`);
+        isActive = true;
+      }
+    });
+
+    return {
+      name,
+      colors: sessionSchemes[name] || savedSchemes[name] || appState.sessionScheme?.colors || {},
+      sources,
+      isActive,
+    };
+  });
+}
+
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
-  const [schemes, setSchemes] = useState(listColorSchemes);
-  const [editingScheme, setEditingScheme] = useState(null); // { name, colors }
+  const [editingScheme, setEditingScheme] = useState(null); // { name, originalName, colors }
   const [sessions, setSessions] = useState(listSessions);
   const [sessionName, setSessionName] = useState('');
   const [copyMsg, setCopyMsg] = useState('');
   const [confirm, setConfirm] = useState(null); // { message, onConfirm }
+  const [schemeLibraryVersion, setSchemeLibraryVersion] = useState(0);
+  const [nameConflict, setNameConflict] = useState(null); // { type, newName, oldName, colors }
 
-  const refreshSchemes = () => setSchemes(listColorSchemes());
   const refreshSessions = () => setSessions(listSessions());
 
   // Apply a color scheme to the app
   const applyScheme = (name, colors) => {
-    const synesthesia = Object.entries(colors)
-      .filter(([_, c]) => c !== '#ffffff')
-      .map(([note, color]) => ({ note, color }));
-    onApplyState({ synesthesia, activeColorScheme: { name, colors } });
+    onApplyState({
+      synesthesia: colorsToSynesthesia(colors),
+      sessionScheme: { name, colors },
+    });
+  };
+
+  const normalizeSchemeColors = (colors) => (
+    CHROMATIC_INTERNAL.map(name => (colors?.[name] || '#ffffff').toLowerCase()).join('|')
+  );
+
+  const findIdenticalScheme = (name, colors, schemes) => {
+    const normalizedColors = normalizeSchemeColors(colors);
+
+    return Object.entries(schemes).find(([schemeName, schemeColors]) => (
+      schemeName !== name && normalizeSchemeColors(schemeColors) === normalizedColors
+    ));
+  };
+
+  const showSessionNameConflict = (newName, colors, schemes) => {
+    const identicalScheme = findIdenticalScheme(newName, colors, schemes);
+
+    if (identicalScheme) {
+      setNameConflict({
+        type: 'session',
+        newName,
+        oldName: identicalScheme[0],
+        colors,
+      });
+      setPage('schemes');
+      return true;
+    }
+
+    return false;
+  };
+
+  const showSavedNameConflict = (newName, colors, schemes) => {
+    const identicalScheme = findIdenticalScheme(newName, colors, schemes);
+
+    if (identicalScheme) {
+      setNameConflict({
+        type: 'saved',
+        newName,
+        oldName: identicalScheme[0],
+        colors,
+      });
+      setPage('schemes');
+      return true;
+    }
+
+    return false;
+  };
+
+  const unapplySchemeFromSession = (name) => {
+    const updates = {};
+
+    if (appState.sessionScheme?.name === name) {
+      updates.sessionScheme = null;
+      updates.synesthesia = [];
+    }
+
+    if ((appState.tracks || []).some(track => track.schemeName === name)) {
+      updates.tracks = (appState.tracks || []).map(track =>
+        track.schemeName === name
+          ? { ...track, schemeName: null }
+          : track
+      );
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onApplyState(updates);
+    }
+  };
+
+  const removeSchemeFromSession = (name) => {
+    const updates = {};
+
+    if (appState.sessionScheme?.name === name) {
+      updates.sessionScheme = null;
+      updates.synesthesia = [];
+    }
+
+    if ((appState.tracks || []).some(track => track.schemeName === name)) {
+      updates.tracks = (appState.tracks || []).map(track =>
+        track.schemeName === name
+          ? { ...track, schemeName: null }
+          : track
+      );
+    }
+
+    if (appState.sessionSchemes?.[name]) {
+      updates.sessionSchemes = { ...appState.sessionSchemes };
+      delete updates.sessionSchemes[name];
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onApplyState(updates);
+    }
+  };
+
+  const deleteScheme = (name) => {
+    setConfirm({
+      message: `Delete color scheme "${name}"?`,
+      onConfirm: () => {
+        deleteColorScheme(name);
+        removeSchemeFromSession(name);
+        setConfirm(null);
+      },
+    });
+  };
+
+  const renameExistingSchemeToNewName = () => {
+    if (!nameConflict) return;
+
+    const { type, newName, oldName, colors } = nameConflict;
+
+    if (type === 'saved') {
+      saveColorScheme(newName, colors);
+      deleteColorScheme(oldName);
+      setSchemeLibraryVersion(version => version + 1);
+    }
+
+    const updates = {};
+    const tracks = appState.tracks || [];
+
+    if (tracks.some(track => track.schemeName === oldName || track.schemeName === newName)) {
+      updates.tracks = tracks.map(track => {
+        if (track.schemeName === oldName || track.schemeName === newName) {
+          return { ...track, schemeName: newName };
+        }
+        return track;
+      });
+    }
+
+    if (appState.sessionScheme?.name === oldName) {
+      updates.sessionScheme = { name: newName, colors };
+    }
+
+    if (appState.sessionSchemes?.[oldName] || appState.sessionSchemes?.[newName]) {
+      updates.sessionSchemes = { ...appState.sessionSchemes };
+      delete updates.sessionSchemes[oldName];
+      updates.sessionSchemes[newName] = colors;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onApplyState(updates);
+    }
+
+    setNameConflict(null);
+  };
+
+  const useExistingSchemeName = () => {
+    if (!nameConflict) return;
+
+    if (nameConflict.type === 'saved') {
+      saveColorScheme(nameConflict.oldName, nameConflict.colors);
+      setSchemeLibraryVersion(version => version + 1);
+    }
+
+    setNameConflict(null);
   };
 
   // --- Main page ---
   if (page === 'main') {
     return (
       <div className="settings-overlay" onClick={onClose}>
-        <div className="settings-popup" onClick={e => e.stopPropagation()}>
+        <div className="settings-popup settings-popup-main" onClick={e => e.stopPropagation()}>
+          <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
           <h2 className="settings-title">Settings</h2>
+
+          <div className="settings-columns">
+          <div className="settings-col">
+
+          <div className="settings-group">Playback</div>
 
           <div className="settings-section">
             <h3>Hover Sound Preview</h3>
-            {[
-              { key: 'fretboard', label: 'Fretboard' },
-              { key: 'pianoRoll', label: 'Piano Roll Keys' },
-              { key: 'timelineNotes', label: 'Timeline Notes' },
-            ].map(({ key, label }) => (
-              <div key={key} className="settings-row">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+            <p className="settings-desc">Play the note under the cursor on hover.</p>
+            <div className="settings-checks">
+              {[
+                { key: 'fretboard', label: 'Fretboard' },
+                { key: 'pianoRoll', label: 'Piano Roll Keys' },
+                { key: 'timelineNotes', label: 'Timeline Notes' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
                   <input
                     type="checkbox"
                     checked={hoverPreview[key] || false}
@@ -93,10 +309,10 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                   />
                   {label}
                 </label>
-              </div>
-            ))}
+              ))}
+            </div>
             <div className="settings-row" style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 13, color: '#ccc', marginRight: 8 }}>Volume</span>
+              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Volume</span>
               <input
                 type="range"
                 min={0}
@@ -105,14 +321,17 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 onChange={(e) => onHoverPreviewChange({ ...hoverPreview, volume: Number(e.target.value) / 100 })}
                 style={{ width: 120 }}
               />
-              <span style={{ fontSize: 12, color: '#888', marginLeft: 6 }}>{Math.round((hoverPreview.volume ?? 0.3) * 100)}%</span>
+              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((hoverPreview.volume ?? 0.3) * 100)}%</span>
             </div>
           </div>
 
+          <div className="settings-group">Display</div>
+
           <div className="settings-section">
             <h3>Tuplet Grid Lines</h3>
+            <p className="settings-desc">Subdivision lines between beats in the grid.</p>
             <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={tupletLines?.visible ?? true}
@@ -122,7 +341,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               </label>
             </div>
             <div className="settings-row" style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 13, color: '#ccc', marginRight: 8 }}>Opacity</span>
+              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Opacity</span>
               <input
                 type="range"
                 min={5}
@@ -132,19 +351,20 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 style={{ width: 120 }}
                 disabled={!(tupletLines?.visible ?? true)}
               />
-              <span style={{ fontSize: 12, color: '#888', marginLeft: 6 }}>{Math.round((tupletLines?.opacity ?? 0.35) * 100)}%</span>
+              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((tupletLines?.opacity ?? 0.35) * 100)}%</span>
             </div>
           </div>
 
           <div className="settings-section">
-            <h3>Fretboard Auto-Scroll</h3>
-            {[
-              { key: 'onHover', label: 'Scroll on note hover' },
-              { key: 'onInput', label: 'Scroll on note input' },
-              { key: 'onPlayback', label: 'Scroll during playback' },
-            ].map(({ key, label }) => (
-              <div key={key} className="settings-row">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+            <h3>Fretboard</h3>
+            <span className="settings-sublabel">Auto-scroll to keep frets in view</span>
+            <div className="settings-checks">
+              {[
+                { key: 'onHover', label: 'On note hover' },
+                { key: 'onInput', label: 'On note input' },
+                { key: 'onPlayback', label: 'During playback' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
                   <input
                     type="checkbox"
                     checked={autoScroll?.[key] ?? true}
@@ -152,18 +372,15 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                   />
                   {label}
                 </label>
-              </div>
-            ))}
-          </div>
-
-          <div className="settings-section">
-            <h3>Fretboard Hover Pill</h3>
-            {[
-              { key: 'fretboard', label: 'Show on fretboard hover' },
-              { key: 'pianoRoll', label: 'Show on piano roll hover' },
-            ].map(({ key, label }) => (
-              <div key={key} className="settings-row">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+              ))}
+            </div>
+            <span className="settings-sublabel">Note marker under the cursor</span>
+            <div className="settings-checks">
+              {[
+                { key: 'fretboard', label: 'On fretboard hover' },
+                { key: 'pianoRoll', label: 'On piano roll hover' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
                   <input
                     type="checkbox"
                     checked={hoverPill?.[key] ?? true}
@@ -171,14 +388,38 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                   />
                   {label}
                 </label>
-              </div>
-            ))}
+              ))}
+            </div>
+
+            <span className="settings-sublabel">Input behavior</span>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={fretboardAutoForward ?? false}
+                  onChange={(e) => onFretboardAutoForwardChange(e.target.checked)}
+                />
+                Auto-forward after note input / duration change
+              </label>
+            </div>
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: fretboardAutoForward ? '#ccc' : '#888', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={fretboardAutoForwardExcludeAdjacent ?? true}
+                  onChange={(e) => onFretboardAutoForwardExcludeAdjacentChange(e.target.checked)}
+                  disabled={!fretboardAutoForward}
+                />
+                Exclude adjacent mode from auto-forward
+              </label>
+            </div>
           </div>
 
           <div className="settings-section">
             <h3>Timeline</h3>
+            <p className="settings-desc">On-screen controls for the timeline pane.</p>
             <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={showTimelineVerticalZoomButtons !== false}
@@ -187,10 +428,49 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 Dock vertical zoom buttons (top-right)
               </label>
             </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={swungDisplay ?? false}
+                    onChange={(e) => onSwungDisplayChange(e.target.checked)}
+                  />
+                  Swung grid display
+                </label>
+              </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={resetMultOnSubdiv ?? true}
+                    onChange={(e) => onResetMultOnSubdivChange(e.target.checked)}
+                  />
+                  Changing ÷ number resets × to 1
+                </label>
+              </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={rhythmAltersSelected ?? true}
+                    onChange={(e) => onRhythmAltersSelectedChange(e.target.checked)}
+                  />
+                  Changing ÷ or × alters selected note lengths
+                </label>
+              </div>
           </div>
+
+          </div>
+          <div className="settings-col">
+
+          <div className="settings-group">Customization</div>
 
           <div className="settings-section">
             <h3>Keyboard Shortcuts</h3>
+            <p className="settings-desc">View and rebind editor hotkeys and mouse-wheel actions.</p>
             <button className="settings-btn" onClick={() => setPage('hotkeys')}>
               Manage Hotkeys
             </button>
@@ -198,19 +478,29 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <div className="settings-section">
             <h3>Color Schemes</h3>
+            <p className="settings-desc">Per-note colors for notes on the fretboard and timeline.</p>
             <button className="settings-btn" onClick={() => setPage('schemes')}>
               Manage Color Schemes
             </button>
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={selectingSchemeClosesMenu ?? true}
+                  onChange={(e) => onSelectingSchemeClosesMenuChange(e.target.checked)}
+                />
+                Selecting a scheme closes the instance-color menu
+              </label>
+            </div>
           </div>
 
-          <div className="settings-section" style={{ display: 'none' }}>
-            <h3>String Colors (moved to Color Schemes)</h3>
-          </div>
+          <div className="settings-group">Project</div>
 
           <div className="settings-section">
             <h3>Autosave</h3>
+            <p className="settings-desc">Back up this session in your browser while you work.</p>
             <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#ccc', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={autoSave ?? true}
@@ -223,28 +513,29 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <div className="settings-section">
             <h3>Sessions</h3>
+            <p className="settings-desc">Save in this browser, move between devices as files, or share as a link.</p>
             <div className="settings-row-btns">
               <button className="settings-btn" onClick={() => { refreshSessions(); setPage('sessions'); }}>
                 Save / Load Session
               </button>
             </div>
             <div className="settings-row-btns">
-              <button className="settings-btn" onClick={() => exportToFile(getSessionState(appState), `${appState.projectName || 'guitar-roll'}.json`)}>
+              <button className="settings-btn" onClick={async () => {
+                await exportToFile(getSessionState(appState), `${appState.projectName || 'guitar-roll'}.json`);
+              }}>
                 Export to File
               </button>
               <button className="settings-btn" onClick={async () => {
                 try {
                   const data = await importFromFile();
                   onApplyState(data);
-                } catch {}
+                } catch (error) {
+                  console.warn('Import failed', error);
+                }
               }}>
                 Import from File
               </button>
             </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>Share</h3>
             <div className="settings-row-btns">
               <button className="settings-btn" onClick={() => {
                 const url = stateToUrl(getSessionState(appState));
@@ -258,57 +549,152 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             </div>
           </div>
 
-          <button className="settings-btn settings-close" onClick={onClose}>Close</button>
+          </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  // --- Color Schemes list page ---
+  // --- Color Schemes manager page ---
   if (page === 'schemes') {
-    const schemeNames = Object.keys(schemes);
-    return (
-      <div className="settings-overlay" onClick={onClose}>
-        <div className="settings-popup" onClick={e => e.stopPropagation()}>
-          <h2 className="settings-title">Color Schemes</h2>
+    const savedSchemes = listColorSchemes();
+    const sessionSchemeEntries = getSessionSchemes(appState, savedSchemes);
+    const savedSchemesList = Object.entries(savedSchemes)
+      .map(([name, colors]) => ({ name, colors }));
 
-          <div className="schemes-list">
-            {schemeNames.length === 0 && (
-              <p className="settings-empty">No color schemes saved yet.</p>
+    const saveSchemeToLibrary = (scheme) => {
+      if (showSavedNameConflict(scheme.name, scheme.colors, listColorSchemes())) {
+        return;
+      }
+
+      saveColorScheme(scheme.name, scheme.colors);
+      setSchemeLibraryVersion(version => version + 1);
+    };
+
+    function SchemePalette({ colors }) {
+      return (
+        <div className="scheme-colors-preview">
+          {CHROMATIC_INTERNAL.map(n => (
+            <div
+              key={n}
+              className="scheme-color-dot"
+              style={{ background: colors?.[n] || '#ffffff' }}
+            />
+          ))}
+        </div>
+      );
+    }
+
+    function SchemeItem({ scheme, isActive, sources, isSessionItem }) {
+      const isSavedScheme = Object.prototype.hasOwnProperty.call(savedSchemes, scheme.name);
+
+      return (
+        <div className="scheme-item">
+          <div className="scheme-row">
+            <span className="scheme-name">
+              {scheme.name}
+              {isActive && <span className="scheme-active-badge">Active</span>}
+            </span>
+          </div>
+
+          <SchemePalette colors={scheme.colors} />
+
+          {sources?.length > 0 && (
+            <div className="scheme-source">
+              Used by: {sources.join(', ')}
+            </div>
+          )}
+
+          <div className="scheme-actions">
+            {!isActive && (
+              <button className="settings-btn-sm" onClick={() => applyScheme(scheme.name, scheme.colors)}>Apply</button>
             )}
-            {schemeNames.map(name => (
-              <div key={name} className="scheme-item">
-                <span className="scheme-name">{name}</span>
-                <div className="scheme-row">
-                  <div className="scheme-colors-preview">
-                    {CHROMATIC_INTERNAL.map(n => (
-                      <div key={n} className="scheme-color-dot" style={{ background: schemes[name][n] || '#ffffff' }} />
-                    ))}
-                  </div>
-                  <div className="scheme-actions">
-                    <button className="settings-btn-sm" onClick={() => applyScheme(name, schemes[name])}>Apply</button>
-                    <button className="settings-btn-sm" onClick={() => {
-                      setEditingScheme({ name, colors: { ...schemes[name] } });
-                      setPage('editScheme');
-                    }}>Edit</button>
-                    <button className="settings-btn-sm danger" onClick={() => {
-                      setConfirm({
-                        message: `Delete color scheme "${name}"?`,
-                        onConfirm: () => { deleteColorScheme(name); refreshSchemes(); setConfirm(null); },
-                      });
-                    }}>Delete</button>
-                  </div>
-                </div>
-              </div>
-            ))}
+            <button className="settings-btn-sm" onClick={() => {
+              setEditingScheme({
+                name: scheme.name,
+                originalName: scheme.name,
+                colors: { ...scheme.colors },
+              });
+              setPage('editScheme');
+            }}>Edit</button>
+            {isSessionItem && !isSavedScheme && (
+              <button className="settings-btn-sm" onClick={() => saveSchemeToLibrary(scheme)}>
+                Save
+              </button>
+            )}
+            {isActive && (
+              <button className="settings-btn-sm" onClick={() => unapplySchemeFromSession(scheme.name)}>
+                Un-Apply
+              </button>
+            )}
+            {isSessionItem ? (
+              <button className="settings-btn-sm" onClick={() => removeSchemeFromSession(scheme.name)}>
+                Remove
+              </button>
+            ) : (
+              <button className="settings-btn-sm danger" onClick={() => deleteScheme(scheme.name)}>Delete</button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div className="settings-overlay" onClick={onClose}>
+          <div className="settings-popup" onClick={e => e.stopPropagation()}>
+            <button className="settings-back-arrow" onClick={() => setPage('main')} title="Back to Settings" aria-label="Back">&larr;</button>
+            <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
+            <h2 className="settings-title settings-title--centered">Color Schemes</h2>
+
+          <div className="settings-section">
+            <h3>Session Schemes</h3>
+
+            <div className="schemes-list" key={schemeLibraryVersion}>
+              {sessionSchemeEntries.length === 0 && (
+                <p className="settings-empty">No color schemes are in this session.</p>
+              )}
+              {sessionSchemeEntries.map(scheme => (
+                <SchemeItem
+                  key={scheme.name}
+                  scheme={scheme}
+                  isActive={scheme.isActive}
+                  sources={scheme.sources}
+                  isSessionItem={true}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="settings-section" style={{ marginTop: 16 }}>
+            <h3>Saved Color Schemes</h3>
+
+            <div className="schemes-list" key={schemeLibraryVersion}>
+              {savedSchemesList.length === 0 && (
+                <p className="settings-empty">No saved color schemes.</p>
+              )}
+              {savedSchemesList.map(scheme => (
+                <SchemeItem
+                  key={scheme.name}
+                  scheme={scheme}
+                  isActive={false}
+                  isSessionItem={false}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="settings-row-btns" style={{ marginTop: 12 }}>
             <button className="settings-btn" onClick={() => {
-              setEditingScheme({ name: '', colors: defaultSchemeColors() });
+              setEditingScheme({
+                name: '',
+                originalName: '',
+                colors: defaultSchemeColors(),
+              });
               setPage('editScheme');
             }}>
-              + Add Color Scheme
+              + Create Scheme
             </button>
           </div>
 
@@ -338,12 +724,40 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             ))}
           </div>
 
-          <button className="settings-btn settings-back" onClick={() => setPage('main')}>Back</button>
         </div>
         {confirm && (
           <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
         )}
+        {nameConflict && (
+          <div className="confirm-overlay" onClick={() => setNameConflict(null)}>
+            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="confirm-message">
+                {nameConflict.type === 'session'
+                  ? `You have an identical scheme in the session already (${nameConflict.oldName}).`
+                  : `You have an identical scheme in Saved already (${nameConflict.oldName}).`}
+              </div>
+              <div className="confirm-actions vertical">
+                <button
+                  className="settings-btn"
+                  onClick={renameExistingSchemeToNewName}
+                >
+                  Rename "{nameConflict.oldName}" to "{nameConflict.newName}"
+                </button>
+                <button
+                  className="settings-btn"
+                  onClick={useExistingSchemeName}
+                >
+                  Rename "{nameConflict.newName}" to "{nameConflict.oldName}"
+                </button>
+                <button className="settings-btn" onClick={() => setNameConflict(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+      </>
     );
   }
 
@@ -352,7 +766,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     return (
       <div className="settings-overlay" onClick={onClose}>
         <div className="settings-popup settings-popup-wide" onClick={e => e.stopPropagation()}>
-          <h2 className="settings-title">Edit Color Scheme</h2>
+          <h2 className="settings-title">{editingScheme.originalName ? 'Edit Color Scheme' : 'New Color Scheme'}</h2>
 
           <div className="settings-row">
             <span className="settings-label">Name:</span>
@@ -396,12 +810,82 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
           <div className="settings-row-btns" style={{ marginTop: 16 }}>
             <button className="settings-btn" onClick={() => {
-              if (!editingScheme.name.trim()) return;
-              saveColorScheme(editingScheme.name.trim(), editingScheme.colors);
-              refreshSchemes();
+              const originalName = editingScheme.originalName || '';
+              const newName = editingScheme.name.trim();
+              if (!newName) return;
+
+              const colors = editingScheme.colors;
+              const sessionSchemesForCheck = { ...(appState.sessionSchemes || {}) };
+              if (originalName) {
+                delete sessionSchemesForCheck[originalName];
+              }
+
+              if (showSessionNameConflict(newName, colors, sessionSchemesForCheck)) {
+                return;
+              }
+
+              onApplyState({
+                sessionSchemes: {
+                  ...sessionSchemesForCheck,
+                  [newName]: colors,
+                },
+              });
               setPage('schemes');
             }}>
-              Save
+              Add to Session
+            </button>
+            <button className="settings-btn" onClick={() => {
+              const originalName = editingScheme.originalName || '';
+              const newName = editingScheme.name.trim();
+              if (!newName) return;
+
+              const savedSchemesForCheck = listColorSchemes();
+              if (originalName) {
+                delete savedSchemesForCheck[originalName];
+              }
+
+              if (showSavedNameConflict(newName, editingScheme.colors, savedSchemesForCheck)) {
+                return;
+              }
+
+              if (originalName && originalName !== newName) {
+                saveColorScheme(newName, editingScheme.colors);
+                deleteColorScheme(originalName);
+
+                const updates = {};
+
+                if (appState.sessionScheme?.name === originalName) {
+                  updates.sessionScheme = {
+                    name: newName,
+                    colors: editingScheme.colors,
+                  };
+                }
+
+                if ((appState.tracks || []).some(track => track.schemeName === originalName)) {
+                  updates.tracks = (appState.tracks || []).map(track =>
+                    track.schemeName === originalName
+                      ? { ...track, schemeName: newName }
+                      : track
+                  );
+                }
+
+                if (appState.sessionSchemes?.[originalName]) {
+                  updates.sessionSchemes = { ...appState.sessionSchemes };
+                  delete updates.sessionSchemes[originalName];
+                  updates.sessionSchemes[newName] = editingScheme.colors;
+                }
+
+                if (Object.keys(updates).length > 0) {
+                  onApplyState(updates);
+                }
+              } else {
+                saveColorScheme(newName, editingScheme.colors);
+              }
+
+              setSchemeLibraryVersion(version => version + 1);
+              setPage('schemes');
+            }}>
+              Save Scheme
             </button>
             <button className="settings-btn" onClick={() => setPage('schemes')}>
               Cancel
@@ -420,6 +904,8 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     return (
       <div className="settings-overlay" onClick={onClose}>
         <div className="settings-popup" onClick={e => e.stopPropagation()}>
+          <button className="settings-back-arrow" onClick={() => setPage('main')} title="Back to Settings" aria-label="Back">&larr;</button>
+          <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
           <h2 className="settings-title">Sessions</h2>
 
           <div className="settings-row" style={{ marginBottom: 12 }}>
@@ -467,7 +953,6 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             ))}
           </div>
 
-          <button className="settings-btn settings-back" onClick={() => setPage('main')}>Back</button>
         </div>
         {confirm && (
           <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
@@ -531,8 +1016,18 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-popup settings-popup-wide" onClick={e => e.stopPropagation()}>
-        <h2 className="settings-title">Keyboard Shortcuts</h2>
+      <div className="settings-popup settings-popup-hotkeys" onClick={e => e.stopPropagation()}>
+        <button className="settings-back-arrow" onClick={onBack} title="Back to Settings" aria-label="Back">&larr;</button>
+        <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
+        <button
+          className="settings-btn"
+          onClick={handleReset}
+          style={{ position: 'absolute', top: 10, right: 48, padding: '5px 10px', fontSize: 12 }}
+        >
+          Reset to Defaults
+        </button>
+        <h2 className="settings-title settings-title--centered">Keyboard Shortcuts</h2>
+        <p className="settings-desc" style={{ marginTop: -6 }}>Click a key to rebind it. Hover a shortcut for details.</p>
 
         {conflicts.length > 0 && (
           <div className="hotkey-conflicts">
@@ -551,11 +1046,8 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
             const isRecording = recording === id;
             const hasConflict = conflicts.some(c => c.id1 === id || c.id2 === id);
             return (
-              <div key={id} className={`hotkey-row ${hasConflict ? 'conflict' : ''}`}>
-                <div className="hotkey-info">
-                  <span className="hotkey-label">{hk.label}</span>
-                  <span className="hotkey-desc">{hk.description}</span>
-                </div>
+              <div key={id} className={`hotkey-row ${hasConflict ? 'conflict' : ''}`} title={hk.description}>
+                <span className="hotkey-label">{hk.label}</span>
                 <button
                   className={`hotkey-key ${isRecording ? 'recording' : ''}`}
                   onClick={() => handleRecord(id)}
@@ -568,48 +1060,22 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
         </div>
 
         {/* Non-editable shortcuts */}
-        <div className="settings-section" style={{ marginTop: 12 }}>
-          <h3>Fixed Shortcuts</h3>
-          <div className="hotkey-row">
-            <div className="hotkey-info">
-              <span className="hotkey-label">Undo</span>
-            </div>
-            <span className="hotkey-key fixed">Ctrl + Z</span>
-          </div>
-          <div className="hotkey-row">
-            <div className="hotkey-info">
-              <span className="hotkey-label">Redo</span>
-            </div>
-            <span className="hotkey-key fixed">Ctrl + Y / Ctrl + Shift + Z</span>
-          </div>
-          <div className="hotkey-row">
-            <div className="hotkey-info">
-              <span className="hotkey-label">Copy</span>
-            </div>
-            <span className="hotkey-key fixed">Ctrl + C</span>
-          </div>
-          <div className="hotkey-row">
-            <div className="hotkey-info">
-              <span className="hotkey-label">Paste</span>
-            </div>
-            <span className="hotkey-key fixed">Ctrl + V</span>
-          </div>
-          {REFERENCE_ACTIONS && REFERENCE_ACTIONS.map((a, i) => (
-            <div key={`ref-${i}`} className="hotkey-row">
-              <div className="hotkey-info">
-                <span className="hotkey-label">{a.label}</span>
-                <span className="hotkey-desc">{a.description}</span>
-              </div>
+        <div className="settings-group">Fixed Shortcuts</div>
+        <div className="hotkeys-list">
+          {[
+            { label: 'Undo', display: 'Ctrl + Z' },
+            { label: 'Redo', display: 'Ctrl + Y / Ctrl + Shift + Z' },
+            { label: 'Copy', display: 'Ctrl + C' },
+            { label: 'Paste', display: 'Ctrl + V' },
+            ...(REFERENCE_ACTIONS || []),
+          ].map((a, i) => (
+            <div key={`ref-${i}`} className="hotkey-row" title={a.description}>
+              <span className="hotkey-label">{a.label}</span>
               <span className="hotkey-key fixed">{a.display}</span>
             </div>
           ))}
         </div>
 
-        <div className="settings-row-btns" style={{ marginTop: 12 }}>
-          <button className="settings-btn" onClick={handleReset}>Reset to Defaults</button>
-        </div>
-
-        <button className="settings-btn settings-back" onClick={onBack}>Back</button>
       </div>
     </div>
   );

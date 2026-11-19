@@ -1,5 +1,53 @@
 import { NUM_BARS, SUBDIVISIONS } from './constants';
 
+const SWING_TARGET = 2 / 3;
+const S_MIN = 0.1;
+const S_MAX = 0.9;
+const swClamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+export function amountToRatio(amount, target = SWING_TARGET) {
+  const a = swClamp(amount, -1, 1);
+  return swClamp(0.5 + a * (target - 0.5), S_MIN, S_MAX);
+}
+
+export function ratioToAmount(s, target = SWING_TARGET) {
+  if (target === 0.5) return 0;
+  return swClamp((s - 0.5) / (target - 0.5), -1, 1);
+}
+
+export function applySwingBeat(beat, swingPct, unit = 0.5) {
+  if (!(unit > 0)) return beat;
+  const swing = swClamp(swingPct / 100, S_MIN, S_MAX);
+  if (swing === 0.5) return beat;
+  const pair = 2 * unit;
+  const pairIdx = Math.floor(beat / pair);
+  const local = beat - pairIdx * pair;
+  let timeInPair;
+  if (local < unit) {
+    timeInPair = (local / unit) * (swing * pair);
+  } else {
+    timeInPair = swing * pair + ((local - unit) / unit) * ((1 - swing) * pair);
+  }
+  return pairIdx * pair + timeInPair;
+}
+
+export function unswingTimeBeat(t, swingPct, unit = 0.5) {
+  if (!(unit > 0)) return t;
+  const swing = swClamp(swingPct / 100, S_MIN, S_MAX);
+  if (swing === 0.5) return t;
+  const pair = 2 * unit;
+  const pairIdx = Math.floor(t / pair);
+  const localT = t - pairIdx * pair;
+  const firstDur = swing * pair;
+  let localMusic;
+  if (localT < firstDur) {
+    localMusic = (localT / firstDur) * unit;
+  } else {
+    localMusic = unit + ((localT - firstDur) / ((1 - swing) * pair)) * unit;
+  }
+  return pairIdx * pair + localMusic;
+}
+
 // Default: all bars have the same number of subdivisions
 export function defaultBarSubdivisions() {
   return Array(NUM_BARS).fill(SUBDIVISIONS);
@@ -42,10 +90,13 @@ export function colWidth(barIndex, barSubs, cellWidth) {
 }
 
 // Convert a beat to pixel X position (variable column widths)
-export function beatToX(beat, barSubs, cellWidth) {
+export function beatToX(beat, barSubs, cellWidth, swingPct = null, swungDisplay = false) {
+  const effectiveBeat = (swingPct != null && swungDisplay && swingPct !== 50)
+    ? applySwingBeat(beat, swingPct, 0.5)
+    : beat;
   const bpw = barPixelWidth(cellWidth);
   let x = 0;
-  let remaining = beat;
+  let remaining = effectiveBeat;
 
   for (let i = 0; i < barSubs.length; i++) {
     if (remaining <= barSubs[i]) {
@@ -60,7 +111,7 @@ export function beatToX(beat, barSubs, cellWidth) {
 }
 
 // Convert pixel X to beat (variable column widths, fractional for free mode)
-export function xToBeat(x, barSubs, cellWidth, snap = true) {
+export function xToBeat(x, barSubs, cellWidth, snap = true, swingPct = null, swungDisplay = false) {
   const bpw = barPixelWidth(cellWidth);
   let remaining = x;
   let beat = 0;
@@ -76,6 +127,9 @@ export function xToBeat(x, barSubs, cellWidth, snap = true) {
     beat += barSubs[i];
   }
 
+  if (swingPct != null && swungDisplay && swingPct !== 50) {
+    return unswingTimeBeat(beat, swingPct, 0.5);
+  }
   return beat;
 }
 
@@ -85,8 +139,8 @@ export function gridTotalWidth(barSubs, cellWidth) {
 }
 
 // Get the pixel width for a note's duration
-export function durationToWidth(beat, duration, barSubs, cellWidth) {
-  return beatToX(beat + duration, barSubs, cellWidth) - beatToX(beat, barSubs, cellWidth);
+export function durationToWidth(beat, duration, barSubs, cellWidth, swingPct = null, swungDisplay = false) {
+  return beatToX(beat + duration, barSubs, cellWidth, swingPct, swungDisplay) - beatToX(beat, barSubs, cellWidth, swingPct, swungDisplay);
 }
 
 // Get the beat label for a given beat index: "1", "1.1", "1.2", etc.

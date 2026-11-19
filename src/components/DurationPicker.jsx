@@ -93,7 +93,7 @@ export default function DurationPicker({ baseNoteDuration, tuplet, noteDuration,
             <div className="dp-tuplet-label">Tuplet</div>
             <div className="tuplet-dial" style={{ width: dialSize, height: dialSize }}>
               <svg width={dialSize} height={dialSize} viewBox={`0 0 ${dialSize} ${dialSize}`}>
-                <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#333" strokeWidth={2} />
+                <circle cx={cx} cy={cy} r={radius} fill="none" stroke="#26262a" strokeWidth={2} />
                 {TUPLET_POSITIONS.map(val => {
                   const angle = ((val - 1) / TUPLET_POSITIONS.length) * 2 * Math.PI - Math.PI / 2;
                   const x = cx + radius * Math.cos(angle);
@@ -104,8 +104,8 @@ export default function DurationPicker({ baseNoteDuration, tuplet, noteDuration,
                       <circle
                         cx={x} cy={y}
                         r={isActive ? 7 : 5}
-                        fill={isActive ? '#e67e22' : '#2a2a2a'}
-                        stroke={isActive ? '#e67e22' : '#555'}
+                        fill={isActive ? '#e6a15b' : '#1c1c1f'}
+                        stroke={isActive ? '#e6a15b' : '#2c2c31'}
                         strokeWidth={1}
                       />
                       <text
@@ -114,7 +114,7 @@ export default function DurationPicker({ baseNoteDuration, tuplet, noteDuration,
                         dominantBaseline="central"
                         fontSize={9}
                         fontWeight="bold"
-                        fill={isActive ? '#000' : '#999'}
+                        fill={isActive ? '#0b0b0c' : '#a3a2a0'}
                         style={{ pointerEvents: 'none' }}
                       >
                         {val}

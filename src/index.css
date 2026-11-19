@@ -1,3 +1,44 @@
+:root {
+  /* surfaces */
+  --ink: #0b0b0c;
+  --frame: #0e0e10;
+  --raise: #151517;
+  --off: #1c1c1f;
+  --off-hi: #26262a;
+  --off-lift: #46464a;
+  --hairline: #1f1f23;
+  --line: #2c2c31;
+
+  /* text */
+  --fg: #e8e6e1;
+  --soft: #a3a2a0;
+  --mute: #6b6b70;
+
+  /* accent + status */
+  --accent: #9c36b5;
+  --accent-hi: #b24fcc;
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --danger: #ff6b6b;
+  --danger-bg: #2a1417;
+  --amber: #e6a15b;
+  --amber-bg: #2a2114;
+  --ok: #5fd08a;
+
+  /* shape + motion */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --r-xl: 14px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shadow-pop: 0 12px 36px rgba(0, 0, 0, 0.6);
+  --shadow-modal: 0 18px 60px rgba(0, 0, 0, 0.7);
+
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -7,8 +48,31 @@
 html, body, #root {
   width: 100%;
   height: 100vh;
-  background: #000;
-  color: #fff;
-  font-family: 'Segoe UI', sans-serif;
+  background: var(--ink);
+  color: var(--fg);
+  font-family: var(--sans);
+  font-feature-settings: 'tnum', 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
 }
+
+button, input, select, textarea { font: inherit; }
+
+input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
+
+::selection { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--off-lift); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+#root { padding: 16px 20px; }
+#root { box-sizing: border-box; }
