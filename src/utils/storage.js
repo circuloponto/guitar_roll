@@ -236,6 +236,33 @@ export function stateToUrl(state) {
   return window.location.origin + window.location.pathname + '#s=' + compressed;
 }
 
+// --- Live URL sync (each tab keeps its own session in the address bar) ---
+// Lean variant of the share state: global libraries (synth presets, chord
+// library) are per-browser, not per-session, so they stay out of the URL.
+const MAX_LIVE_HASH_LENGTH = 100000;
+
+export function stateToHash(state) {
+  const { synthPresets, chordLibrary, colorSchemes, ...lean } = state;
+  return '#s=' + compressToEncodedURIComponent(JSON.stringify(lean));
+}
+
+// Writes the session into the current tab's URL without adding history entries.
+// Returns false (and clears the hash) when the session is too big for a URL,
+// so a reload falls back to autosave instead of restoring a stale snapshot.
+export function writeStateToUrl(state) {
+  try {
+    const hash = stateToHash(state);
+    if (hash.length > MAX_LIVE_HASH_LENGTH) {
+      if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      return false;
+    }
+    if (window.location.hash !== hash) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search + hash);
+    }
+    return true;
+  } catch { return false; }
+}
+
 export function stateFromUrl() {
   const hash = window.location.hash;
   if (!hash.startsWith('#s=')) return null;

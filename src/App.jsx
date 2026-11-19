@@ -8,7 +8,7 @@ import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo } from './utils/rubberbandStretch';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
-import { stateFromUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
+import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -574,8 +574,8 @@ function App() {
   useEffect(() => {
     const urlState = stateFromUrl();
     if (urlState) {
+      // Keep the hash: the URL *is* this tab's session (see live sync below)
       applyState(urlState);
-      window.history.replaceState(null, '', window.location.pathname);
     } else {
       const auto = loadAutosave();
       if (auto) {
@@ -593,14 +593,25 @@ function App() {
   useEffect(() => {
     const onHashChange = () => {
       const urlState = stateFromUrl();
-      if (urlState) {
-        applyState(urlState);
-        window.history.replaceState(null, '', window.location.pathname);
-      }
+      if (urlState) applyState(urlState);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [applyState]);
+
+  // Live URL sync: the address bar always holds this tab's session, so a tab can
+  // be reloaded, duplicated or shared by copying its URL. Debounced; replaceState
+  // means no history entries and no hashchange events.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      writeStateToUrl(getSessionState({
+        tracks, bpm, swing, loop, loopStart, loopEnd,
+        stringColors, synesthesia, sessionScheme, sessionSchemes,
+        projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers,
+      }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [tracks, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers]);
 
   // Autosave toggle
   const [autoSave, setAutoSave] = useState(() => {
