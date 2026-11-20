@@ -29,6 +29,22 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const t = setTimeout(() => setZoneVisible(false), 1000);
     return () => clearTimeout(t);
   }, [positionMode, position]);
+  // Shift = selecting: hide the hover ghost note while it is held.
+  const [shiftHeld, setShiftHeld] = useState(false);
+  useEffect(() => {
+    const sync = (e) => setShiftHeld(e.shiftKey);
+    const clear = () => setShiftHeld(false);
+    window.addEventListener('keydown', sync);
+    window.addEventListener('keyup', sync);
+    window.addEventListener('mousemove', sync);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', sync);
+      window.removeEventListener('keyup', sync);
+      window.removeEventListener('mousemove', sync);
+      window.removeEventListener('blur', clear);
+    };
+  }, []);
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -1011,7 +1027,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* Hover indicator - pill in center of cell */}
-        {(hoverPill?.fretboard ?? true) && hover && !durationMode && !moveMode && (
+        {(hoverPill?.fretboard ?? true) && hover && !shiftHeld && !durationMode && !moveMode && (
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hover.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
