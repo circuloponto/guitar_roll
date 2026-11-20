@@ -18,10 +18,46 @@ import { getMidiNote, getComboForPosition } from './pitchMap';
 export const CLIPBOARD_FORMAT = 'tonomancy-notes';
 export const CLIPBOARD_VERSION = 1;
 
+// Eight Fold Way's fretboard rule (fixed window [pos, pos+4]): the lowest fret that
+// sits inside the window, otherwise the nearest real fret outside it. Reproduced
+// here so both apps resolve a pitch to the same string/fret for a given window.
+const OPEN = [40, 45, 50, 55, 59, 64];
+const WINDOW = 4;
+export function windowFret(midi, pos) {
+  let best = null;
+  for (let s = 0; s < OPEN.length; s++) {
+    const fret = midi - OPEN[s];
+    if (fret < 0 || fret > NUM_FRETS) continue;
+    const dist = fret < pos ? pos - fret : fret > pos + WINDOW ? fret - (pos + WINDOW) : 0;
+    if (best === null || dist < best.dist || (dist === best.dist && fret < best.fret)) {
+      best = { stringIndex: s, fret, dist };
+    }
+  }
+  return best;
+}
+
+// Window that makes the receiver's rule land on the copied notes' actual
+// string/fret for as many notes as possible (ties: keep `preferred`, then lowest).
+export function bestPosition(notes, preferred = 0) {
+  const maxPos = Math.max(0, NUM_FRETS - WINDOW);
+  let bestP = null;
+  let bestScore = -1;
+  for (let p = 0; p <= maxPos; p++) {
+    let score = 0;
+    for (const n of notes) {
+      const w = windowFret(getMidiNote(n.stringIndex, n.fret), p);
+      if (w && w.stringIndex === n.stringIndex && w.fret === n.fret) score++;
+    }
+    const better = score > bestScore || (score === bestScore && p === preferred);
+    if (better) { bestScore = score; bestP = p; }
+  }
+  return bestP;
+}
+
 const round = (v) => Math.round(v * 1e6) / 1e6;
 const denOf = (timeSignature) => (timeSignature && timeSignature[1]) || 4;
 
-export function serializeNotes(notes, timeSignature = [4, 4], position) {
+export function serializeNotes(notes, timeSignature = [4, 4], preferredPosition = 0) {
   if (!notes.length) return null;
   const q = 4 / denOf(timeSignature);
   const minBeat = Math.min(...notes.map(n => n.beat));
@@ -43,7 +79,7 @@ export function serializeNotes(notes, timeSignature = [4, 4], position) {
     version: CLIPBOARD_VERSION,
     source: 'guitar-roll',
   };
-  if (Number.isInteger(position) && position >= 0) payload.position = position;
+  payload.position = bestPosition(notes, preferredPosition);
   payload.notes = items;
   return JSON.stringify(payload);
 }
@@ -82,10 +118,12 @@ export function parseNotes(text, { timeSignature = [4, 4], position = 0, default
         && getMidiNote(h.s, h.f) === midi) {
       stringIndex = h.s; fret = h.f;
     } else {
-      const combo = getComboForPosition(midi, pos);
+      // Sender gave a fixed window: resolve exactly like its fretboard does.
+      // Otherwise walk our own position forward as notes demand.
+      const combo = sentPosition !== undefined ? windowFret(midi, sentPosition) : getComboForPosition(midi, pos);
       if (!combo) { skipped++; continue; }
       stringIndex = combo.stringIndex; fret = combo.fret;
-      pos = combo.position ?? pos;
+      if (sentPosition === undefined) pos = combo.position ?? pos;
     }
 
     const note = {
