@@ -510,16 +510,26 @@ export default function Timeline({
       } else {
         const startCol = snapBeat(xToBeat(x, barSubdivisions, cellWidth, false));
         if (startCol < 0 || startCol >= totalCols) return;
+        // A plain click only places the playhead; the region is redrawn once dragging starts.
         loopDragRef.current = { mode: 'new', startCol, didMove: false };
-        setLoopStart(startCol);
-        setLoopEnd(startCol + snap);
       }
     } else {
-      const startCol = snapBeat(xToBeat(x, barSubdivisions, cellWidth, false));
-      if (startCol < 0 || startCol >= totalCols) return;
-      loopDragRef.current = { mode: 'new', startCol, didMove: false };
-      setLoopStart(startCol);
-      setLoopEnd(startCol + snap);
+      // Loop is off: the header only places / scrubs the playhead. No loop region.
+      const placeHead = (clientX) => {
+        const px = clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
+        const beat = snapBeat(xToBeat(px, barSubdivisions, cellWidth, false));
+        setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
+      };
+      placeHead(e.clientX);
+      e.preventDefault();
+      const onMove = (me) => placeHead(me.clientX);
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      return;
     }
 
     e.preventDefault();
@@ -573,12 +583,8 @@ export default function Timeline({
           const rawBeat = xToBeat(ux, barSubdivisions, cellWidth, false);
           const beat = free ? rawBeat : snapBeat(rawBeat);
           setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
-          setLoop(false);
         } else if (d.mode === 'new' && d.didMove) {
-          setLoop(true);
           setSelectedBeat(Math.min(d.startCol, d.lastCol));
-        } else if (d.mode === 'move' && !d.didMove) {
-          setLoop(false);
         }
       }
       loopDragRef.current = null;

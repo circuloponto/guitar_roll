@@ -1614,6 +1614,24 @@ setPositionModeValue(null);
     animFrameRef.current = requestAnimationFrame(animate);
   }, [stopPlayback, scheduleAudioTracks]);
 
+  // Loop button: the loop region only exists (and is only editable) while on.
+  // Turning it on with no meaningful region starts from the bar at the playhead.
+  const toggleLoop = useCallback(() => {
+    if (loopRef.current) { setLoop(false); return; }
+    const bs = barSubsRef.current;
+    const total = totalColumns(bs);
+    const s = loopStartRef.current, e = loopEndRef.current;
+    if (e <= s || e > total || (s <= 0 && e >= total)) {
+      const starts = barStartBeats(bs);
+      const beat = selectedBeatRef.current || 0;
+      let bar = 0;
+      for (let i = 0; i < starts.length; i++) if (starts[i] <= beat) bar = i;
+      setLoopStart(starts[bar]);
+      setLoopEnd(starts[bar] + bs[bar]);
+    }
+    setLoop(true);
+  }, []);
+
   // Play button: from start of loop or start of timeline
   const handlePlay = useCallback(() => {
     if (playing) {
@@ -1884,6 +1902,13 @@ setPositionModeValue(null);
           onClick={handlePlay}
         >
           {playing ? '⏹ Stop' : '▶ Play'}
+        </button>
+        <button
+          className={`tool-btn ${loop ? 'active' : ''}`}
+          onClick={toggleLoop}
+          title="Loop region: when on, drag the time strip to set, resize or move the loop"
+        >
+          Loop
         </button>
         <button
           className={`tool-btn ${metronome ? 'active' : ''}`}
