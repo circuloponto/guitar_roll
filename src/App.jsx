@@ -1245,6 +1245,7 @@ setPositionModeValue(null);
   }, [totalBeats, undo, redo, setNotes]);
 
   const handleFretClick = useCallback((stringIndex, fret, stayInPlace = false) => {
+    setSelectedNotes(new Set()); // note entry cancels selection
     const beat = Math.round(selectedBeat / snapUnit) * snapUnit;
     const exactMatch = notes.findIndex(
       n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
@@ -1272,6 +1273,7 @@ setPositionModeValue(null);
     }
   }, [selectedBeat, effectiveNoteLength, snapUnit, totalBeats, defaultVelocity, fretboardAutoForward, notes, activeScheme]);
   const handleAdjacentClick = useCallback((stringIndex, fret, stayInPlace = false) => {
+    setSelectedNotes(new Set()); // note entry cancels selection
     const beat = Math.round(selectedBeat / snapUnit) * snapUnit;
     const exactMatch = notes.findIndex(
       n => n.stringIndex === stringIndex && n.fret === fret && Math.abs(n.beat - beat) < 0.001
@@ -1359,14 +1361,7 @@ setPositionModeValue(null);
 
   const handleDeleteNote = useCallback((noteIndex) => {
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
-    setSelectedNotes(prev => {
-      const next = new Set();
-      for (const idx of prev) {
-        if (idx < noteIndex) next.add(idx);
-        else if (idx > noteIndex) next.add(idx - 1);
-      }
-      return next;
-    });
+    setSelectedNotes(new Set());
   }, []);
 
   const stopPlayback = useCallback(() => {

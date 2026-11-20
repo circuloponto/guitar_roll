@@ -317,15 +317,7 @@ export default function Timeline({
     // The right-click-drag eraser already handled deletion on mousedown
     if (rightDragEraseRef.current) { rightDragEraseRef.current = false; return; }
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
-    setSelectedNotes(prev => {
-      if (!prev.has(noteIndex)) return prev;
-      const next = new Set();
-      prev.forEach(i => {
-        if (i < noteIndex) next.add(i);
-        else if (i > noteIndex) next.add(i - 1);
-      });
-      return next;
-    });
+    setSelectedNotes(new Set());
   }, [setNotes, setSelectedNotes]);
 
   const handleNoteDragStart = useCallback((e, noteIndex) => {
@@ -467,6 +459,8 @@ export default function Timeline({
           setPosition(smartCombo.position);
         }
       }
+      // Plain click (no drag): select just this note, cancelling other selections.
+      if (d && !d.didMove) setSelectedNotes(new Set([noteIndex]));
       setDragPreview(null);
       noteDragRef.current = null;
       window.removeEventListener('mousemove', handleMouseMove);
@@ -475,7 +469,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [notes, setNotes, selectedNotes, freeMode, rowHeight, position, setPosition]);
+  }, [notes, setNotes, setSelectedNotes, selectedNotes, freeMode, rowHeight, position, setPosition]);
 
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
@@ -616,15 +610,7 @@ export default function Timeline({
         const idx = parseInt(idxAttr, 10);
         if (Number.isNaN(idx)) return;
         setNotes(prev => prev.filter((_, i) => i !== idx));
-        setSelectedNotes(prev => {
-          if (!prev.has(idx)) return prev;
-          const next = new Set();
-          prev.forEach(i => {
-            if (i < idx) next.add(i);
-            else if (i > idx) next.add(i - 1);
-          });
-          return next;
-        });
+        setSelectedNotes(new Set());
       };
       eraseAt(e.clientX, e.clientY);
       marqueeDidDragRef.current = true;
