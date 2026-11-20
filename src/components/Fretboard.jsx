@@ -164,7 +164,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       if (!container) return;
       const rect = container.getBoundingClientRect();
       const startX = e.clientX - rect.left;
-      const startY = e.clientY - rect.top + (scrollRef.current?.scrollTop || 0);
+      // containerRef is the scrolled element itself, so its rect already includes the scroll offset
+      const startY = e.clientY - rect.top;
       fretMarqueeRef.current = { startX, startY, didMove: false };
       
       // Capture current selection so shift-drag accumulates instead of replacing
@@ -172,8 +173,9 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     
       const handleMarqueeMove = (moveE) => {
         if (!fretMarqueeRef.current) return;
-        const mx = moveE.clientX - rect.left;
-        const my = moveE.clientY - rect.top + (scrollRef.current?.scrollTop || 0);
+        const liveRect = container.getBoundingClientRect(); // re-read: the fretboard may scroll mid-drag
+        const mx = moveE.clientX - liveRect.left;
+        const my = moveE.clientY - liveRect.top;
         const dx = mx - fretMarqueeRef.current.startX;
         const dy = my - fretMarqueeRef.current.startY;
         if (!fretMarqueeRef.current.didMove && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;

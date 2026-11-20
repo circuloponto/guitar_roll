@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
@@ -1735,6 +1735,29 @@ setPositionModeValue(null);
     animFrameRef.current = requestAnimationFrame(animate);
   }, [stopPlayback, scheduleAudioPass, prepareAudioChains]);
   startPlaybackRef.current = startPlayback;
+
+  // Editing audio clips (crop / move / split / delete / mute / solo) while playing: re-queue the
+  // audio from the playhead so the change is heard immediately instead of after the next play.
+  const audioEditSig = useMemo(() => tracks
+    .filter(t => t.type === 'audio')
+    .map(t => `${t.id}:${t.muted ? 1 : 0}${t.solo ? 1 : 0}:${JSON.stringify(t.clips || null)}`)
+    .join('|') + `|solo:${tracks.some(t => t.solo) ? 1 : 0}`, [tracks]);
+  useEffect(() => {
+    if (!playingRef.current) return;
+    const id = setTimeout(() => {
+      if (!playingRef.current || playheadBeatRef.current == null) return;
+      const ctx = getAudioContext();
+      const playable = getPlayableTracks(tracksRef.current);
+      const liveSpb = beatToTime(1, null, bpmRef.current, timeSigRef.current[1]);
+      const maxLatency = audioSourcesRef.current.reduce((m, c) => Math.max(m, (c.latencySamples || 0) / ctx.sampleRate), 0);
+      const startTime = ctx.currentTime + 0.03 + maxLatency;
+      const fromBeat = playheadBeatRef.current + (startTime - ctx.currentTime) / liveSpb;
+      const endBeat = loopRef.current ? loopEndRef.current : totalColumns(barSubsRef.current);
+      stopAudioChains();
+      scheduleAudioPass(playable, fromBeat, startTime, ctx, endBeat);
+    }, 40);
+    return () => clearTimeout(id);
+  }, [audioEditSig, stopAudioChains, scheduleAudioPass]);
 
   // Loop button: the loop region only exists (and is only editable) while on.
   // Turning it on with no meaningful region starts from the bar at the playhead.
