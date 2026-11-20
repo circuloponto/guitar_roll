@@ -53,6 +53,7 @@ export default function Timeline({
   chordPreview,
   autoScroll,
   audioTracks = [],
+  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {},
   bpm = 120,
   timeSignature = [4, 4],
   bodyRefExternal,
@@ -590,9 +591,116 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [setLoopStart, setLoopEnd, setLoop, setSelectedBeat, loop, loopStart, loopEnd, cellWidth, totalCols, barSubdivisions, freeMode, snapUnit]);
 
+  // ---- Audio clip interaction (active audio track) ----
+  const activeAudio = audioTracks.find(a => a.isActive) || null;
+  const clipSecPerBeat = (at) => 1 / timeToBeat(1, at.originalBpm || bpm, timeSignature[1]);
+  const clipPointerBeat = (clientX) => {
+    const r = bodyRef.current.getBoundingClientRect();
+    return xToBeat(clientX - r.left + bodyRef.current.scrollLeft, barSubdivisions, cellWidth, false);
+  };
+  const clipSnap = (b) => (freeMode ? b : Math.round(b / snapUnit) * snapUnit);
+
+  const handleClipMouseDown = (e, at, clip) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.shiftKey) {
+      setSelectedClips(prev => {
+        const next = new Set(prev);
+        if (next.has(clip.id)) next.delete(clip.id); else next.add(clip.id);
+        return next;
+      });
+      return;
+    }
+    const wasSelected = selectedClips.has(clip.id);
+    let ids = wasSelected ? new Set(selectedClips) : new Set([clip.id]);
+    if (!wasSelected) setSelectedClips(ids);
+    const startBeat = clipPointerBeat(e.clientX);
+    let orig = new Map(at.clips.filter(c => ids.has(c.id)).map(c => [c.id, c.start]));
+    const minStart = () => Math.min(...orig.values());
+    let moved = false;
+    let targets = ids; // ids being moved (copies after an Alt-drag duplicate)
+
+    const onMove = (me) => {
+      if (!moved && Math.abs(me.clientX - e.clientX) < 3) return;
+      if (!moved) {
+        moved = true;
+        saveSnapshot();
+        if (me.altKey) {
+          // Alt-drag duplicates: originals stay, copies are dragged
+          const copies = at.clips.filter(c => ids.has(c.id)).map(c => ({ ...c, id: crypto.randomUUID() }));
+          const map = new Map();
+          at.clips.filter(c => ids.has(c.id)).forEach((c, i) => map.set(copies[i].id, c.start));
+          onUpdateClips(at.trackId, clips => [...clips, ...copies], false);
+          targets = new Set(copies.map(c => c.id));
+          orig = map;
+          setSelectedClips(targets);
+        }
+      }
+      const raw = clipPointerBeat(me.clientX) - startBeat;
+      const anchor = orig.get([...targets][0]) ?? clip.start;
+      let delta = clipSnap(anchor + raw) - anchor;
+      delta = Math.max(delta, -minStart());
+      onUpdateClips(at.trackId, clips => clips.map(c => (targets.has(c.id) ? { ...c, start: orig.get(c.id) + delta } : c)), false);
+    };
+    const onUp = () => {
+      if (!moved && wasSelected && ids.size > 1) setSelectedClips(new Set([clip.id]));
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const handleClipTrimStart = (e, at, clip, side) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (!selectedClips.has(clip.id)) setSelectedClips(new Set([clip.id]));
+    const spb = clipSecPerBeat(at);
+    const minBeats = 0.02 / spb;
+    const o = { start: clip.start, srcStart: clip.srcStart, srcEnd: clip.srcEnd };
+    const oEnd = o.start + (o.srcEnd - o.srcStart) / spb;
+    let saved = false;
+    const onMove = (me) => {
+      if (!saved) { saveSnapshot(); saved = true; }
+      const beat = clipSnap(clipPointerBeat(me.clientX));
+      if (side === 'left') {
+        const lo = Math.max(0, o.start - o.srcStart / spb); // cannot reveal audio before the file start
+        const nb = Math.min(Math.max(beat, lo), oEnd - minBeats);
+        onUpdateClips(at.trackId, clips => clips.map(c => (c.id === clip.id
+          ? { ...c, start: nb, srcStart: Math.max(0, o.srcStart + (nb - o.start) * spb) } : c)), false);
+      } else {
+        const hi = o.start + (at.audioDuration - o.srcStart) / spb; // cannot run past the file end
+        const nb = Math.max(Math.min(beat, hi), o.start + minBeats);
+        onUpdateClips(at.trackId, clips => clips.map(c => (c.id === clip.id
+          ? { ...c, srcEnd: Math.min(at.audioDuration, o.srcStart + (nb - o.start) * spb) } : c)), false);
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   // Machine gun: convert mouse Y to string+fret
   // Marquee selection / machine gun on grid background
   const handleGridMouseDown = useCallback((e) => {
+    // Active audio track: the grid is a clip lane. Empty space deselects clips and places the playhead.
+    if (activeAudio) {
+      if (e.button === 0 && !e.target.closest('.audio-clip')) {
+        setSelectedClips(new Set());
+        const r = bodyRef.current.getBoundingClientRect();
+        const bx = e.clientX - r.left + bodyRef.current.scrollLeft;
+        const raw = xToBeat(bx, barSubdivisions, cellWidth, false);
+        const beat = freeMode ? raw : Math.round(raw / snapUnit) * snapUnit;
+        setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
+        marqueeDidDragRef.current = true;
+      }
+      return;
+    }
     // Shift + right-click drag: marquee-select erase (falls through to marquee logic below)
     // Plain right-click drag: brush-erase notes under the cursor
     if (e.button === 2 && !playing && !e.shiftKey) {
@@ -902,7 +1010,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, selectedNotes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight, position, setPosition, activeInstanceScheme]);
+  }, [playing, notes, selectedNotes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight, position, setPosition, activeInstanceScheme, activeAudio, setSelectedClips]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -1671,101 +1779,116 @@ export default function Timeline({
             />
           ))}
 
-          {/* Audio waveforms — split into tiles so each pixel maps 1:1 with display.
-              Width is locked to the track's originalBpm so tempo changes stretch playback
-              but keep the waveform aligned to the beat grid that was in effect at import. */}
+          {/* Audio clips — DAW-style regions. Each clip draws its slice of the file in 1:1 pixel
+              tiles. Width is locked to the track's originalBpm so tempo changes stretch playback
+              but keep the clip aligned to the beat grid that was in effect at import.
+              Clips of the active audio track are interactive (move / trim / select / split). */}
           {audioTracks.flatMap(at => {
             const refBpm = at.originalBpm || bpm;
-            const durationBeats = timeToBeat(at.audioDuration, refBpm, timeSignature[1]);
-            const startX = beatToX(at.audioOffset, barSubdivisions, cellWidth);
-            const endX = beatToX(at.audioOffset + durationBeats, barSubdivisions, cellWidth);
-            const totalWidth = Math.max(1, endX - startX);
-            const TILE_W = 4096;
-            const tileCount = Math.ceil(totalWidth / TILE_W);
-            const color = at.isActive ? '#b24fcc' : '#6b6b70';
+            const spb = 1 / timeToBeat(1, refBpm, timeSignature[1]);
+            const fileDur = at.audioDuration || 1;
+            const color = at.isActive ? '#d9a6ec' : '#6b6b70';
             const peaks = at.waveformPeaks;
             const buffer = at.audioBuffer;
-            const canvases = [];
-            for (let ti = 0; ti < tileCount; ti++) {
-              const tileOffset = ti * TILE_W;
-              const tileWidth = Math.min(TILE_W, totalWidth - tileOffset);
-              const tileStartFrac = tileOffset / totalWidth;
-              const tileEndFrac = (tileOffset + tileWidth) / totalWidth;
-              canvases.push(
-                <canvas
-                  key={`waveform-${at.trackId}-${ti}`}
-                  width={Math.round(tileWidth)}
-                  height={gridTotalHeight}
-                  style={{
-                    position: 'absolute',
-                    left: startX + tileOffset,
-                    top: 0,
-                    width: tileWidth,
-                    height: gridTotalHeight,
-                    opacity: at.isActive ? 0.5 : (at.bgOpacity ?? 0.2),
-                    pointerEvents: 'none',
-                    zIndex: 2,
-                  }}
-                  ref={el => {
-                    if (!el) return;
-                    const c2d = el.getContext('2d');
-                    const w = el.width;
-                    const h = el.height;
-                    c2d.clearRect(0, 0, w, h);
-                    c2d.fillStyle = color;
-                    const mid = h / 2;
-
-                    const precomputedInTile = peaks ? peaks.length * (tileEndFrac - tileStartFrac) : 0;
-                    if (buffer && precomputedInTile < w) {
-                      const data = buffer.getChannelData(0);
-                      const sampleStart = Math.floor(tileStartFrac * data.length);
-                      const sampleEnd = Math.floor(tileEndFrac * data.length);
-                      const span = sampleEnd - sampleStart;
-                      const samplesPerPixel = span / w;
-                      if (samplesPerPixel >= 1) {
-                        for (let i = 0; i < w; i++) {
-                          const s = sampleStart + Math.floor(i * samplesPerPixel);
-                          const e = sampleStart + Math.floor((i + 1) * samplesPerPixel);
-                          let min = 0, max = 0;
-                          for (let j = s; j < e; j++) {
-                            const v = data[j];
-                            if (v > max) max = v;
-                            else if (v < min) min = v;
+            return (at.clips || []).map(clip => {
+              const clipDur = clip.srcEnd - clip.srcStart;
+              const lenBeats = clipDur / spb;
+              const startX = beatToX(clip.start, barSubdivisions, cellWidth);
+              const endX = beatToX(clip.start + lenBeats, barSubdivisions, cellWidth);
+              const totalWidth = Math.max(1, endX - startX);
+              const TILE_W = 4096;
+              const tileCount = Math.ceil(totalWidth / TILE_W);
+              const interactive = at.isActive;
+              const isSel = selectedClips.has(clip.id);
+              // Editable clips are a compact lane (waveform centred in view); inactive ones stay a faint full-height backdrop.
+              const clipH = interactive ? Math.min(gridTotalHeight, 360) : gridTotalHeight;
+              const canvases = [];
+              for (let ti = 0; ti < tileCount; ti++) {
+                const tileOffset = ti * TILE_W;
+                const tileWidth = Math.min(TILE_W, totalWidth - tileOffset);
+                // fraction of the FILE covered by this tile
+                const fStart = (clip.srcStart + (tileOffset / totalWidth) * clipDur) / fileDur;
+                const fEnd = (clip.srcStart + ((tileOffset + tileWidth) / totalWidth) * clipDur) / fileDur;
+                canvases.push(
+                  <canvas
+                    key={`wf-${clip.id}-${ti}`}
+                    width={Math.round(tileWidth)}
+                    height={clipH}
+                    style={{
+                      position: 'absolute', left: tileOffset, top: 0,
+                      width: tileWidth, height: clipH,
+                      opacity: interactive ? 0.85 : (at.bgOpacity ?? 0.2),
+                      pointerEvents: 'none',
+                    }}
+                    ref={el => {
+                      if (!el) return;
+                      const c2d = el.getContext('2d');
+                      const w = el.width;
+                      const h = el.height;
+                      c2d.clearRect(0, 0, w, h);
+                      c2d.fillStyle = color;
+                      const mid = h / 2;
+                      const precomputedInTile = peaks ? peaks.length * (fEnd - fStart) : 0;
+                      if (buffer && precomputedInTile < w) {
+                        const data = buffer.getChannelData(0);
+                        const sampleStart = Math.floor(fStart * data.length);
+                        const sampleEnd = Math.floor(fEnd * data.length);
+                        const span = sampleEnd - sampleStart;
+                        const samplesPerPixel = span / w;
+                        if (samplesPerPixel >= 1) {
+                          for (let i = 0; i < w; i++) {
+                            const s0 = sampleStart + Math.floor(i * samplesPerPixel);
+                            const e0 = sampleStart + Math.floor((i + 1) * samplesPerPixel);
+                            let min = 0, max = 0;
+                            for (let j = s0; j < e0; j++) {
+                              const v = data[j];
+                              if (v > max) max = v;
+                              else if (v < min) min = v;
+                            }
+                            c2d.fillRect(i, mid - max * mid, 1, Math.max(1, (max - min) * mid));
                           }
-                          const yTop = mid - max * mid;
-                          const yBot = mid - min * mid;
-                          c2d.fillRect(i, yTop, 1, Math.max(1, yBot - yTop));
+                        } else {
+                          c2d.strokeStyle = color;
+                          c2d.lineWidth = 1;
+                          c2d.beginPath();
+                          for (let i = 0; i < w; i++) {
+                            const pos = sampleStart + (i / (w - 1 || 1)) * Math.max(0, span - 1);
+                            const i0 = Math.floor(pos);
+                            const i1 = Math.min(i0 + 1, data.length - 1);
+                            const v = data[i0] * (1 - (pos - i0)) + data[i1] * (pos - i0);
+                            if (i === 0) c2d.moveTo(i, mid - v * mid); else c2d.lineTo(i, mid - v * mid);
+                          }
+                          c2d.stroke();
                         }
-                      } else {
-                        c2d.strokeStyle = color;
-                        c2d.lineWidth = 1;
-                        c2d.beginPath();
+                      } else if (peaks) {
                         for (let i = 0; i < w; i++) {
-                          const pos = sampleStart + (i / (w - 1 || 1)) * Math.max(0, span - 1);
-                          const i0 = Math.floor(pos);
-                          const i1 = Math.min(i0 + 1, data.length - 1);
-                          const frac = pos - i0;
-                          const v = data[i0] * (1 - frac) + data[i1] * frac;
-                          const y = mid - v * mid;
-                          if (i === 0) c2d.moveTo(i, y);
-                          else c2d.lineTo(i, y);
+                          const frac = fStart + (i / w) * (fEnd - fStart);
+                          const peak = peaks[Math.min(peaks.length - 1, Math.floor(frac * peaks.length))] || 0;
+                          c2d.fillRect(i, mid - peak * mid, 1, peak * mid * 2);
                         }
-                        c2d.stroke();
                       }
-                    } else if (peaks) {
-                      for (let i = 0; i < w; i++) {
-                        const frac = tileStartFrac + (i / w) * (tileEndFrac - tileStartFrac);
-                        const peakIdx = Math.min(peaks.length - 1, Math.floor(frac * peaks.length));
-                        const peak = peaks[peakIdx] || 0;
-                        const barH = peak * mid;
-                        c2d.fillRect(i, mid - barH, 1, barH * 2);
-                      }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                );
+              }
+              return (
+                <div
+                  key={`clip-${at.trackId}-${clip.id}`}
+                  className={`audio-clip${interactive ? ' interactive' : ''}${isSel ? ' selected' : ''}`}
+                  style={{ left: startX, width: totalWidth, height: clipH }}
+                  onMouseDown={interactive ? (e) => handleClipMouseDown(e, at, clip) : undefined}
+                >
+                  {canvases}
+                  {interactive && (
+                    <>
+                      <div className="audio-clip-label">{at.name || 'Audio'}</div>
+                      <div className="audio-clip-handle left" onMouseDown={(e) => handleClipTrimStart(e, at, clip, 'left')} />
+                      <div className="audio-clip-handle right" onMouseDown={(e) => handleClipTrimStart(e, at, clip, 'right')} />
+                    </>
+                  )}
+                </div>
               );
-            }
-            return canvases;
+            });
           })}
 
           {/* Cursor hover rectangle — visible when hovering the timeline */}

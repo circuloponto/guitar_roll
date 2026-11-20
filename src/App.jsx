@@ -11,6 +11,7 @@ import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { refingerNotes } from './utils/position';
+import { getClips, clipEndBeat, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -153,6 +154,7 @@ function App() {
     setActiveTrackId(trackId);
     activeTrackIdRef.current = trackId;
     setSelectedNotes(new Set());
+    setSelectedClips(new Set());
     const track = tracksRef.current.find(t => t.id === trackId);
     if (track) {
       setInstrument(track.instrument);
@@ -245,6 +247,11 @@ function App() {
   const [selectedNotes, setSelectedNotes] = useState(new Set());
   const selectedNotesRef = useRef(selectedNotes);
   selectedNotesRef.current = selectedNotes;
+  // Audio clips (DAW regions) selected on the active audio track
+  const [selectedClips, setSelectedClips] = useState(new Set());
+  const selectedClipsRef = useRef(selectedClips);
+  selectedClipsRef.current = selectedClips;
+  const clipClipboardRef = useRef([]);
   const [bpm, setBpm] = useState(DEFAULT_BPM);
   const [swing, setSwing] = useState(50);
   const swingRef = useRef(swing);
@@ -260,13 +267,10 @@ function App() {
       const originalBpm = (track?.originalBpm) || bpm;
       const tempoMultiplier = bpm / originalBpm;
       const pitchScale = 1 / tempoMultiplier;
-      try { entry.source?.playbackRate.setValueAtTime(tempoMultiplier, entry.source.context.currentTime); } catch {}
-      if (!entry.workletNode) {
-        console.info(`[rubberband] bpm→${bpm}: worklet not ready yet for track=${entry.trackId.slice(0,6)} (pitch_scale will be applied at splice)`);
-        return;
-      }
-      setStretchTempo(entry.workletNode, pitchScale);
-      console.info(`[rubberband] bpm→${bpm}: playbackRate=${tempoMultiplier.toFixed(3)} pitchScale=${pitchScale.toFixed(3)} track=${entry.trackId.slice(0,6)}`);
+      entry.sources.forEach((src) => {
+        try { src.playbackRate.setValueAtTime(tempoMultiplier, src.context.currentTime); } catch {}
+      });
+      if (entry.workletNode) setStretchTempo(entry.workletNode, pitchScale);
     });
   }, [bpm]);
 
@@ -682,7 +686,73 @@ function App() {
     setNotes(prev => refingerNotes(prev, sel, pos));
   };
 
+  // ---- Audio clip editing (active audio track) ----
+  const activeAudioTrack = () => {
+    const t = tracksRef.current.find(x => x.id === activeTrackIdRef.current);
+    return t && t.type === 'audio' ? t : null;
+  };
+  // fn(clips, track) -> clips. Pass undo=false for continuous drags (snapshot taken once by the caller).
+  const updateClips = useCallback((trackId, fn, undo = true) => {
+    if (undo) saveSnapshot();
+    setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, clips: fn(getClips(t), t) } : t));
+  }, [saveSnapshot, setTracksTracked]);
+
+  // Ctrl+E: split selected clips (or whatever is under the playhead) at the playhead.
+  const splitClipsAtPlayhead = useCallback(() => {
+    const t = activeAudioTrack();
+    if (!t) return false;
+    const beat = playingRef.current && playheadBeatRef.current != null ? playheadBeatRef.current : selectedBeatRef.current;
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const clips = getClips(t);
+    let ids = selectedClipsRef.current;
+    if (ids.size === 0) ids = new Set(clips.filter(c => beat > c.start && beat < clipEndBeat(c, spb)).map(c => c.id));
+    const res = splitClips(clips, ids, beat, spb);
+    if (res.created.length === 0) { showToast('Nothing to split at the playhead'); return true; }
+    updateClips(t.id, () => res.clips);
+    setSelectedClips(new Set(res.created));
+    return true;
+  }, [showToast, updateClips]);
+
+  const deleteSelectedClips = useCallback(() => {
+    const t = activeAudioTrack();
+    if (!t || selectedClipsRef.current.size === 0) return false;
+    const ids = selectedClipsRef.current;
+    updateClips(t.id, clips => clips.filter(c => !ids.has(c.id)));
+    setSelectedClips(new Set());
+    return true;
+  }, [updateClips]);
+
+  const copyClips = useCallback(() => {
+    const t = activeAudioTrack();
+    if (!t) return false;
+    const picked = getClips(t).filter(c => selectedClipsRef.current.has(c.id));
+    if (picked.length === 0) { showToast('Select a clip first'); return true; }
+    clipClipboardRef.current = picked.map(c => ({ ...c }));
+    showToast(`Copied ${picked.length} clip${picked.length === 1 ? '' : 's'}`);
+    return true;
+  }, [showToast]);
+
+  const pasteClipsAtPlayhead = useCallback(() => {
+    const t = activeAudioTrack();
+    if (!t) return false;
+    if (clipClipboardRef.current.length === 0) { showToast('No clips to paste'); return true; }
+    const at = selectedBeatRef.current || 0;
+    const res = pasteClips(getClips(t), clipClipboardRef.current, at);
+    updateClips(t.id, () => res.clips);
+    setSelectedClips(new Set(res.created));
+    // make sure the timeline is long enough for the pasted clips
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const end = Math.max(...res.clips.map(c => clipEndBeat(c, spb)));
+    setBarSubdivisions(prev => {
+      let next = prev;
+      while (totalColumns(next) < end && next.length < 999) next = [...next, timeSigRef.current[0] || 4];
+      return next;
+    });
+    return true;
+  }, [showToast, updateClips]);
+
   const copySelectedNotes = useCallback(() => {
+    if (copyClips()) return;
     // Selection first; with nothing selected, copy what the fretboard is showing
     // (the notes sounding at the cursor beat) so Ctrl+C is never a silent no-op.
     let selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
@@ -700,10 +770,11 @@ function App() {
                     .catch(() => showToast('Copied in-app only (browser blocked the clipboard)'));
       else showToast('Copied in-app only (clipboard unavailable)');
     } catch { showToast('Copied in-app only (clipboard unavailable)'); }
-  }, [showToast]);
+  }, [showToast, copyClips]);
 
   // `text` is whatever is on the system clipboard (or null/'' to use the in-app one).
   const pasteNotes = useCallback((text) => {
+    if (pasteClipsAtPlayhead()) return;
     const parsed = parseNotes(text, {
       timeSignature: timeSigRef.current,
       position: positionRef.current,
@@ -730,7 +801,7 @@ function App() {
     });
     setNotes(prev => [...prev, ...newNotes]);
     setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
-  }, [defaultVelocity, showToast]);
+  }, [defaultVelocity, showToast, pasteClipsAtPlayhead]);
   const pasteNotesRef = useRef(pasteNotes);
   pasteNotesRef.current = pasteNotes;
 
@@ -1001,6 +1072,20 @@ setPositionModeValue(null);
       if (matchesHotkey(e, hk.clearSelection)) {
         e.preventDefault();
         setSelectedNotes(new Set());
+      }
+
+      // Audio track: clip editing hotkeys take over (split / delete / select all)
+      if (activeAudioTrack()) {
+        if (matchesHotkey(e, hk.splitNote)) { e.preventDefault(); splitClipsAtPlayhead(); return; }
+        if (matchesHotkey(e, hk.deleteNotes) || matchesHotkey(e, hk.deleteNotesAlt)) {
+          if (deleteSelectedClips()) e.preventDefault();
+          return;
+        }
+        if (matchesHotkey(e, hk.selectAll)) {
+          e.preventDefault();
+          setSelectedClips(new Set(getClips(activeAudioTrack()).map(c => c.id)));
+          return;
+        }
       }
 
       //Event listener for Select-All hotkey
@@ -1364,6 +1449,19 @@ setPositionModeValue(null);
     setSelectedNotes(new Set());
   }, []);
 
+  // Tear down every audio chain (sources, rubberband worklet, gain).
+  const stopAudioChains = useCallback(() => {
+    audioSourcesRef.current.forEach(({ sources, gainNode, workletNode }) => {
+      sources.forEach(src => {
+        try { src.stop(); } catch {}
+        try { src.disconnect(); } catch {}
+      });
+      try { workletNode?.disconnect(); } catch {}
+      try { gainNode?.disconnect(); } catch {}
+    });
+    audioSourcesRef.current = [];
+  }, []);
+
   const stopPlayback = useCallback(() => {
     playingRef.current = false;
     setPlaying(false);
@@ -1373,26 +1471,17 @@ setPositionModeValue(null);
       cancelAnimationFrame(animFrameRef.current);
     }
     // Stop audio file sources and tear down any rubberband worklet nodes.
-    audioSourcesRef.current.forEach(({ source, gainNode, workletNode }) => {
-      try { source.stop(); } catch {}
-      try { source.disconnect(); } catch {}
-      try { workletNode?.disconnect(); } catch {}
-      try { gainNode?.disconnect(); } catch {}
-    });
-    audioSourcesRef.current = [];
-  }, []);
+    stopAudioChains();
+  }, [stopAudioChains]);
 
-  const scheduleAudioTracks = useCallback((playable, fromBeat, startTime, ctx, barSubs) => {
-    audioSourcesRef.current.forEach(({ source, gainNode, workletNode }) => {
-      try { source.stop(); } catch {}
-      try { source.disconnect(); } catch {}
-      try { workletNode?.disconnect(); } catch {}
-      try { gainNode?.disconnect(); } catch {}
-    });
-    audioSourcesRef.current = [];
-
+  // Schedule the audio clips of every playable audio track for the beat range
+  // [fromBeat, endBeat), with fromBeat sounding at `startTime`. Each track keeps one
+  // gain + rubberband chain; clips are BufferSources feeding it, so a loop can append
+  // another pass at the boundary without rebuilding anything.
+  const scheduleAudioPass = useCallback((playable, fromBeat, startTime, ctx, endBeat) => {
     const liveBpm = bpmRef.current;
     const denom = timeSigRef.current[1];
+    const liveSpb = beatToTime(1, null, liveBpm, denom);
 
     playable.forEach(track => {
       if (track.type !== 'audio') return;
@@ -1401,86 +1490,57 @@ setPositionModeValue(null);
 
       const originalBpm = track.originalBpm || liveBpm;
       const tempoMultiplier = liveBpm / originalBpm;
-      // The BufferSource itself does the time-stretch by resampling; rubberband then
-      // corrects the pitch shift. pitch_scale = 1/tempoMultiplier restores the original
-      // pitch.
-      const pitchScale = 1 / tempoMultiplier;
+      // The BufferSource time-stretches by resampling; rubberband restores the pitch.
+      const spb = beatToTime(1, null, originalBpm, denom);
 
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.playbackRate.value = tempoMultiplier;
-      const gainNode = ctx.createGain();
-      gainNode.gain.setValueAtTime(track.muted ? 0 : track.volume, startTime);
-
-      // Build a per-track entry so the live-tempo effect can target it.
-      const entry = { source, gainNode, workletNode: null, trackId: track.id };
-      audioSourcesRef.current.push(entry);
-
-      // Route source → rubberband worklet → gain → destination. The worklet is created
-      // async, but the BufferSource can't wait for it (we need to schedule source.start
-      // against startTime in the audio timeline). We pre-connect source→gain synchronously
-      // so audio starts on time; once the worklet is ready, we splice it into the chain.
-      source.connect(gainNode);
-      gainNode.connect(ctx.destination);
-
-      createStretchNode(ctx, { numChannels: buffer.numberOfChannels, initialRatio: pitchScale })
-        .then(({ node, ready }) => {
-          if (!audioSourcesRef.current.includes(entry)) {
-            try { node.disconnect(); } catch {}
-            return;
-          }
-          entry.workletNode = node;
-          try { source.disconnect(); } catch {}
-          source.connect(node);
-          try { gainNode.disconnect(); } catch {}
-          node.connect(gainNode);
-          gainNode.connect(ctx.destination);
-          // bpm may have changed during async init — re-apply tempoMultiplier and
-          // pitch_scale so the splice lines up with the current bpm state.
-          const nowTempoMult = bpmRef.current / originalBpm;
-          const nowPitch = 1 / nowTempoMult;
-          try { source.playbackRate.setValueAtTime(nowTempoMult, ctx.currentTime); } catch {}
-          setStretchTempo(node, nowPitch);
-          console.info(`[rubberband] spliced in for track=${track.id.slice(0,6)}, playbackRate=${nowTempoMult.toFixed(3)} pitch=${nowPitch.toFixed(3)}`);
-          ready
-            .then(({ startDelaySamples }) => {
-              console.info(`[rubberband] ready track=${track.id.slice(0,6)} startDelay=${startDelaySamples} samples`);
-            })
-            .catch((err) => console.warn('[rubberband] init failed:', err));
-        })
-        .catch((err) => {
-          console.warn('[rubberband] could not create worklet node, falling back to direct playback:', err);
-        });
-
-      // Loop + start offset are computed in file-time (original-bpm seconds) because the
-      // BufferSource always plays at rate 1; rubberband does the tempo math downstream.
-      const audioStartBeat = track.audioOffset || 0;
-      const beatOffset = fromBeat - audioStartBeat;
-      const timeOffsetInBuffer = beatToTime(Math.max(0, beatOffset), barSubs, originalBpm, denom);
-
-      if (loopRef.current) {
-        const lsBeats = loopStartRef.current - audioStartBeat;
-        const leBeats = loopEndRef.current - audioStartBeat;
-        const lsSec = beatToTime(Math.max(0, lsBeats), barSubs, originalBpm, denom);
-        const leSec = beatToTime(Math.max(0, leBeats), barSubs, originalBpm, denom);
-        const clampedEnd = Math.min(buffer.duration, leSec);
-        if (clampedEnd > lsSec + 1e-4) {
-          source.loop = true;
-          source.loopStart = lsSec;
-          source.loopEnd = clampedEnd;
-        }
+      let chain = audioSourcesRef.current.find(c => c.trackId === track.id);
+      if (!chain) {
+        const gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(track.muted ? 0 : track.volume, startTime);
+        gainNode.connect(ctx.destination);
+        chain = { trackId: track.id, gainNode, workletNode: null, sources: [] };
+        audioSourcesRef.current.push(chain);
+        const c = chain;
+        createStretchNode(ctx, { numChannels: buffer.numberOfChannels, initialRatio: originalBpm / liveBpm })
+          .then(({ node, ready }) => {
+            if (!audioSourcesRef.current.includes(c)) {
+              try { node.disconnect(); } catch {}
+              return;
+            }
+            c.workletNode = node;
+            // Splice the worklet between the live sources and the gain.
+            c.sources.forEach(src => { try { src.disconnect(); } catch {} src.connect(node); });
+            try { c.gainNode.disconnect(); } catch {}
+            node.connect(c.gainNode);
+            c.gainNode.connect(ctx.destination);
+            const nowMult = bpmRef.current / originalBpm;
+            setStretchTempo(node, 1 / nowMult);
+            c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(nowMult, ctx.currentTime); } catch {} });
+            ready.catch((err) => console.warn('[rubberband] init failed:', err));
+          })
+          .catch((err) => {
+            console.warn('[rubberband] could not create worklet node, falling back to direct playback:', err);
+          });
       }
 
-      if (beatOffset >= 0) {
-        if (timeOffsetInBuffer < buffer.duration) {
-          source.start(startTime, timeOffsetInBuffer);
-        }
-      } else {
-        // Negative offset = audio starts after playback begins. Wall-clock delay measured
-        // against live tempo (not original) since it's a timeline-position gap.
-        const delay = beatToTime(-beatOffset, barSubs, liveBpm, denom);
-        source.start(startTime + delay, 0);
-      }
+      getClips(track).forEach(clip => {
+        const clipEnd = clipEndBeat(clip, spb);
+        const a = Math.max(clip.start, fromBeat);
+        const b = Math.min(clipEnd, endBeat);
+        if (b - a <= 1e-6) return;
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = tempoMultiplier;
+        source.connect(chain.workletNode || chain.gainNode);
+        const sources = chain.sources;
+        source.onended = () => {
+          const i = sources.indexOf(source);
+          if (i >= 0) sources.splice(i, 1);
+        };
+        sources.push(source);
+        // offset/duration are in file time (independent of playbackRate)
+        source.start(startTime + (a - fromBeat) * liveSpb, clip.srcStart + (a - clip.start) * spb, (b - a) * spb);
+      });
     });
   }, []);
 
@@ -1506,7 +1566,7 @@ setPositionModeValue(null);
     const startTime = ctx.currentTime + 0.05;
 
     // Schedule audio file tracks
-    scheduleAudioTracks(playable, fromBeat, startTime, ctx, barSubs);
+    scheduleAudioPass(playable, fromBeat, startTime, ctx, regionEnd);
     const lookahead = 0.1;
     let nextBeatIndex = 0;
     let nextBeatTime = startTime;
@@ -1549,6 +1609,8 @@ setPositionModeValue(null);
         nextBeatIndex -= rDuration;
         prevRStart = loopStartRef.current;
         prevRDuration = loopEndRef.current - loopStartRef.current;
+        // Audio clips do not loop natively: queue the next pass at the boundary.
+        scheduleAudioPass(getPlayableTracks(tracksRef.current), loopStartRef.current, nextBeatTime, ctx, loopEndRef.current);
       }
 
       // Compute current column's duration for playhead interpolation
@@ -1607,7 +1669,7 @@ setPositionModeValue(null);
     };
 
     animFrameRef.current = requestAnimationFrame(animate);
-  }, [stopPlayback, scheduleAudioTracks]);
+  }, [stopPlayback, scheduleAudioPass]);
 
   // Loop button: the loop region only exists (and is only editable) while on.
   // Turning it on with no meaningful region starts from the bar at the playhead.
@@ -1782,6 +1844,7 @@ setPositionModeValue(null);
           audioFileName: file.name,
           audioDuration: buffer.duration,
           audioOffset: 0,
+          clips: [newClip(0, 0, buffer.duration)],
           originalBpm: bpmRef.current,
           notes: [],
           waveformPeaks: Array.from(peaks),
@@ -1802,6 +1865,7 @@ setPositionModeValue(null);
         audioFileName: null,
         audioDuration: 0,
         audioOffset: 0,
+        clips: [],
         waveformPeaks: null,
       } : t
     ));
@@ -2360,8 +2424,13 @@ setPositionModeValue(null);
           onAddMarker={handleAddMarker}
           onUpdateMarker={handleUpdateMarker}
           onDeleteMarker={handleDeleteMarker}
+          selectedClips={selectedClips}
+          setSelectedClips={setSelectedClips}
+          onUpdateClips={updateClips}
           audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
             trackId: t.id,
+            name: t.name,
+            clips: getClips(t),
             audioOffset: t.audioOffset || 0,
             audioDuration: t.audioDuration,
             originalBpm: t.originalBpm,
