@@ -60,7 +60,7 @@ export async function createStretchNode(ctx, { numChannels = 2, initialRatio = 1
     const onMsg = (e) => {
       if (e.data?.type === 'ready') {
         node.port.removeEventListener('message', onMsg);
-        resolve({ startDelaySamples: e.data.startDelaySamples });
+        resolve({ startDelaySamples: e.data.startDelaySamples, latencySamples: e.data.latencySamples || 0 });
       } else if (e.data?.type === 'error') {
         node.port.removeEventListener('message', onMsg);
         reject(new Error(e.data.message || 'rubberband worklet init failed'));

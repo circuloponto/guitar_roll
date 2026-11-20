@@ -10,7 +10,7 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
-  onLoadAudio, onRemoveAudio,
+  onLoadAudio, onRemoveAudio, onSetAudioOptions,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -217,6 +217,31 @@ export default function TrackStrip({
                         title="Remove audio"
                         style={{ color: 'var(--danger)', fontSize: 11 }}
                       >✕</button>
+                      {/* Pitch: lock keeps the original pitch when tempo changes; semitones transpose */}
+                      <button
+                        className={`track-btn-lg ${track.keepPitch === false ? '' : 'active-accent'}`}
+                        onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { keepPitch: track.keepPitch === false }); }}
+                        title={track.keepPitch === false
+                          ? 'Pitch follows tempo (like tape). Click to keep original pitch when tempo changes.'
+                          : 'Pitch is kept when tempo changes. Click to let pitch follow tempo (like tape).'}
+                        style={{ fontSize: 11 }}
+                      >{track.keepPitch === false ? 'Pitch: free' : 'Pitch: lock'}</button>
+                      <button
+                        className="track-btn-lg"
+                        onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { pitchSemitones: Math.max(-12, (track.pitchSemitones || 0) - 1) }); }}
+                        title="Transpose down one semitone"
+                      >−</button>
+                      <span
+                        className="track-slider-label"
+                        title="Transpose (semitones). Click to reset."
+                        style={{ cursor: 'pointer', minWidth: 34, textAlign: 'center' }}
+                        onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { pitchSemitones: 0 }); }}
+                      >{(track.pitchSemitones || 0) > 0 ? '+' : ''}{track.pitchSemitones || 0} st</span>
+                      <button
+                        className="track-btn-lg"
+                        onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { pitchSemitones: Math.min(12, (track.pitchSemitones || 0) + 1) }); }}
+                        title="Transpose up one semitone"
+                      >+</button>
                     </div>
                   ) : (
                     <button

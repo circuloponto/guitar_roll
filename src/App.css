@@ -3104,3 +3104,4 @@ button:disabled { cursor: not-allowed; }
 .audio-clip-handle.left { left: 0; }
 .audio-clip-handle.right { right: 0; }
 .audio-clip-handle:hover { background: color-mix(in srgb, var(--fg) 25%, transparent); }
+.track-btn-lg.active-accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-hi); border-color: var(--accent); }
