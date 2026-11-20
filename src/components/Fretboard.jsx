@@ -538,6 +538,19 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           borderBottom: 'none',
         }} />
 
+        {/* Position window highlight: frets [position, position+4] */}
+        <div style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: cellTopPx(position),
+          height: cellTopPx(Math.min(position + 5, NUM_FRETS + 1)) - cellTopPx(position),
+          background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
+          borderTop: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+          borderBottom: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+          pointerEvents: 'none',
+        }} />
+
         {/* Nut - horizontal line between fret 0 and fret 1 */}
         <div style={{
           position: 'absolute',

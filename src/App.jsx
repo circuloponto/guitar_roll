@@ -10,6 +10,7 @@ import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore'
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
+import { refingerNotes } from './utils/position';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -672,6 +673,15 @@ function App() {
     toastTimerRef.current = setTimeout(() => setToast(null), 1600);
   }, []);
 
+  // Choose a fretboard position; selected notes are re-fingered into the window
+  // [pos, pos+4] when their pitch can be played there (others keep their fingering).
+  const applyPosition = (pos) => {
+    setPosition(pos);
+    const sel = selectedNotesRef.current;
+    if (!sel.size) return;
+    setNotes(prev => refingerNotes(prev, sel, pos));
+  };
+
   const copySelectedNotes = useCallback(() => {
     // Selection first; with nothing selected, copy what the fretboard is showing
     // (the notes sounding at the cursor beat) so Ctrl+C is never a silent no-op.
@@ -1183,7 +1193,7 @@ setPositionModeValue(null);
               positionTimeoutRef.current = setTimeout(() => {
                 numberKeysDownRef.current.clear();
                 const pos = Math.min(NUM_FRETS, Math.max(0, parseInt(positionBufferRef.current.join(''), 10)));
-                setPosition(pos);
+                applyPosition(pos);
                 positionBufferRef.current = [];
                 setPositionModeValue(null);
                 setPositionMode(false);
@@ -1196,7 +1206,7 @@ setPositionModeValue(null);
           // Normal commit: all keys up and buffer has a complete number (or no timeout window applies)
           if (numberKeysDownRef.current.size === 0 && positionTimeoutRef.current === null && positionBufferRef.current.length > 0) {
             const pos = Math.min(NUM_FRETS, Math.max(0, parseInt(positionBufferRef.current.join(''), 10)));
-            setPosition(pos);
+            applyPosition(pos);
             positionBufferRef.current = [];
             setPositionModeValue(null);
             setPositionMode(false);
