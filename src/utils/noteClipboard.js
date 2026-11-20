@@ -6,10 +6,12 @@
 //   43_scales:   one cell = a 16th note        quarters = cells / 4
 //
 // Payload (JSON, text/plain):
-//   { format: 'tonomancy-notes', version: 1, source: 'guitar-roll',
+//   { format: 'tonomancy-notes', version: 1, source: 'guitar-roll', position?: 0-20,
 //     notes: [{ start, length, midi, velocity?, hint?: {s, f}, bend?, slideTo?, ghost? }] }
 //   start is relative to the earliest copied note. Receivers ignore keys they
 //   do not know; `hint` (string/fret) is only used if it still matches `midi`.
+//   `position` is the fretboard window (lower fret of the 5-fret span [p, p+4]),
+//   shared by both apps; the receiver adopts it so fingering lines up.
 import { NUM_STRINGS, NUM_FRETS } from './constants';
 import { getMidiNote, getComboForPosition } from './pitchMap';
 
@@ -19,7 +21,7 @@ export const CLIPBOARD_VERSION = 1;
 const round = (v) => Math.round(v * 1e6) / 1e6;
 const denOf = (timeSignature) => (timeSignature && timeSignature[1]) || 4;
 
-export function serializeNotes(notes, timeSignature = [4, 4]) {
+export function serializeNotes(notes, timeSignature = [4, 4], position) {
   if (!notes.length) return null;
   const q = 4 / denOf(timeSignature);
   const minBeat = Math.min(...notes.map(n => n.beat));
@@ -36,15 +38,18 @@ export function serializeNotes(notes, timeSignature = [4, 4]) {
     if (n.ghost) item.ghost = true;
     return item;
   });
-  return JSON.stringify({
+  const payload = {
     format: CLIPBOARD_FORMAT,
     version: CLIPBOARD_VERSION,
     source: 'guitar-roll',
-    notes: items,
-  });
+  };
+  if (Number.isInteger(position) && position >= 0) payload.position = position;
+  payload.notes = items;
+  return JSON.stringify(payload);
 }
 
-// Returns { notes, skipped } (notes have beat relative to 0), or null if `text`
+// Returns { notes, skipped, position } (notes have beat relative to 0; position is
+// the sender's fretboard window or undefined), or null if `text`
 // is not our format. `skipped` counts pitches the guitar cannot play.
 export function parseNotes(text, { timeSignature = [4, 4], position = 0, defaultVelocity = 0.8 } = {}) {
   if (typeof text !== 'string' || text.length === 0 || text[0] !== '{') return null;
@@ -55,7 +60,10 @@ export function parseNotes(text, { timeSignature = [4, 4], position = 0, default
   const perQuarter = denOf(timeSignature) / 4; // columns per quarter note
   const notes = [];
   let skipped = 0;
-  let pos = position;
+  const maxPos = Math.max(0, NUM_FRETS - 4);
+  const sentPosition = Number.isInteger(data.position) && data.position >= 0 && data.position <= maxPos
+    ? data.position : undefined;
+  let pos = sentPosition ?? position;
 
   for (const item of data.notes) {
     const start = Number(item?.start);
@@ -92,5 +100,5 @@ export function parseNotes(text, { timeSignature = [4, 4], position = 0, default
     if (item.ghost === true) note.ghost = true;
     notes.push(note);
   }
-  return { notes, skipped };
+  return { notes, skipped, position: sentPosition };
 }

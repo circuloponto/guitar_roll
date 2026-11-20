@@ -28,6 +28,7 @@ Time is in **quarter notes**, so it is independent of each app's grid:
   "format": "tonomancy-notes",
   "version": 1,
   "source": "guitar-roll",
+  "position": 0,
   "notes": [
     { "start": 0, "length": 1, "midi": 64, "velocity": 0.8, "hint": { "s": 5, "f": 0 } }
   ]
@@ -37,6 +38,9 @@ Time is in **quarter notes**, so it is independent of each app's grid:
 - `start` is relative to the earliest copied note; `length` is the note length.
 - `midi` is the pitch. `velocity` (0-1), `hint` (string 0-5 / fret) and `bend`/`slideTo`/`ghost` are optional;
   receivers ignore what they don't know. `hint` is only used if it still matches `midi`.
+- `position` (optional, 0-20) is the fretboard window: the lower fret of the 5-fret span `[position, position+4]`.
+  Both apps pick the lowest fret inside that window, so adopting the sender's `position` on paste makes the
+  fretboards show the same fingering.
 - guitar-roll: `quarters = columns * 4 / timeSignatureDenominator`.
 - 43_scales: one cell is a 16th note, so `quarters = cells / 4`.
 - Pitches the guitar cannot play (outside MIDI 40-88) are skipped on paste into guitar-roll.

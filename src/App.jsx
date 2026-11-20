@@ -669,7 +669,7 @@ function App() {
     const selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
     const minBeat = Math.min(...selected.map(n => n.beat));
     clipboardRef.current = selected.map(n => ({ ...n, beat: n.beat - minBeat }));
-    const text = serializeNotes(selected, timeSigRef.current);
+    const text = serializeNotes(selected, timeSigRef.current, positionRef.current);
     try { navigator.clipboard?.writeText(text)?.catch(() => {}); } catch { /* in-app copy still works */ }
   }, []);
 
@@ -682,6 +682,7 @@ function App() {
     });
     const source = parsed ? parsed.notes : clipboardRef.current;
     if (!source.length) return;
+    if (parsed?.position !== undefined) setPosition(parsed.position); // adopt the sender's fretboard window
     const pasteAt = selectedBeatRef.current;
     const newNotes = source.map(n => ({ ...n, beat: n.beat + pasteAt }));
     const baseIdx = notesRef.current.length;
