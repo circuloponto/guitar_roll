@@ -723,7 +723,10 @@ export default function Timeline({
         const midiTarget = pitchRowToMidi(pitchRow);
         const allCombos = pitchRowCombos(pitchRow);
         const occupied = new Set(
-          notes.filter(n => Math.abs(n.beat - finalBeatForCombo) < 0.001).map(n => n.stringIndex)
+          notes.filter((n, i) => Math.abs(n.beat - finalBeatForCombo) < 0.001
+            // a selected note sounding here also holds its string, so the new note goes elsewhere
+            || (selectedNotes.has(i) && n.beat < finalBeatForCombo && n.beat + (n.duration || 1) > finalBeatForCombo))
+            .map(n => n.stringIndex)
         );
 
         const posEnd = Math.min(position + 4, NUM_FRETS);
@@ -742,8 +745,9 @@ export default function Timeline({
             );
             if (exact >= 0) { toggled = true; return prev.filter((_, i) => i !== exact); }
             // Truncate any earlier note on the same string that would overlap the new note
-            const truncated = prev.map(n => {
-              if (n.stringIndex !== combo.stringIndex) return n;
+            // (selected notes are never trimmed by placing a new note)
+            const truncated = prev.map((n, i) => {
+              if (n.stringIndex !== combo.stringIndex || selectedNotes.has(i)) return n;
               const nEnd = n.beat + (n.duration || 1);
               if (n.beat < finalBeat && nEnd > finalBeat) {
                 return { ...n, duration: Math.max(0.01, finalBeat - n.beat) };
