@@ -11,6 +11,7 @@ import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
+import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
@@ -659,6 +660,58 @@ function App() {
     setRhythmLiveValue(null);
     setRhythmLiveKind(null);
   }, []);
+  // --- Copy / paste -------------------------------------------------------
+  // In-app clipboard (clipboardRef) keeps full note clones; the system clipboard
+  // additionally carries the interchange format from utils/noteClipboard.js so
+  // notes can travel to/from other apps (e.g. 43_scales).
+  const copySelectedNotes = useCallback(() => {
+    if (selectedNotesRef.current.size === 0) return;
+    const selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
+    const minBeat = Math.min(...selected.map(n => n.beat));
+    clipboardRef.current = selected.map(n => ({ ...n, beat: n.beat - minBeat }));
+    const text = serializeNotes(selected, timeSigRef.current);
+    try { navigator.clipboard?.writeText(text)?.catch(() => {}); } catch { /* in-app copy still works */ }
+  }, []);
+
+  // `text` is whatever is on the system clipboard (or null/'' to use the in-app one).
+  const pasteNotes = useCallback((text) => {
+    const parsed = parseNotes(text, {
+      timeSignature: timeSigRef.current,
+      position: positionRef.current,
+      defaultVelocity,
+    });
+    const source = parsed ? parsed.notes : clipboardRef.current;
+    if (!source.length) return;
+    const pasteAt = selectedBeatRef.current;
+    const newNotes = source.map(n => ({ ...n, beat: n.beat + pasteAt }));
+    const baseIdx = notesRef.current.length;
+    // Grow the timeline if the pasted notes run past the last bar
+    const endBeat = Math.max(...newNotes.map(n => n.beat + (n.duration || 1)));
+    setBarSubdivisions(prev => {
+      let next = prev;
+      while (totalColumns(next) < endBeat && next.length < 999) {
+        next = [...next, timeSigRef.current[0] || 4];
+      }
+      return next;
+    });
+    setNotes(prev => [...prev, ...newNotes]);
+    setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
+  }, [defaultVelocity]);
+  const pasteNotesRef = useRef(pasteNotes);
+  pasteNotesRef.current = pasteNotes;
+
+  // Native paste event: no permission prompt, works across tabs and origins.
+  useEffect(() => {
+    const onPaste = (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      pasteNotesRef.current(e.clipboardData?.getData('text/plain') || '');
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, []);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName === 'INPUT') return;
@@ -1085,22 +1138,9 @@ setPositionModeValue(null);
       }
       if (matchesHotkey(e, hk.copy)) {
         e.preventDefault();
-        if (selectedNotesRef.current.size > 0) {
-          const selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
-          const minBeat = Math.min(...selected.map(n => n.beat));
-          clipboardRef.current = selected.map(n => ({ ...n, beat: n.beat - minBeat }));
-        }
+        copySelectedNotes();
       }
-      if (matchesHotkey(e, hk.paste)) {
-        e.preventDefault();
-        if (clipboardRef.current.length > 0) {
-          const pasteAt = selectedBeatRef.current;
-          const newNotes = clipboardRef.current.map(n => ({ ...n, beat: n.beat + pasteAt }));
-          const baseIdx = notesRef.current.length;
-          setNotes(prev => [...prev, ...newNotes]);
-          setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
-        }
-      }
+      // Paste is handled by the native `paste` event listener above.
     };
     window.addEventListener('keydown', handleKeyDown);
     const handleKeyUp = (e) => {
@@ -2114,21 +2154,11 @@ setPositionModeValue(null);
         <button onClick={() => setSelectedBeat(b => Math.max(0, b - 1))} title="Prev beat">◀</button>
         <button onClick={() => setSelectedBeat(b => Math.min(totalBeats - 1, b + 1))} title="Next beat">▶</button>
         <span className="mobile-actions-sep" />
-        <button onClick={() => {
-          if (selectedNotes.size > 0) {
-            const sel = notes.filter((_, i) => selectedNotes.has(i));
-            const minBeat = Math.min(...sel.map(n => n.beat));
-            clipboardRef.current = sel.map(n => ({ ...n, beat: n.beat - minBeat }));
-          }
-        }} title="Copy">Copy</button>
-        <button onClick={() => {
-          if (clipboardRef.current.length > 0) {
-            const pasteAt = selectedBeat;
-            const newNotes = clipboardRef.current.map(n => ({ ...n, beat: n.beat + pasteAt }));
-            const baseIdx = notes.length;
-            setNotes(prev => [...prev, ...newNotes]);
-            setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
-          }
+        <button onClick={copySelectedNotes} title="Copy">Copy</button>
+        <button onClick={async () => {
+          let text = '';
+          try { text = (await navigator.clipboard?.readText()) || ''; } catch { /* fall back to in-app clipboard */ }
+          pasteNotes(text);
         }} title="Paste">Paste</button>
         <span className="mobile-actions-sep" />
         <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
