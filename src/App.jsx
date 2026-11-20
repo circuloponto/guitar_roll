@@ -2201,6 +2201,7 @@ setPositionModeValue(null);
       <div className="main-area">
         <Fretboard
           playing={playing}
+            positionMode={positionMode}
           onNoteClick={handleFretClick}
           onAdjacentClick={handleAdjacentClick}
           onMoveNote={handleMoveNote}

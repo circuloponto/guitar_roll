@@ -17,11 +17,18 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
   const cellCenterPx = (cell) => (cell + 0.5) * FRET_HEIGHT;
+  // Position zone is shown while choosing a position (P) and for 1s after.
+  const [zoneVisible, setZoneVisible] = useState(false);
+  useEffect(() => {
+    if (positionMode) { setZoneVisible(true); return; }
+    const t = setTimeout(() => setZoneVisible(false), 1000);
+    return () => clearTimeout(t);
+  }, [positionMode, position]);
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
   const [hover, setHover] = useState(null);
@@ -545,9 +552,11 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           right: 0,
           top: cellTopPx(position),
           height: cellTopPx(Math.min(position + 5, NUM_FRETS + 1)) - cellTopPx(position),
-          background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
-          borderTop: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
-          borderBottom: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+          border: '3px dashed var(--fg)',
+          borderRadius: 3,
+          boxSizing: 'border-box',
+          opacity: zoneVisible ? 1 : 0,
+          transition: 'opacity 250ms var(--ease)',
           pointerEvents: 'none',
         }} />
 
