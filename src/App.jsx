@@ -1813,6 +1813,16 @@ setPositionModeValue(null);
         ({ ...createDefaultTrack(mt.name), notes: mt.notes })
       );
 
+      // Grow the timeline so every imported note fits
+      const endBeat = Math.max(0, ...newTracks.flatMap(t => t.notes.map(n => n.beat + (n.duration || 1))));
+      setBarSubdivisions(prev => {
+        let next = prev;
+        while (totalColumns(next) < endBeat && next.length < 999) {
+          next = [...next, timeSignature[0] || 4];
+        }
+        return next;
+      });
+
       setTracksTracked(prev => [...prev, ...newTracks]);
       switchTrack(newTracks[0].id);
       setSelectedNotes(new Set());
