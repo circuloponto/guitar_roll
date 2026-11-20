@@ -664,14 +664,33 @@ function App() {
   // In-app clipboard (clipboardRef) keeps full note clones; the system clipboard
   // additionally carries the interchange format from utils/noteClipboard.js so
   // notes can travel to/from other apps (e.g. 43_scales).
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const showToast = useCallback((msg) => {
+    setToast(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 1600);
+  }, []);
+
   const copySelectedNotes = useCallback(() => {
-    if (selectedNotesRef.current.size === 0) return;
-    const selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
+    // Selection first; with nothing selected, copy what the fretboard is showing
+    // (the notes sounding at the cursor beat) so Ctrl+C is never a silent no-op.
+    let selected = notesRef.current.filter((_, i) => selectedNotesRef.current.has(i));
+    if (selected.length === 0) {
+      const b = selectedBeatRef.current;
+      selected = notesRef.current.filter(n => b >= n.beat && b < n.beat + (n.duration || 1));
+    }
+    if (selected.length === 0) { showToast('Nothing to copy — select notes first'); return; }
     const minBeat = Math.min(...selected.map(n => n.beat));
     clipboardRef.current = selected.map(n => ({ ...n, beat: n.beat - minBeat }));
     const text = serializeNotes(selected, timeSigRef.current, positionRef.current);
-    try { navigator.clipboard?.writeText(text)?.catch(() => {}); } catch { /* in-app copy still works */ }
-  }, []);
+    try {
+      const p = navigator.clipboard?.writeText(text);
+      if (p?.then) p.then(() => showToast(`Copied ${selected.length} note${selected.length === 1 ? '' : 's'}`))
+                    .catch(() => showToast('Copied in-app only (browser blocked the clipboard)'));
+      else showToast('Copied in-app only (clipboard unavailable)');
+    } catch { showToast('Copied in-app only (clipboard unavailable)'); }
+  }, [showToast]);
 
   // `text` is whatever is on the system clipboard (or null/'' to use the in-app one).
   const pasteNotes = useCallback((text) => {
@@ -681,7 +700,11 @@ function App() {
       defaultVelocity,
     });
     const source = parsed ? parsed.notes : clipboardRef.current;
-    if (!source.length) return;
+    if (!source.length) {
+      showToast(parsed && parsed.skipped ? `Nothing pasted — ${parsed.skipped} note${parsed.skipped === 1 ? '' : 's'} outside the guitar's range` : 'Nothing to paste');
+      return;
+    }
+    showToast(`Pasted ${source.length} note${source.length === 1 ? '' : 's'}${parsed?.skipped ? ` (${parsed.skipped} outside the guitar's range skipped)` : ''}`);
     if (parsed?.position !== undefined) setPosition(parsed.position); // adopt the sender's fretboard window
     const pasteAt = selectedBeatRef.current;
     const newNotes = source.map(n => ({ ...n, beat: n.beat + pasteAt }));
@@ -697,7 +720,7 @@ function App() {
     });
     setNotes(prev => [...prev, ...newNotes]);
     setSelectedNotes(new Set(newNotes.map((_, i) => baseIdx + i)));
-  }, [defaultVelocity]);
+  }, [defaultVelocity, showToast]);
   const pasteNotesRef = useRef(pasteNotes);
   pasteNotesRef.current = pasteNotes;
 
@@ -2167,6 +2190,7 @@ setPositionModeValue(null);
       </div>
       <div className="main-area">
         <Fretboard
+          playing={playing}
           onNoteClick={handleFretClick}
           onAdjacentClick={handleAdjacentClick}
           onMoveNote={handleMoveNote}
@@ -2372,6 +2396,8 @@ setPositionModeValue(null);
           </div>
         </div>
       )}
+
+      {toast && <div className="toast" role="status">{toast}</div>}
 
       {/* Settings Modal */}
       {confirmClear && (

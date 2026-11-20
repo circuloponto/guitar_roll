@@ -3037,3 +3037,21 @@ button:disabled { cursor: not-allowed; }
 .play-btn { padding: 0 16px; }
 .toolbar-separator { margin: 0 2px; }
 .track-tabs-row { padding: 0; }
+
+/* Brief feedback (copy / paste) */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  background: var(--raise);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  box-shadow: var(--shadow-pop);
+  z-index: 200;
+  pointer-events: none;
+}
