@@ -1823,8 +1823,13 @@ setPositionModeValue(null);
     ));
   }, [setTracksTracked]);
 
-  const handleLoadAudio = useCallback(async (trackId, file) => {
+  // Audio always gets its own dedicated track: loading onto a notes track must never
+  // turn that track into audio (which would hide its notes).
+  const handleLoadAudio = useCallback(async (sourceTrackId, file) => {
     try {
+      const src = tracksRef.current.find(t => t.id === sourceTrackId);
+      const reuse = src && src.type === 'audio' && !src.audioFileName;
+      const trackId = reuse ? sourceTrackId : crypto.randomUUID();
       const arrayBuffer = await file.arrayBuffer();
       // Persist raw bytes so audio survives reload
       try {
@@ -1837,23 +1842,33 @@ setPositionModeValue(null);
       const buffer = await ctx.decodeAudioData(arrayBuffer);
       const peaks = computeWaveformPeaks(buffer, 2000);
       audioBuffersRef.current[trackId] = buffer;
-      setTracksTracked(prev => prev.map(t =>
-        t.id === trackId ? {
-          ...t,
-          type: 'audio',
-          audioFileName: file.name,
-          audioDuration: buffer.duration,
-          audioOffset: 0,
-          clips: [newClip(0, 0, buffer.duration)],
-          originalBpm: bpmRef.current,
-          notes: [],
-          waveformPeaks: Array.from(peaks),
-        } : t
-      ));
+      const audioProps = {
+        type: 'audio',
+        audioFileName: file.name,
+        audioDuration: buffer.duration,
+        audioOffset: 0,
+        clips: [newClip(0, 0, buffer.duration)],
+        originalBpm: bpmRef.current,
+        notes: [],
+        waveformPeaks: Array.from(peaks),
+      };
+      if (reuse) {
+        setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...audioProps } : t));
+      } else {
+        const name = file.name.replace(/\.[^.]+$/, '') || 'Audio';
+        const newTrack = { ...createDefaultTrack(name), id: trackId, ...audioProps };
+        setTracksTracked(prev => {
+          const i = prev.findIndex(t => t.id === sourceTrackId);
+          const next = prev.slice();
+          next.splice(i >= 0 ? i + 1 : next.length, 0, newTrack);
+          return next;
+        });
+        switchTrack(trackId);
+      }
     } catch (err) {
       alert('Failed to load audio file: ' + err.message);
     }
-  }, [setTracksTracked]);
+  }, [setTracksTracked, switchTrack]);
 
   const handleRemoveAudio = useCallback((trackId) => {
     delete audioBuffersRef.current[trackId];
