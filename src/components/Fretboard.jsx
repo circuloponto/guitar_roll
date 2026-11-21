@@ -30,6 +30,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     return () => clearTimeout(t);
   }, [positionMode, position]);
   // Shift = selecting: hide the hover ghost note while it is held.
+  const marqueeGestureRef = useRef(false);
   const [shiftHeld, setShiftHeld] = useState(false);
   useEffect(() => {
     const sync = (e) => setShiftHeld(e.shiftKey);
@@ -167,6 +168,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       // containerRef is the scrolled element itself, so its rect already includes the scroll offset
       const startY = e.clientY - rect.top;
       fretMarqueeRef.current = { startX, startY, didMove: false };
+      marqueeGestureRef.current = true; // swallow this gesture's mouseup even if Shift is released first
       
       // Capture current selection so shift-drag accumulates instead of replacing
       const initialSelection = selectedNotes.size > 0 ? new Set(selectedNotes) : new Set();
@@ -211,6 +213,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
 
       const handleMarqueeUp = () => {
         fretMarqueeRef.current = null;
+        setTimeout(() => { marqueeGestureRef.current = false; }, 0);
         setFretMarquee(null);
         window.removeEventListener('mousemove', handleMarqueeMove);
         window.removeEventListener('mouseup', handleMarqueeUp);
@@ -380,6 +383,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes]);
 
   const handleMouseUp = useCallback((e) => {
+    if (marqueeGestureRef.current) { marqueeGestureRef.current = false; return; }
     // Block all other interactions in modifier modes (except adjacent)
     if (durationMode || moveMode) return;
 
