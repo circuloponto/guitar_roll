@@ -1,3 +1,4 @@
+import { DEFAULT_ACCENT } from '../utils/accent';
 import { useState, useEffect } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 import {
@@ -104,7 +105,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [editingScheme, setEditingScheme] = useState(null); // { name, originalName, colors }
   const [sessions, setSessions] = useState(listSessions);
@@ -326,6 +327,22 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           </div>
 
           <div className="settings-group">Display</div>
+
+          <div className="settings-section">
+            <h3>Accent Color</h3>
+            <p className="settings-desc">Highlight color used for the play button, active tabs, selections and the loop region.</p>
+            <div className="settings-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="color"
+                value={accent || DEFAULT_ACCENT}
+                onChange={(e) => onAccentChange(e.target.value)}
+                style={{ width: 44, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 4, background: 'transparent', cursor: 'pointer' }}
+                aria-label="Accent color"
+              />
+              <span style={{ fontSize: 12, color: 'var(--mute)', fontFamily: 'var(--mono)' }}>{(accent || DEFAULT_ACCENT).toUpperCase()}</span>
+              <button className="tool-btn" onClick={() => onAccentChange(DEFAULT_ACCENT)} disabled={(accent || DEFAULT_ACCENT).toLowerCase() === DEFAULT_ACCENT}>Reset</button>
+            </div>
+          </div>
 
           <div className="settings-section">
             <h3>Tuplet Grid Lines</h3>

@@ -23,6 +23,7 @@ import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import Dock from './components/Dock';
 import SongTabs from './components/SongTabs';
+import { loadAccent, applyAccent, saveAccent } from './utils/accent';
 import { makeSongId, makeGroupId, nextTabName, GROUP_COLOURS, moveSong as moveSongList, moveGroup as moveGroupList, assignSongToGroup as assignSongList } from './utils/songs';
 import VoiceLeadingModal from './components/VoiceLeadingModal';
 import ConfirmDialog from './components/ConfirmDialog';
@@ -509,6 +510,9 @@ function App() {
     if (synesthesiaMap[letter]) return synesthesiaMap[letter];
     return stringColors[stringIndex];
   }, [stringColors, synesthesia, activeTrackScheme, sessionSchemes, sessionScheme]);
+
+  const [accent, setAccent] = useState(loadAccent);
+  const handleAccentChange = useCallback((hex) => { setAccent(hex); applyAccent(hex); saveAccent(hex); }, []);
 
   // === Song tabs: each song is a whole workspace. Live state below is the active song's;
   // other songs keep a snapshot in `songs`. ===
@@ -3088,6 +3092,8 @@ setPositionModeValue(null);
             songs: songsWithLive(), songGroups, activeSongId,
           }}
           onApplyState={applyState}
+          accent={accent}
+          onAccentChange={handleAccentChange}
           onClose={() => setShowSettings(false)}
           hoverPreview={hoverPreview}
           onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
