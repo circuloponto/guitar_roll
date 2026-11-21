@@ -1644,6 +1644,12 @@ setPositionModeValue(null);
     setSelectedBeat(toBeat);
   }, []);
 
+  const handleDeleteNotes = useCallback((indices) => {
+    const drop = new Set(indices);
+    setNotes(prev => prev.filter((_, i) => !drop.has(i)));
+    setSelectedNotes(new Set());
+  }, []);
+
   const handleDeleteNote = useCallback((noteIndex) => {
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
     setSelectedNotes(new Set());
@@ -2844,6 +2850,7 @@ setPositionModeValue(null);
           fingeringMode={fingeringMode}
           onExitFingeringMode={() => { fingeringModeRef.current = false; setFingeringMode(false); }}
           onDeleteNote={handleDeleteNote}
+          onDeleteNotes={handleDeleteNotes}
           notes={notes}
           selectedBeat={selectedBeat}
           selectedNotes={selectedNotes}

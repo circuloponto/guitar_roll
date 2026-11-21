@@ -17,7 +17,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -151,6 +151,16 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
   }, [getStringAndFret, durationMode, moveMode]);
 
+  // Indices of the notes sounding at the playhead on a given string/fret.
+  const notesAtCell = useCallback((stringIndex, fret) => {
+    const out = [];
+    notes.forEach((n, i) => {
+      if (n.stringIndex === stringIndex && n.fret === fret &&
+          selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)) out.push(i);
+    });
+    return out;
+  }, [notes, selectedBeat]);
+
   const handleMouseDown = useCallback((e) => {
     const result = getStringAndFret(e);
     if (!result) return;
@@ -212,7 +222,20 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       };
 
       const handleMarqueeUp = () => {
+        const moved = fretMarqueeRef.current?.didMove;
         fretMarqueeRef.current = null;
+        if (!moved) {
+          // Shift+click without dragging: toggle the note under the cursor.
+          const hit = notesAtCell(result.stringIndex, result.fret);
+          if (hit.length) {
+            setSelectedNotes(prev => {
+              const next = new Set(prev);
+              const allIn = hit.every(i => next.has(i));
+              hit.forEach(i => (allIn ? next.delete(i) : next.add(i)));
+              return next;
+            });
+          }
+        }
         setTimeout(() => { marqueeGestureRef.current = false; }, 0);
         setFretMarquee(null);
         window.removeEventListener('mousemove', handleMarqueeMove);
@@ -380,7 +403,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes, notesAtCell]);
 
   const handleMouseUp = useCallback((e) => {
     if (marqueeGestureRef.current) { marqueeGestureRef.current = false; return; }
@@ -430,6 +453,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       if (adjacentMode) {
         onAdjacentClick(result.stringIndex, result.fret, e.ctrlKey || e.metaKey);
       } else {
+        // Like the timeline: clicking an existing note selects it (replacing any previous
+        // selection); clicking an empty spot inputs a note, which clears the selection.
+        const hit = notesAtCell(result.stringIndex, result.fret);
+        if (hit.length) {
+          setSelectedNotes(new Set(hit));
+          return;
+        }
         onNoteClick(result.stringIndex, result.fret, e.ctrlKey || e.metaKey);
       }
       const fret = result.fret;
@@ -444,7 +474,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         setPosition(newPos);
       }
     }
-  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode, fingeringMode, notes, selectedBeat, setSelectedNotes, position, setPosition, fretboardAutoForward]);
+  }, [getStringAndFret, onNoteClick, onAdjacentClick, onMoveNote, durationMode, adjacentMode, moveMode, fingeringMode, notes, selectedBeat, setSelectedNotes, position, setPosition, fretboardAutoForward, notesAtCell]);
 
 
   // Auto-scroll fretboard to show hovered note (from piano roll — only when local hover is null)
@@ -552,7 +582,13 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             n.stringIndex === pos.stringIndex && n.fret === pos.fret &&
             selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)
           );
-          if (idx >= 0) onDeleteNote(idx);
+          if (idx < 0) return;
+          // Right-clicking a selected note erases the whole selection; otherwise just this note.
+          if (selectedNotes && selectedNotes.has(idx) && selectedNotes.size > 1 && onDeleteNotes) {
+            onDeleteNotes([...selectedNotes]);
+          } else {
+            onDeleteNote(idx);
+          }
         }}
         onMouseLeave={() => { setHover(null); setHoveredNote(null); if (!durationDragRef.current && !moveDragRef.current) { dragStartRef.current = null; didDragRef.current = false; setDragNote(null); } }}
       >
