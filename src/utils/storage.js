@@ -185,14 +185,22 @@ export async function exportToFile(state, suggestedFilename = 'guitar-roll-sessi
     }
   }
   
-  // Fallback to traditional download for browsers without File System Access API
+  // Safari/Firefox (incl. all macOS/iOS browsers except Chromium) have no save dialog API:
+  // ask for the file name ourselves so the user still gets a "save as" step.
+  const entered = window.prompt('Save as (file name):', suggestedFilename);
+  if (entered === null) return; // cancelled
+  let name = entered.trim() || suggestedFilename;
+  if (!/\.json$/i.test(name)) name += '.json';
+  suggestedFilename = name;
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = suggestedFilename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000); // Safari needs the URL to outlive the click
 }
 // Note: This function becomes async, so also needs the call in SettingsModal.jsx to be async
 
