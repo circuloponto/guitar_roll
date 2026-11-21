@@ -683,6 +683,7 @@ function App() {
   const handleSetSubdivisionsRef = useRef(null);
   const handleSetRhythmMultRef = useRef(null);
   const handleToggleSoloRef = useRef(null);
+  const handleToggleMuteRef = useRef(null);
   // Commit the rhythm entry buffer to the appropriate state value.
   const commitRhythmEntry = useCallback(() => {
     const buf = rhythmBufRef.current;
@@ -1345,6 +1346,10 @@ setPositionModeValue(null);
       if (matchesHotkey(e, hk.soloTrack)) {
         e.preventDefault();
         if (handleToggleSoloRef.current) handleToggleSoloRef.current();
+      }
+      if (matchesHotkey(e, hk.muteTrack)) {
+        e.preventDefault();
+        if (handleToggleMuteRef.current) handleToggleMuteRef.current(activeTrackIdRef.current);
       }
       if (matchesHotkey(e, hk.toggleSlide)) {
         if (selectedNotesRef.current.size > 0) {
@@ -2060,6 +2065,7 @@ setPositionModeValue(null);
   }, [setTracksTracked]);
 
   handleToggleSoloRef.current = handleToggleSoloActiveTrack;
+  handleToggleMuteRef.current = handleToggleMute;
 
   const handleSetTrackVolume = useCallback((trackId, volume) => {
     setTracksTracked(prev => prev.map(t =>

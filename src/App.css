@@ -2779,8 +2779,8 @@ input[type="number"] {
 .project-name {
   font-size: 12px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.3em;
+  text-transform: none;
+  letter-spacing: 0.04em;
   border: 1px solid transparent;
   color: var(--fg);
   transition: border-color 0.15s var(--ease), color 0.15s var(--ease);
@@ -2871,8 +2871,8 @@ select option { background: var(--frame); color: var(--fg); }
   padding: 4px 12px;
   font-size: 10px;
   font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-transform: none;
   background: transparent;
   color: var(--mute);
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease), background 0.15s var(--ease);
@@ -3032,7 +3032,7 @@ button:disabled { cursor: not-allowed; }
 
 /* tighten so the toolbar stays on one row at ~1500px+ */
 .toolbar { gap: 8px; padding: 12px 20px; min-height: 56px; }
-.project-name { width: 150px; letter-spacing: 0.24em; }
+.project-name { width: 150px; letter-spacing: 0.04em; }
 .tool-btn { padding: 0 12px; }
 .play-btn { padding: 0 16px; }
 .toolbar-separator { margin: 0 2px; }
@@ -3087,7 +3087,7 @@ button:disabled { cursor: not-allowed; }
   padding: 2px 8px;
   font: 500 10px/1.4 var(--mono);
   letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
   color: var(--fg);
   background: color-mix(in srgb, var(--ink) 70%, transparent);
   border-bottom-right-radius: 4px;
