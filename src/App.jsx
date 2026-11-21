@@ -2606,24 +2606,6 @@ setPositionModeValue(null);
           <option value="9/8">9/8</option>
           <option value="12/8">12/8</option>
         </select>
-        <span className="toolbar-label">Bars:</span>
-        <NumberInput
-          className="bpm-input"
-          value={barSubdivisions.length}
-          min={1}
-          onChange={(newCount) => {
-            setBarSubdivisions(prev => {
-              if (newCount > prev.length) {
-                return [...prev, ...Array(newCount - prev.length).fill(timeSignature[0])];
-              } else if (newCount < prev.length) {
-                const tc = totalColumns(prev.slice(0, newCount));
-                setActiveNotes(notesRef.current.filter(n => n.beat < tc));
-                return prev.slice(0, newCount);
-              }
-              return prev;
-            });
-          }}
-        />
         <span className="toolbar-label">BPM:</span>
         <NumberInput
           className="bpm-input"
