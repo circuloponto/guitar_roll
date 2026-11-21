@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
-import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
+import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
@@ -298,6 +298,25 @@ function App() {
       return next;
     });
   }, [tracks, tempoMap, timeSignature]);
+  // After an audio import, zoom the timeline out so the whole song is visible.
+  const fitZoomPendingRef = useRef(false);
+  useEffect(() => {
+    if (!fitZoomPendingRef.current) return;
+    let end = 0;
+    tracks.forEach(t => {
+      if (t.type !== 'audio') return;
+      const m = tempoMap.forTrack(t);
+      getClips(t).forEach(c => { end = Math.max(end, clipEndBeat(c, m)); });
+    });
+    if (!(end > 0)) return;
+    fitZoomPendingRef.current = false;
+    const body = timelineBodyRef.current;
+    if (!body || !body.clientWidth) return;
+    const fit = (body.clientWidth * 0.98) / (end * CELL_WIDTH);
+    // Only ever zoom out; a short clip keeps the current zoom.
+    setTimelineZoom(z => Math.max(0.02, Math.min(z, fit)));
+    requestAnimationFrame(() => { if (timelineBodyRef.current) timelineBodyRef.current.scrollLeft = 0; });
+  }, [tracks, tempoMap]);
   const applyChainParamsRef = useRef(() => {});
   useEffect(() => { applyChainParamsRef.current(); }, [bpm, tracks]);
 
@@ -2324,6 +2343,7 @@ setPositionModeValue(null);
         notes: [],
         waveformPeaks: Array.from(peaks),
       };
+      fitZoomPendingRef.current = true;
       if (reuse) {
         setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...audioProps } : t));
       } else {

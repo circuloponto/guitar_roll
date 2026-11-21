@@ -1106,7 +1106,7 @@ export default function Timeline({
       pendingZoomAnchorRef.current = { beat: anchorBeat, mouseX: viewportWidth / 2 };
       setTimelineZoom(z => {
         const factor = dir > 0 ? 1.25 : 1 / 1.25;
-        return Math.max(0.2, Math.min(40, z * factor));
+        return Math.max(0.02, Math.min(40, z * factor));
       });
     };
     window.addEventListener('timeline-zoom', onZoomEvent);
@@ -1151,7 +1151,7 @@ export default function Timeline({
       // Anchor wheel/trackpad zoom at the playhead centered in the viewport (Ableton-style).
       const anchorBeat = (playing && currentBeat != null) ? currentBeat : (selectedBeat ?? 0);
       pendingZoomAnchorRef.current = { beat: anchorBeat, mouseX: bodyRef.current.clientWidth / 2 };
-      setTimelineZoom(z => Math.max(0.2, Math.min(40, z * (1 - e.deltaY * 0.005))));
+      setTimelineZoom(z => Math.max(0.02, Math.min(40, z * (1 - e.deltaY * 0.005))));
     };
     document.addEventListener('wheel', handleWheel, { passive: false });
     return () => document.removeEventListener('wheel', handleWheel);
