@@ -1553,7 +1553,7 @@ setPositionModeValue(null);
       try { c.gainNode.gain.setTargetAtTime(track.muted ? 0 : (track.volume ?? 1), now, 0.01); } catch {}
       c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(mult * (src._k || 1), now); } catch {} });
       // warped tracks get their per-segment pitch from the scheduled pass (re-queued on edits)
-      if (c.workletNode && !c.hasWarp) setStretchTempo(c.workletNode, audioPitchScale(track, bpm));
+      if (c.workletNode && !getSyncPoints(track).length) setStretchTempo(c.workletNode, audioPitchScale(track, bpm));
     });
   };
 
@@ -1636,11 +1636,15 @@ setPositionModeValue(null);
           timedPitch.push({ time: when, ratio: semis * (keepPitch ? 1 / rate : 1) });
         });
       });
-      if (chain.workletNode && timedPitch.length) {
-        timedPitch.sort((x, y) => x.time - y.time);
-        scheduleStretchTempo(chain.workletNode, timedPitch);
+      if (chain.workletNode) {
+        if (warp.pts.length && timedPitch.length) {
+          timedPitch.sort((x, y) => x.time - y.time);
+          scheduleStretchTempo(chain.workletNode, timedPitch);
+        } else {
+          // no sync points: one pitch correction for the whole track
+          setStretchTempo(chain.workletNode, audioPitchScale(track, liveBpm));
+        }
       }
-      chain.hasWarp = warp.pts.length > 0;
     });
   }, [ensureAudioChain]);
 
