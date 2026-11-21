@@ -11,6 +11,7 @@ import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { refingerNotes } from './utils/position';
+import { detectBeats, fitTempo } from './utils/beatDetect';
 import { getClips, getSyncPoints, makeWarp, clipSpans, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
@@ -711,6 +712,46 @@ function App() {
     const time = clipBeatToTime(clip, beat, warp);
     updateSyncPoints(trackId, pts => [...pts, { id: crypto.randomUUID(), time, beat: warp.toBeat(time) }]);
   }, [showToast, updateSyncPoints]);
+  // Auto sync: detect the beats of the recording and pin them to the grid (bar starts), so the
+  // audio follows the grid even when the performance drifts. Replaces existing pins (undoable).
+  const autoSyncPoints = useCallback((trackId) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    const buffer = audioBuffersRef.current[trackId];
+    if (!t || !buffer) return;
+    showToast('Detecting beats…');
+    setTimeout(() => {
+      const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+      let beats = [];
+      try { beats = detectBeats(buffer, spb); } catch (err) { console.warn('beat detection failed', err); }
+      if (beats.length < 4) { showToast('Could not find a steady beat in this audio'); return; }
+      // 1) steady tempo of the recording, 2) leftover drift as sync points
+      const fit = fitTempo(beats);
+      if (!fit) { showToast('Could not find a steady beat in this audio'); return; }
+      const curSpb = spb;
+      const newOriginalBpm = (t.originalBpm || bpmRef.current) * curSpb / fit.period; // audio's own tempo
+      const detectedBpm = 60 / fit.period * (4 / timeSigRef.current[1]) ;
+      // label the first beat with the grid beat it already sits closest to
+      const b0 = Math.max(1, Math.round(fit.t0 / fit.period));
+      const bars = new Set(barStartBeats(barSubsRef.current));
+      const step = timeSigRef.current[0] || 4;
+      const maxDrift = Math.max(...fit.residual.map(Math.abs));
+      const pins = [];
+      const offset = b0 * fit.period - fit.t0; // where the first beat sits vs. the grid beat it was given
+      if (maxDrift > 0.025 || Math.abs(offset) > 0.025) { // otherwise the steady tempo is already tight enough
+        beats.forEach((_, k) => {
+          const beat = b0 + k;
+          if (bars.has(beat) || (bars.size < 2 && beat % step === 0)) {
+            pins.push({ id: crypto.randomUUID(), time: fit.t0 + fit.period * k + fit.residual[k], beat });
+          }
+        });
+        // tempo is steady: one pin is enough to put the beat on the grid (the rest plays 1:1)
+        if (maxDrift <= 0.025) pins.splice(1);
+      }
+      saveSnapshot();
+      setTracksTracked(prev => prev.map(x => x.id === trackId ? { ...x, originalBpm: newOriginalBpm, syncPoints: pins } : x));
+      showToast(`Detected ${detectedBpm.toFixed(1)} BPM · ${maxDrift > 0.025 ? `${pins.length} sync points correct the tempo drift` : 'steady tempo, no drift to correct'}`);
+    }, 30);
+  }, [showToast, saveSnapshot, setTracksTracked]);
   const clearSyncPoints = useCallback((trackId) => updateSyncPoints(trackId, () => []), [updateSyncPoints]);
 
   // Ctrl+E: split selected clips (or whatever is under the playhead) at the playhead.
@@ -2395,6 +2436,7 @@ setPositionModeValue(null);
         onLoadAudio={handleLoadAudio}
         onRemoveAudio={handleRemoveAudio}
         onAddSyncPoint={addSyncPointAtPlayhead}
+        onAutoSync={autoSyncPoints}
         onClearSyncPoints={clearSyncPoints}
         onSetAudioOptions={(trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t))}
         onToggleVisible={handleToggleVisible}

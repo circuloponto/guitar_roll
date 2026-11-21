@@ -10,7 +10,7 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
-  onLoadAudio, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onClearSyncPoints,
+  onLoadAudio, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -249,6 +249,12 @@ export default function TrackStrip({
                         title="Add a sync point at the playhead (or double-click the waveform). Drag the pin to line that sound up with the grid."
                         style={{ fontSize: 11 }}
                       >+ Sync</button>
+                      <button
+                        className="track-btn-lg"
+                        onClick={(e) => { e.stopPropagation(); onAutoSync(track.id); }}
+                        title="Detect the beats in this audio and place sync points on the bar lines (replaces existing ones; undo with Ctrl+Z)"
+                        style={{ fontSize: 11 }}
+                      >Auto sync</button>
                       {(track.syncPoints?.length || 0) > 0 && (
                         <button
                           className="track-btn-lg"
