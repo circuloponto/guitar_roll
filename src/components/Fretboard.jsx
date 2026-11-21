@@ -1050,7 +1050,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* External hover highlight (from piano roll) */}
-        {(hoverPill?.pianoRoll ?? true) && !hover && hoveredNote && hoveredNote.fret >= 0 && hoveredNote.fret < TOTAL_CELLS && (
+        {(hoverPill?.pianoRoll ?? true) && !hover && !durationMode && !moveMode && hoveredNote && hoveredNote.fret >= 0 && hoveredNote.fret < TOTAL_CELLS && (
           <div style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (hoveredNote.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
