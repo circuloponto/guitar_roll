@@ -148,6 +148,8 @@ export function formatHotkey(hotkey) {
   if (keyName === ' ') keyName = 'Space';
   else if (keyName === 'ArrowLeft') keyName = 'Left';
   else if (keyName === 'ArrowRight') keyName = 'Right';
+  else if (keyName === 'ArrowUp') keyName = 'Up';
+  else if (keyName === 'ArrowDown') keyName = 'Down';
   else if (keyName === 'Escape') keyName = 'Esc';
   else if (keyName.length === 1) keyName = keyName.toUpperCase();
 
