@@ -282,7 +282,12 @@ class RubberBandProcessor extends AudioWorkletProcessor {
       this.pendingRatio = msg.ratio;
       return;
     }
+    if (msg.type === 'tempoAt') {
+      this.timedRatios = (this.timedRatios || []).concat(msg.changes).sort((a, b) => a.time - b.time);
+      return;
+    }
     if (msg.type === 'reset' && this.ready) {
+      this.timedRatios = [];
       try { this._clear(); this.idle = true; } catch {}
     }
   }
@@ -345,6 +350,13 @@ class RubberBandProcessor extends AudioWorkletProcessor {
       }
     }
 
+    // Scheduled pitch changes (sync-point segments): apply every one whose time has come.
+    if (this.timedRatios && this.timedRatios.length) {
+      const horizon = currentTime + frames / sampleRate * 0.5;
+      while (this.timedRatios.length && this.timedRatios[0].time <= horizon) {
+        this.pendingRatio = this.timedRatios.shift().ratio;
+      }
+    }
     if (this.pendingRatio !== null) {
       try { this.rb.rubberband_set_pitch_scale(this.state, this.pendingRatio); } catch {}
       this.pendingRatio = null;

@@ -3105,3 +3105,35 @@ button:disabled { cursor: not-allowed; }
 .audio-clip-handle.right { right: 0; }
 .audio-clip-handle:hover { background: color-mix(in srgb, var(--fg) 25%, transparent); }
 .track-btn-lg.active-accent { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-hi); border-color: var(--accent); }
+
+/* Sync points on audio clips */
+.sync-pin {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid #ffd54a;
+  z-index: 6;
+  cursor: ew-resize;
+}
+.sync-pin::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  background: #ffd54a;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.sync-pin::after { /* wider invisible hit area */
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+}
+/* pins of an audio track seen from another track: markers only, never intercept the mouse */
+.sync-pin.passive { pointer-events: none; opacity: 0.7; border-left-width: 1px; border-left-style: dashed; }
+.sync-pin.passive::after { display: none; }

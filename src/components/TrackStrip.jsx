@@ -10,7 +10,7 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
-  onLoadAudio, onRemoveAudio, onSetAudioOptions,
+  onLoadAudio, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onClearSyncPoints,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -242,6 +242,21 @@ export default function TrackStrip({
                         onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { pitchSemitones: Math.min(12, (track.pitchSemitones || 0) + 1) }); }}
                         title="Transpose up one semitone"
                       >+</button>
+                      {/* Sync points: pin the sound at the playhead to the grid, then drag the pin in the timeline */}
+                      <button
+                        className="track-btn-lg"
+                        onClick={(e) => { e.stopPropagation(); onAddSyncPoint(track.id); }}
+                        title="Add a sync point at the playhead (or double-click the waveform). Drag the pin to line that sound up with the grid."
+                        style={{ fontSize: 11 }}
+                      >+ Sync</button>
+                      {(track.syncPoints?.length || 0) > 0 && (
+                        <button
+                          className="track-btn-lg"
+                          onClick={(e) => { e.stopPropagation(); onClearSyncPoints(track.id); }}
+                          title="Remove all sync points from this audio"
+                          style={{ fontSize: 11 }}
+                        >Clear sync ({track.syncPoints.length})</button>
+                      )}
                     </div>
                   ) : (
                     <button

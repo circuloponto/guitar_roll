@@ -84,6 +84,12 @@ export function setStretchTempo(node, ratio) {
   node.port.postMessage({ type: 'tempo', ratio });
 }
 
+// Queue pitch-scale changes at AudioContext times: [{ time, ratio }] sorted by time.
+export function scheduleStretchTempo(node, changes) {
+  if (!node || !changes || !changes.length) return;
+  node.port.postMessage({ type: 'tempoAt', changes });
+}
+
 export function resetStretch(node) {
   if (!node) return;
   node.port.postMessage({ type: 'reset' });

@@ -5,13 +5,13 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOu
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
-import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, resetStretch } from './utils/rubberbandStretch';
+import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { refingerNotes } from './utils/position';
-import { getClips, clipEndBeat, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
+import { getClips, getSyncPoints, makeWarp, clipSpans, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -695,12 +695,30 @@ function App() {
     setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, clips: fn(getClips(t), t) } : t));
   }, [saveSnapshot, setTracksTracked]);
 
+  // fn(points, track) -> points. Sync points warp the file's time so it lines up with the grid.
+  const updateSyncPoints = useCallback((trackId, fn, undo = true) => {
+    if (undo) saveSnapshot();
+    setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, syncPoints: fn(getSyncPoints(t), t) } : t));
+  }, [saveSnapshot, setTracksTracked]);
+
+  const addSyncPointAtPlayhead = useCallback((trackId) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    if (!t) return;
+    const beat = playingRef.current && playheadBeatRef.current != null ? playheadBeatRef.current : selectedBeatRef.current;
+    const warp = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
+    const clip = getClips(t).find(c => beat >= c.start && beat <= clipEndBeat(c, warp));
+    if (!clip) { showToast('Put the playhead over the audio clip first'); return; }
+    const time = clipBeatToTime(clip, beat, warp);
+    updateSyncPoints(trackId, pts => [...pts, { id: crypto.randomUUID(), time, beat: warp.toBeat(time) }]);
+  }, [showToast, updateSyncPoints]);
+  const clearSyncPoints = useCallback((trackId) => updateSyncPoints(trackId, () => []), [updateSyncPoints]);
+
   // Ctrl+E: split selected clips (or whatever is under the playhead) at the playhead.
   const splitClipsAtPlayhead = useCallback(() => {
     const t = activeAudioTrack();
     if (!t) return false;
     const beat = playingRef.current && playheadBeatRef.current != null ? playheadBeatRef.current : selectedBeatRef.current;
-    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const spb = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
     const clips = getClips(t);
     let ids = selectedClipsRef.current;
     if (ids.size === 0) ids = new Set(clips.filter(c => beat > c.start && beat < clipEndBeat(c, spb)).map(c => c.id));
@@ -739,7 +757,7 @@ function App() {
     updateClips(t.id, () => res.clips);
     setSelectedClips(new Set(res.created));
     // make sure the timeline is long enough for the pasted clips
-    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const spb = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
     const end = Math.max(...res.clips.map(c => clipEndBeat(c, spb)));
     setBarSubdivisions(prev => {
       let next = prev;
@@ -1533,8 +1551,9 @@ setPositionModeValue(null);
       const mult = bpm / (track.originalBpm || bpm);
       const now = c.gainNode.context.currentTime;
       try { c.gainNode.gain.setTargetAtTime(track.muted ? 0 : (track.volume ?? 1), now, 0.01); } catch {}
-      c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(mult, now); } catch {} });
-      if (c.workletNode) setStretchTempo(c.workletNode, audioPitchScale(track, bpm));
+      c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(mult * (src._k || 1), now); } catch {} });
+      // warped tracks get their per-segment pitch from the scheduled pass (re-queued on edits)
+      if (c.workletNode && !c.hasWarp) setStretchTempo(c.workletNode, audioPitchScale(track, bpm));
     });
   };
 
@@ -1571,33 +1590,57 @@ setPositionModeValue(null);
       const latencySec = (chain.latencySamples || 0) / ctx.sampleRate;
       const dest = chain.workletNode || chain.gainNode;
 
+      const warp = makeWarp(track, spb);
+      const semis = Math.pow(2, (track.pitchSemitones || 0) / 12);
+      const keepPitch = track.keepPitch !== false;
+      const timedPitch = []; // [{ time, ratio }] rubberband pitch per segment (sync points vary the rate)
       getClips(track).forEach(clip => {
-        const clipEnd = clipEndBeat(clip, spb);
-        const a = Math.max(clip.start, fromBeat);
-        const b = Math.min(clipEnd, endBeat);
-        if (b - a <= 1e-6) return;
-        let when = startTime + (a - fromBeat) * liveSpb - latencySec;
-        let offset = clip.srcStart + (a - clip.start) * spb;
-        let dur = (b - a) * spb;
-        const lag = ctx.currentTime - when;
-        if (lag > 0) { // too late to start early: skip the part that already passed
-          offset += lag * tempoMultiplier;
-          dur -= lag * tempoMultiplier;
-          when = ctx.currentTime;
-          if (dur <= 0.001) return;
-        }
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.playbackRate.value = tempoMultiplier;
-        source.connect(dest);
-        const sources = chain.sources;
-        source.onended = () => {
-          const i = sources.indexOf(source);
-          if (i >= 0) sources.splice(i, 1);
-        };
-        sources.push(source);
-        source.start(when, offset, dur); // offset/duration are in file time
+        const clipEnd = clipEndBeat(clip, warp);
+        if (Math.min(clipEnd, endBeat) - Math.max(clip.start, fromBeat) <= 1e-6) return;
+        // One BufferSource per span between sync points; each has its own rate so the
+        // recording is stretched to fit the grid. With no pins this is a single span.
+        clipSpans(clip, warp).forEach(span => {
+          const sa = clip.start + span.b0;
+          const sb = clip.start + span.b1;
+          const a = Math.max(sa, fromBeat);
+          const b = Math.min(sb, endBeat);
+          if (b - a <= 1e-6) return;
+          const beatsFull = span.b1 - span.b0;
+          // file seconds per timeline beat inside this span, relative to the unwarped grid
+          const k = beatsFull > 1e-9 ? ((span.t1 - span.t0) / beatsFull) / spb : 1;
+          const rate = tempoMultiplier * k;
+          const fracA = beatsFull > 1e-9 ? (a - sa) / beatsFull : 0;
+          const fracB = beatsFull > 1e-9 ? (b - sa) / beatsFull : 1;
+          let when = startTime + (a - fromBeat) * liveSpb - latencySec;
+          let offset = span.t0 + fracA * (span.t1 - span.t0);
+          let dur = (fracB - fracA) * (span.t1 - span.t0);
+          const lag = ctx.currentTime - when;
+          if (lag > 0) { // too late to start early: skip the part that already passed
+            offset += lag * rate;
+            dur -= lag * rate;
+            when = ctx.currentTime;
+            if (dur <= 0.001) return;
+          }
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.playbackRate.value = rate;
+          source._k = k;
+          source.connect(dest);
+          const sources = chain.sources;
+          source.onended = () => {
+            const i = sources.indexOf(source);
+            if (i >= 0) sources.splice(i, 1);
+          };
+          sources.push(source);
+          source.start(when, offset, dur); // offset/duration are in file time
+          timedPitch.push({ time: when, ratio: semis * (keepPitch ? 1 / rate : 1) });
+        });
       });
+      if (chain.workletNode && timedPitch.length) {
+        timedPitch.sort((x, y) => x.time - y.time);
+        scheduleStretchTempo(chain.workletNode, timedPitch);
+      }
+      chain.hasWarp = warp.pts.length > 0;
     });
   }, [ensureAudioChain]);
 
@@ -1740,8 +1783,8 @@ setPositionModeValue(null);
   // audio from the playhead so the change is heard immediately instead of after the next play.
   const audioEditSig = useMemo(() => tracks
     .filter(t => t.type === 'audio')
-    .map(t => `${t.id}:${t.muted ? 1 : 0}${t.solo ? 1 : 0}:${JSON.stringify(t.clips || null)}`)
-    .join('|') + `|solo:${tracks.some(t => t.solo) ? 1 : 0}`, [tracks]);
+    .map(t => `${t.id}:${t.muted ? 1 : 0}${t.solo ? 1 : 0}:${JSON.stringify(t.clips || null)}:${JSON.stringify(t.syncPoints || null)}${t.syncPoints?.length ? `:${bpm}:${t.pitchSemitones || 0}:${t.keepPitch}` : ''}`)
+    .join('|') + `|solo:${tracks.some(t => t.solo) ? 1 : 0}`, [tracks, bpm]);
   useEffect(() => {
     if (!playingRef.current) return;
     const id = setTimeout(() => {
@@ -2347,6 +2390,8 @@ setPositionModeValue(null);
         onRenameTrack={handleRenameTrack}
         onLoadAudio={handleLoadAudio}
         onRemoveAudio={handleRemoveAudio}
+        onAddSyncPoint={addSyncPointAtPlayhead}
+        onClearSyncPoints={clearSyncPoints}
         onSetAudioOptions={(trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t))}
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}
@@ -2533,10 +2578,12 @@ setPositionModeValue(null);
           selectedClips={selectedClips}
           setSelectedClips={setSelectedClips}
           onUpdateClips={updateClips}
+          onUpdateSyncPoints={updateSyncPoints}
           audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
             trackId: t.id,
             name: t.name,
             clips: getClips(t),
+            syncPoints: getSyncPoints(t),
             audioOffset: t.audioOffset || 0,
             audioDuration: t.audioDuration,
             originalBpm: t.originalBpm,

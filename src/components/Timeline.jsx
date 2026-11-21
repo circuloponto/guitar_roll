@@ -11,6 +11,7 @@ import {
 import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX as beatToXUtil, xToBeat as xToBeatUtil, gridTotalWidth, colWidth, durationToWidth as durationToWidthUtil, timeToBeat } from '../utils/barLayout';
 import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
+import { makeWarp, clipSpans, clipBeatToTime } from '../utils/audioClips';
 
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
 const totalRows = TOTAL_PITCH_ROWS;
@@ -53,7 +54,7 @@ export default function Timeline({
   chordPreview,
   autoScroll,
   audioTracks = [],
-  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {},
+  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {},
   bpm = 120,
   timeSignature = [4, 4],
   bodyRefExternal,
@@ -652,29 +653,71 @@ export default function Timeline({
     window.addEventListener('mouseup', onUp);
   };
 
+  // ---- Sync points: pin the sound at a spot in the audio to a grid position ----
+  const newPinId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+  const handleClipDoubleClick = (e, at, clip) => {
+    e.stopPropagation();
+    const spb = clipSecPerBeat(at);
+    const warp = makeWarp({ syncPoints: at.syncPoints }, spb);
+    const beat = clipPointerBeat(e.clientX); // free position: pin exactly where the sound is
+    const time = clipBeatToTime(clip, beat, warp);
+    const fileBeat = warp.toBeat(time);
+    onUpdateSyncPoints(at.trackId, pts => [...pts, { id: newPinId(), time, beat: fileBeat }]);
+  };
+
+  const handlePinMouseDown = (e, at, clip, pin) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.button === 2) { onUpdateSyncPoints(at.trackId, pts => pts.filter(p => p.id !== pin.id)); return; }
+    if (e.button !== 0) return;
+    const spb = clipSecPerBeat(at);
+    const warp = makeWarp({ syncPoints: at.syncPoints }, spb);
+    const sorted = warp.pts;
+    const idx = sorted.findIndex(p => p.id === pin.id);
+    const lo = idx > 0 ? sorted[idx - 1].beat + 0.02 : 0.02;
+    const hi = idx < sorted.length - 1 ? sorted[idx + 1].beat - 0.02 : Infinity;
+    const base = warp.toBeat(clip.srcStart);
+    let saved = false;
+    const onMove = (me) => {
+      if (!saved) { saveSnapshot(); saved = true; }
+      let tb = clipPointerBeat(me.clientX);
+      if (!me.altKey && !freeMode) tb = Math.round(tb / snapUnit) * snapUnit; // Alt = fine adjust
+      const fileBeat = Math.min(hi, Math.max(lo, tb - clip.start + base));
+      onUpdateSyncPoints(at.trackId, pts => pts.map(p => (p.id === pin.id ? { ...p, beat: fileBeat } : p)), false);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const handleClipTrimStart = (e, at, clip, side) => {
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     if (!selectedClips.has(clip.id)) setSelectedClips(new Set([clip.id]));
     const spb = clipSecPerBeat(at);
+    const warp = makeWarp({ syncPoints: at.syncPoints }, spb);
     const minBeats = 0.02 / spb;
     const o = { start: clip.start, srcStart: clip.srcStart, srcEnd: clip.srcEnd };
-    const oEnd = o.start + (o.srcEnd - o.srcStart) / spb;
+    const baseBeat = warp.toBeat(o.srcStart);
+    const oEnd = o.start + warp.toBeat(o.srcEnd) - baseBeat;
     let saved = false;
     const onMove = (me) => {
       if (!saved) { saveSnapshot(); saved = true; }
       const beat = clipSnap(clipPointerBeat(me.clientX));
       if (side === 'left') {
-        const lo = Math.max(0, o.start - o.srcStart / spb); // cannot reveal audio before the file start
+        const lo = Math.max(0, o.start + warp.toBeat(0) - baseBeat); // cannot reveal audio before the file start
         const nb = Math.min(Math.max(beat, lo), oEnd - minBeats);
         onUpdateClips(at.trackId, clips => clips.map(c => (c.id === clip.id
-          ? { ...c, start: nb, srcStart: Math.max(0, o.srcStart + (nb - o.start) * spb) } : c)), false);
+          ? { ...c, start: nb, srcStart: Math.max(0, clipBeatToTime(o, nb, warp)) } : c)), false);
       } else {
-        const hi = o.start + (at.audioDuration - o.srcStart) / spb; // cannot run past the file end
+        const hi = o.start + warp.toBeat(at.audioDuration) - baseBeat; // cannot run past the file end
         const nb = Math.max(Math.min(beat, hi), o.start + minBeats);
         onUpdateClips(at.trackId, clips => clips.map(c => (c.id === clip.id
-          ? { ...c, srcEnd: Math.min(at.audioDuration, o.srcStart + (nb - o.start) * spb) } : c)), false);
+          ? { ...c, srcEnd: Math.min(at.audioDuration, clipBeatToTime(o, nb, warp)) } : c)), false);
       }
     };
     const onUp = () => {
@@ -1790,25 +1833,39 @@ export default function Timeline({
             const color = at.isActive ? '#d9a6ec' : '#6b6b70';
             const peaks = at.waveformPeaks;
             const buffer = at.audioBuffer;
+            const warp = makeWarp({ syncPoints: at.syncPoints }, spb);
             return (at.clips || []).map(clip => {
               const clipDur = clip.srcEnd - clip.srcStart;
-              const lenBeats = clipDur / spb;
+              const lenBeats = warp.toBeat(clip.srcEnd) - warp.toBeat(clip.srcStart);
               const startX = beatToX(clip.start, barSubdivisions, cellWidth);
               const endX = beatToX(clip.start + lenBeats, barSubdivisions, cellWidth);
               const totalWidth = Math.max(1, endX - startX);
               const TILE_W = 4096;
-              const tileCount = Math.ceil(totalWidth / TILE_W);
+              // Tiles per span between sync points; each span is stretched to its beat width.
+              const tiles = [];
+              clipSpans(clip, warp).forEach(span => {
+                const spanX0 = beatToX(clip.start + span.b0, barSubdivisions, cellWidth) - startX;
+                const spanX1 = beatToX(clip.start + span.b1, barSubdivisions, cellWidth) - startX;
+                const spanW = Math.max(0.5, spanX1 - spanX0);
+                const n = Math.ceil(spanW / TILE_W);
+                for (let ti = 0; ti < n; ti++) {
+                  const off = ti * TILE_W;
+                  const w = Math.min(TILE_W, spanW - off);
+                  tiles.push({
+                    left: spanX0 + off,
+                    width: w,
+                    fStart: (span.t0 + (off / spanW) * (span.t1 - span.t0)) / fileDur,
+                    fEnd: (span.t0 + ((off + w) / spanW) * (span.t1 - span.t0)) / fileDur,
+                  });
+                }
+              });
               const interactive = at.isActive;
               const isSel = selectedClips.has(clip.id);
               // Editable clips are a compact lane (waveform centred in view); inactive ones stay a faint full-height backdrop.
               const clipH = interactive ? Math.min(gridTotalHeight, 360) : gridTotalHeight;
               const canvases = [];
-              for (let ti = 0; ti < tileCount; ti++) {
-                const tileOffset = ti * TILE_W;
-                const tileWidth = Math.min(TILE_W, totalWidth - tileOffset);
-                // fraction of the FILE covered by this tile
-                const fStart = (clip.srcStart + (tileOffset / totalWidth) * clipDur) / fileDur;
-                const fEnd = (clip.srcStart + ((tileOffset + tileWidth) / totalWidth) * clipDur) / fileDur;
+              for (let ti = 0; ti < tiles.length; ti++) {
+                const { left: tileOffset, width: tileWidth, fStart, fEnd } = tiles[ti];
                 canvases.push(
                   <canvas
                     key={`wf-${clip.id}-${ti}`}
@@ -1877,8 +1934,24 @@ export default function Timeline({
                   className={`audio-clip${interactive ? ' interactive' : ''}${isSel ? ' selected' : ''}`}
                   style={{ left: startX, width: totalWidth, height: clipH }}
                   onMouseDown={interactive ? (e) => handleClipMouseDown(e, at, clip) : undefined}
+                  onDoubleClick={interactive ? (e) => handleClipDoubleClick(e, at, clip) : undefined}
+                  title={interactive ? 'Double-click to add a sync point' : undefined}
                 >
                   {canvases}
+                  {warp.pts.filter(p => p.time >= clip.srcStart && p.time <= clip.srcEnd).map(p => {
+                    const px = beatToX(clip.start + warp.toBeat(p.time) - warp.toBeat(clip.srcStart), barSubdivisions, cellWidth) - startX;
+                    return (
+                      <div
+                        key={p.id}
+                        className={`sync-pin${interactive ? '' : ' passive'}`}
+                        style={{ left: px }}
+                        title={interactive ? 'Sync point: drag to line this sound up with the grid (Alt = fine). Right-click to remove.' : undefined}
+                        onMouseDown={interactive ? (e) => handlePinMouseDown(e, at, clip, p) : undefined}
+                        onContextMenu={interactive ? (e) => e.preventDefault() : undefined}
+                        onDoubleClick={interactive ? (e) => e.stopPropagation() : undefined}
+                      />
+                    );
+                  })}
                   {interactive && (
                     <>
                       <div className="audio-clip-label">{at.name || 'Audio'}</div>
