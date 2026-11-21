@@ -21,7 +21,7 @@ export function defaultState(w = 1400, h = 900) {
     sizes: {
       menuTop: clamp(140 / h, 0.05, 0.3),    // share of height
       menuSide: clamp(280 / w, 0.1, 0.45),   // share of width
-      tracks: clamp(104 / (h - 140), 0.05, 0.3),
+      tracks: clamp(146 / (h - 140), 0.05, 0.35),
       fret: clamp(380 / w, 0.15, 0.6),
     },
   };

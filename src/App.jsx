@@ -22,6 +22,8 @@ import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import Dock from './components/Dock';
+import SongTabs from './components/SongTabs';
+import { makeSongId, makeGroupId, nextTabName, GROUP_COLOURS, moveSong as moveSongList, moveGroup as moveGroupList, assignSongToGroup as assignSongList } from './utils/songs';
 import VoiceLeadingModal from './components/VoiceLeadingModal';
 import ConfirmDialog from './components/ConfirmDialog';
 import NumberInput from './components/NumberInput';
@@ -508,9 +510,47 @@ function App() {
     return stringColors[stringIndex];
   }, [stringColors, synesthesia, activeTrackScheme, sessionSchemes, sessionScheme]);
 
+  // === Song tabs: each song is a whole workspace. Live state below is the active song's;
+  // other songs keep a snapshot in `songs`. ===
+  const [songs, setSongs] = useState(() => [{ id: makeSongId(), name: 'Tab 1', groupId: null, snapshot: null }]);
+  const [songGroups, setSongGroups] = useState([]);
+  const [activeSongId, setActiveSongId] = useState(() => songs[0].id);
+  const songsRef = useRef(songs);
+  songsRef.current = songs;
+  const activeSongIdRef = useRef(activeSongId);
+  activeSongIdRef.current = activeSongId;
+  const songHistoryRef = useRef({}); // { [songId]: { undo, redo } } — in memory only
+  const liveRef = useRef({});
+  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature };
+  const captureSong = useCallback(() => ({
+    ...liveRef.current,
+    tracks: tracksRef.current,
+    activeTrackId: activeTrackIdRef.current,
+    selectedBeat: selectedBeatRef.current,
+  }), []);
+  // Songs with the active one's snapshot refreshed from live state (for saving).
+  const songsWithLive = () => songs.map(s => s.id === activeSongId ? { ...s, snapshot: captureSong() } : s);
+
   // Apply partial state from settings/load/URL
   const applyState = useCallback((data) => {
     setPosition(0);  // reset position on any new session load or import
+    if (!data.__songSwitch && (data.tracks !== undefined || data.notes !== undefined)) {
+      // A whole session: restore its songs, or start over with a single tab.
+      if (Array.isArray(data.songs) && data.songs.length) {
+        const sid = data.songs.some(sg => sg.id === data.activeSongId) ? data.activeSongId : data.songs[0].id;
+        setSongs(data.songs);
+        setSongGroups(Array.isArray(data.songGroups) ? data.songGroups : []);
+        setActiveSongId(sid);
+        activeSongIdRef.current = sid;
+      } else {
+        const id = makeSongId();
+        setSongs([{ id, name: 'Tab 1', groupId: null, snapshot: null }]);
+        setSongGroups([]);
+        setActiveSongId(id);
+        activeSongIdRef.current = id;
+      }
+      songHistoryRef.current = {};
+    }
     if (data.tracks !== undefined) {
       setTracksTracked(data.tracks);
       const firstId = data.tracks[0]?.id;
@@ -650,10 +690,11 @@ function App() {
         tracks, bpm, swing, loop, loopStart, loopEnd,
         stringColors, synesthesia, sessionScheme, sessionSchemes,
         projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers,
+        songs: songsWithLive(), songGroups, activeSongId,
       }));
     }, 400);
     return () => clearTimeout(t);
-  }, [tracks, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers]);
+  }, [tracks, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId]);
 
   // Autosave toggle
   const [autoSave, setAutoSave] = useState(() => {
@@ -672,11 +713,12 @@ function App() {
         bpm, swing, loop, loopStart, loopEnd,
         stringColors, synesthesia, sessionScheme, sessionSchemes,
         projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
+        songs: songsWithLive(), songGroups, activeSongId,
       });
       saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers]);
+  }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -2013,6 +2055,174 @@ setPositionModeValue(null);
     switchTrack(newTrack.id);
   }, [setTracksTracked, switchTrack]);
 
+  // ---- Song tabs ----
+  const applySongSnapshot = useCallback((snap) => {
+    applyState({
+      __songSwitch: true,
+      tracks: snap.tracks, bpm: snap.bpm, swing: snap.swing, loop: snap.loop,
+      loopStart: snap.loopStart, loopEnd: snap.loopEnd, subdivisions: snap.subdivisions,
+      rhythmUnit: snap.rhythmUnit, rhythmMult: snap.rhythmMult, markers: snap.markers,
+      barSubdivisions: snap.barSubdivisions, timeSignature: snap.timeSignature,
+    });
+    const active = snap.tracks.find(t => t.id === snap.activeTrackId) || snap.tracks[0];
+    if (active) {
+      setActiveTrackId(active.id);
+      activeTrackIdRef.current = active.id;
+      setInstrument(active.instrument);
+      setInstrumentState(active.instrument);
+    }
+    setSelectedBeat(snap.selectedBeat || 0);
+    setSelectedNotes(new Set());
+    setSelectedClips(new Set());
+  }, [applyState]);
+
+  const switchSong = useCallback((id) => {
+    if (id === activeSongIdRef.current) return;
+    const target = songsRef.current.find(sg => sg.id === id);
+    if (!target) return;
+    stopPlayback();
+    const cur = activeSongIdRef.current;
+    // Park the current song: snapshot + its undo history.
+    songHistoryRef.current[cur] = { undo: undoStackRef.current, redo: redoStackRef.current };
+    const snapNow = captureSong();
+    setSongs(prev => prev.map(sg => sg.id === cur ? { ...sg, snapshot: snapNow } : sg));
+    const hist = songHistoryRef.current[id];
+    undoStackRef.current = hist?.undo || [];
+    redoStackRef.current = hist?.redo || [];
+    activeSongIdRef.current = id;
+    setActiveSongId(id);
+    if (target.snapshot) applySongSnapshot(target.snapshot);
+  }, [stopPlayback, captureSong, applySongSnapshot]);
+
+  const handleAddSong = useCallback(() => {
+    const id = makeSongId();
+    const lv = liveRef.current;
+    const track = createDefaultTrack();
+    // A new tab starts blank but keeps the current tempo, swing, meter and subdivision.
+    const snapshot = {
+      tracks: [track], activeTrackId: track.id, selectedBeat: 0,
+      bpm: lv.bpm, swing: lv.swing, timeSignature: lv.timeSignature, subdivisions: lv.subdivisions,
+      rhythmUnit: 'beat', rhythmMult: 1, loop: false, loopStart: 0,
+      loopEnd: totalColumns(defaultBarSubdivisions()), markers: [], barSubdivisions: defaultBarSubdivisions(),
+    };
+    const name = nextTabName(songsRef.current);
+    const cur = activeSongIdRef.current;
+    const after = songsRef.current.find(sg => sg.id === cur);
+    // Join the active tab's group so "+" next to a group's tabs keeps them together.
+    const rec = { id, name, groupId: after?.groupId ?? null, snapshot };
+    songsRef.current = songsRef.current.map(sg => sg.id === cur ? { ...sg, snapshot: captureSong() } : sg);
+    songsRef.current = [...songsRef.current, rec];
+    setSongs(songsRef.current);
+    // Park current history, then switch.
+    stopPlayback();
+    songHistoryRef.current[cur] = { undo: undoStackRef.current, redo: redoStackRef.current };
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    activeSongIdRef.current = id;
+    setActiveSongId(id);
+    applySongSnapshot(snapshot);
+  }, [captureSong, stopPlayback, applySongSnapshot]);
+
+  const handleDuplicateSong = useCallback((id) => {
+    const src = songsRef.current.find(sg => sg.id === id);
+    if (!src) return;
+    const snap = id === activeSongIdRef.current ? captureSong() : src.snapshot;
+    if (!snap) return;
+    const copy = JSON.parse(JSON.stringify(snap));
+    const idMap = {};
+    copy.tracks = copy.tracks.map(t => {
+      const nid = crypto.randomUUID();
+      idMap[t.id] = nid;
+      // Audio is keyed by track id: share the decoded buffer and copy the stored file.
+      if (t.type === 'audio') {
+        const buf = audioBuffersRef.current[t.id];
+        if (buf) audioBuffersRef.current[nid] = buf;
+        getAudioFile(t.id).then(f => { if (f) putAudioFile(nid, f.arrayBuffer.slice(0), f.fileName, f.mimeType); }).catch(() => {});
+      }
+      return { ...t, id: nid };
+    });
+    copy.activeTrackId = idMap[copy.activeTrackId] || copy.tracks[0]?.id;
+    const nid = makeSongId();
+    const rec = { id: nid, name: `${src.name} (copy)`, groupId: src.groupId ?? null, snapshot: copy };
+    const list = [...songsRef.current];
+    list.splice(list.findIndex(sg => sg.id === id) + 1, 0, rec);
+    songsRef.current = list;   // switchSong reads the ref, so update it before switching
+    setSongs(list);
+    switchSongRef.current?.(nid);
+  }, [captureSong]);
+
+  const handleRemoveSong = useCallback((id) => {
+    if (songsRef.current.length <= 1) return;
+    const target = songsRef.current.find(sg => sg.id === id);
+    if (!target) return;
+    const snap = id === activeSongIdRef.current ? captureSong() : target.snapshot;
+    const tks = snap?.tracks || [];
+    if (tks.some(t => (t.notes && t.notes.length) || t.type === 'audio')
+      && !window.confirm(`Close "${target.name}"? Its tracks will be lost.`)) return;
+    const remaining = songsRef.current.filter(sg => sg.id !== id);
+    if (id === activeSongIdRef.current) {
+      // Move to the neighbour tab, then drop this one.
+      const idx = songsRef.current.findIndex(sg => sg.id === id);
+      const next = remaining[Math.min(idx, remaining.length - 1)];
+      stopPlayback();
+      songHistoryRef.current[id] = undefined;
+      const h = songHistoryRef.current[next.id];
+      undoStackRef.current = h?.undo || [];
+      redoStackRef.current = h?.redo || [];
+      activeSongIdRef.current = next.id;
+      setActiveSongId(next.id);
+      if (next.snapshot) applySongSnapshot(next.snapshot);
+    }
+    delete songHistoryRef.current[id];
+    tks.filter(t => t.type === 'audio').forEach(t => { delete audioBuffersRef.current[t.id]; deleteAudioFile(t.id).catch(() => {}); });
+    songsRef.current = remaining;
+    setSongs(remaining);
+  }, [captureSong, stopPlayback, applySongSnapshot]);
+
+  const handleRenameSong = useCallback((id, name) => {
+    setSongs(prev => prev.map(sg => sg.id === id ? { ...sg, name } : sg));
+  }, []);
+
+  const handleAddGroup = useCallback(() => {
+    const id = makeGroupId();
+    setSongGroups(prev => [...prev, { id, name: `Group ${prev.length + 1}`, colour: GROUP_COLOURS[prev.length % GROUP_COLOURS.length], collapsed: false }]);
+    return id;
+  }, []);
+
+  const handleToggleGroupCollapsed = useCallback((gid) => {
+    const group = songGroups.find(g => g.id === gid);
+    if (!group) return;
+    if (!group.collapsed) {
+      // Collapsing hides its tabs: move off the active tab if it is inside.
+      const act = songsRef.current.find(sg => sg.id === activeSongIdRef.current);
+      if (act?.groupId === gid) {
+        const outside = songsRef.current.find(sg => sg.groupId !== gid);
+        if (!outside) return;
+        switchSong(outside.id);
+      }
+    }
+    setSongGroups(prev => prev.map(g => g.id === gid ? { ...g, collapsed: !g.collapsed } : g));
+  }, [songGroups, switchSong]);
+
+  const handleRemoveGroup = useCallback((gid) => {
+    setSongGroups(prev => prev.filter(g => g.id !== gid));
+    setSongs(prev => prev.map(sg => sg.groupId === gid ? { ...sg, groupId: null } : sg));
+  }, []);
+
+  const handleRenameGroup = useCallback((gid, name) => {
+    setSongGroups(prev => prev.map(g => g.id === gid ? { ...g, name } : g));
+  }, []);
+
+  const handleSetGroupColour = useCallback((gid, colour) => {
+    setSongGroups(prev => prev.map(g => g.id === gid ? { ...g, colour } : g));
+  }, []);
+
+  const handleMoveSong = useCallback((id, beforeId, groupId) => setSongs(prev => moveSongList(prev, id, beforeId, groupId)), []);
+  const handleMoveGroup = useCallback((gid, beforeId) => setSongs(prev => moveGroupList(prev, gid, beforeId)), []);
+  const handleAssignSongToGroup = useCallback((id, gid) => setSongs(prev => assignSongList(prev, id, gid)), []);
+  const switchSongRef = useRef(null);
+  switchSongRef.current = switchSong;
+
   const handleReorderTracks = useCallback((fromIndex, toIndex) => {
     setTracksTracked(prev => {
       const next = [...prev];
@@ -2513,6 +2723,24 @@ setPositionModeValue(null);
       )}
       tracks={(
       <>
+      <SongTabs
+        songs={songs}
+        groups={songGroups}
+        activeSongId={activeSongId}
+        onSelect={switchSong}
+        onAdd={handleAddSong}
+        onRemove={handleRemoveSong}
+        onRename={handleRenameSong}
+        onDuplicate={handleDuplicateSong}
+        onAddGroup={handleAddGroup}
+        onToggleGroupCollapsed={handleToggleGroupCollapsed}
+        onRemoveGroup={handleRemoveGroup}
+        onRenameGroup={handleRenameGroup}
+        onSetGroupColour={handleSetGroupColour}
+        onMoveSong={handleMoveSong}
+        onMoveGroup={handleMoveGroup}
+        onAssignSongToGroup={handleAssignSongToGroup}
+      />
       <TrackStrip
         tracks={tracks}
         activeTrackId={activeTrackId}
@@ -2857,6 +3085,7 @@ setPositionModeValue(null);
             tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, sessionScheme, sessionSchemes,
             projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
+            songs: songsWithLive(), songGroups, activeSongId,
           }}
           onApplyState={applyState}
           onClose={() => setShowSettings(false)}
