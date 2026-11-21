@@ -46,6 +46,10 @@ const DEFAULT_HOTKEYS = {
   transposeSemiUp: { label: 'Transpose Up (Semitone)', description: 'Move selected notes up one semitone', key: '=' },
   transposeOctaveDown: { label: 'Transpose Down (Octave)', description: 'Move selected notes down one octave', key: '_', modifiers: { shift: true } },
   transposeOctaveUp: { label: 'Transpose Up (Octave)', description: 'Move selected notes up one octave', key: '+', modifiers: { shift: true } },
+  nudgeLeft: { label: 'Move Notes Left', description: 'Move selected notes earlier by one grid step', key: 'ArrowLeft', modifiers: { alt: true } },
+  nudgeRight: { label: 'Move Notes Right', description: 'Move selected notes later by one grid step', key: 'ArrowRight', modifiers: { alt: true } },
+  nudgeUp: { label: 'Move Notes Up', description: 'Move selected notes up one semitone', key: 'ArrowUp', modifiers: { alt: true } },
+  nudgeDown: { label: 'Move Notes Down', description: 'Move selected notes down one semitone', key: 'ArrowDown', modifiers: { alt: true } },
   selectAtPlayhead: { label: 'Select Notes at Playhead', description: 'Select all notes at the current playhead position', key: 'Tab' },
   cursorMode: { label: 'Cursor Mode (Hold)', description: 'Hold to move the timeline cursor without placing a note', key: 'k' },
   jumpPrevNote: { label: 'Jump to Previous Note', description: 'Move playhead to the previous note position', key: 'ArrowLeft', modifiers: { ctrl: true } },
@@ -159,6 +163,6 @@ export const EDITABLE_HOTKEYS = [
   'jumpPrevNote', 'jumpNextNote',
   'zoomIn', 'zoomOut', 'zoomWheel', 'verticalZoomIn', 'verticalZoomOut', 'verticalZoomWheel', 'velocityWheel',
   'machineGunMode', 'fingeringMode', 'positionMode', 'stringDown', 'stringUp',
-  'transposeSemiDown', 'transposeSemiUp', 'transposeOctaveDown', 'transposeOctaveUp', 'selectAtPlayhead',
+  'transposeSemiDown', 'transposeSemiUp', 'transposeOctaveDown', 'transposeOctaveUp', 'nudgeLeft', 'nudgeRight', 'nudgeUp', 'nudgeDown', 'selectAtPlayhead',
   'clearSelection', 'selectAll', 'splitNote', 'cursorMode', 'cheatSheet', 'escape', 'rhythmUnit', 'instanceColor',
 ];

@@ -1386,6 +1386,36 @@ setPositionModeValue(null);
           return { ...n, stringIndex: combo.stringIndex, fret: combo.fret };
         }));
       }
+      // Nudge selected notes with the arrows: left/right by one grid step, up/down by a semitone.
+      if (selectedNotesRef.current.size > 0) {
+        const nl = matchesHotkey(e, hk.nudgeLeft), nr = matchesHotkey(e, hk.nudgeRight);
+        const nu = matchesHotkey(e, hk.nudgeUp), nd = matchesHotkey(e, hk.nudgeDown);
+        if (nl || nr || nu || nd) {
+          e.preventDefault();
+          transposeHandled = true;
+          if (nl || nr) {
+            const step = snapUnitRef.current || 1;
+            const maxBeat = totalColumns(barSubsRef.current);
+            const sel = [...selectedNotesRef.current].map(i => notesRef.current[i]).filter(Boolean);
+            // One shared shift, clamped so the whole selection stays inside the timeline.
+            const minBeat = Math.min(...sel.map(n => n.beat));
+            const maxEnd = Math.max(...sel.map(n => n.beat + (n.duration || 1)));
+            let d = nr ? step : -step;
+            d = Math.max(-minBeat, Math.min(d, maxBeat - maxEnd));
+            if (Math.abs(d) > 1e-9) {
+              setNotes(prev => prev.map((n, i) => selectedNotesRef.current.has(i)
+                ? { ...n, beat: Math.round((n.beat + d) * 10000) / 10000 } : n));
+            }
+          } else {
+            const delta = nu ? 1 : -1;
+            setNotes(prev => prev.map((n, i) => {
+              if (!selectedNotesRef.current.has(i)) return n;
+              const combo = closestComboForPitch(getMidiNote(n.stringIndex, n.fret) + delta, n.stringIndex);
+              return combo ? { ...n, stringIndex: combo.stringIndex, fret: combo.fret } : n;
+            }));
+          }
+        }
+      }
       if (!transposeHandled && matchesHotkey(e, hk.bendUp)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
