@@ -260,7 +260,7 @@ export function stateToHash(state) {
 
 // Writes the session into the current tab's URL without adding history entries.
 // Returns false (and clears the hash) when the session is too big for a URL,
-// so a reload falls back to autosave instead of restoring a stale snapshot.
+// so a reload starts blank; the session is still recoverable from Settings > Autosave.
 export function writeStateToUrl(state) {
   try {
     const hash = stateToHash(state);

@@ -105,7 +105,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave }) {
   const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
   const [editingScheme, setEditingScheme] = useState(null); // { name, originalName, colors }
   const [sessions, setSessions] = useState(listSessions);
@@ -525,6 +525,18 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 />
                 Autosave every 30 seconds
               </label>
+            </div>
+            <div className="settings-row-btns">
+              <button
+                className="settings-btn"
+                onClick={() => {
+                  if (!window.confirm('Replace the current session with the last autosave?')) return;
+                  if (!onRestoreAutosave?.()) window.alert('There is no autosave yet.');
+                  else onClose();
+                }}
+              >
+                Restore last autosave
+              </button>
             </div>
           </div>
 

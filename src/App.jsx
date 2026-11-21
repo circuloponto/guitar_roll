@@ -663,15 +663,8 @@ function App() {
       // Keep the hash: the URL *is* this tab's session (see live sync below)
       applyState(urlState);
     } else {
-      const auto = loadAutosave();
-      if (auto) {
-        const sessionSchemeState = loadSessionSchemeState();
-        applyState({
-          ...auto,
-          sessionScheme: sessionSchemeState.sessionScheme || null,
-          sessionSchemes: sessionSchemeState.sessionSchemes || {},
-        });
-      }
+      // No session in the URL: start blank. The autosave is not loaded automatically (it
+      // used to override a fresh visit); restore it from Settings > Autosave instead.
     }
   }, []);
 
@@ -719,7 +712,9 @@ function App() {
         projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
         songs: songsWithLive(), songGroups, activeSongId,
       });
-      saveAutosave(state);
+      const blank = tracksRef.current.every(t => t.type !== 'audio' && !(t.notes && t.notes.length))
+        && songsRef.current.length <= 1;
+      if (!blank) saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
   }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId]);
@@ -3093,6 +3088,13 @@ setPositionModeValue(null);
           }}
           onApplyState={applyState}
           accent={accent}
+          onRestoreAutosave={() => {
+            const auto = loadAutosave();
+            if (!auto) return false;
+            const ss = loadSessionSchemeState();
+            applyState({ ...auto, sessionScheme: ss.sessionScheme || null, sessionSchemes: ss.sessionSchemes || {} });
+            return true;
+          }}
           onAccentChange={handleAccentChange}
           onClose={() => setShowSettings(false)}
           hoverPreview={hoverPreview}
