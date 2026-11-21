@@ -21,6 +21,7 @@ import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
+import Dock from './components/Dock';
 import VoiceLeadingModal from './components/VoiceLeadingModal';
 import ConfirmDialog from './components/ConfirmDialog';
 import NumberInput from './components/NumberInput';
@@ -2215,6 +2216,8 @@ setPositionModeValue(null);
 
   return (
     <div className="app">
+      <Dock
+      menu={(
       <div className="toolbar">
         <input
           className="project-name"
@@ -2501,6 +2504,9 @@ setPositionModeValue(null);
           </div>
         </div>
       </div>
+      )}
+      tracks={(
+      <>
       <TrackStrip
         tracks={tracks}
         activeTrackId={activeTrackId}
@@ -2569,7 +2575,9 @@ setPositionModeValue(null);
         <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
         <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
       </div>
-      <div className="main-area">
+      </>
+      )}
+      fretboard={(
         <Fretboard
           playing={playing}
             positionMode={positionMode}
@@ -2631,6 +2639,9 @@ setPositionModeValue(null);
           swungDisplay={swungDisplay}
           activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
         />
+      )}
+      timeline={(
+      <div className="dock-timeline-row">
         <Timeline
           notes={notes}
           backgroundNotes={tracks.filter(t => t.id !== activeTrackId && t.visible !== false).flatMap(t =>
@@ -2747,6 +2758,8 @@ setPositionModeValue(null);
           )}
         </div>
       </div>
+      )}
+      />
 
       {/* Cheat Sheet Overlay */}
       {showCheatSheet && (

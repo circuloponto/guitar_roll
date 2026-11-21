@@ -3148,3 +3148,119 @@ button:disabled { cursor: not-allowed; }
   cursor: pointer;
 }
 .track-mini-x:hover { opacity: 1; color: var(--danger); }
+
+/* ==========================================================================
+   Dock — resizable, re-dockable panels (menu, tracks, fretboard, timeline)
+   ========================================================================== */
+.dock {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--frame);
+}
+.dock-panel { position: absolute; padding: 3px; min-width: 0; min-height: 0; }
+.dock-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  background: var(--frame);
+  overflow: hidden;
+}
+.dock-panel.dragging .dock-card { opacity: 0.45; }
+.dock-handle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0 8px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  background: var(--frame);
+  border-bottom: 1px solid var(--hairline);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.dock-handle:hover { color: var(--fg); }
+.dock-grip { font-size: 11px; line-height: 1; opacity: 0.8; }
+.dock-reset {
+  margin-left: auto;
+  height: 12px;
+  padding: 0 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--mute);
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.dock-reset:hover { color: var(--fg); border-color: var(--mute); }
+.dock-body { flex: 1; min-height: 0; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
+.dock-body > .toolbar { border-bottom: none; }
+.dock-body > .status-bar { flex-shrink: 0; }
+
+/* The fretboard and timeline draw their own card; fill the panel instead of fixed sizes */
+.dock-panel-fretboard .dock-body,
+.dock-panel-timeline .dock-body { overflow: hidden; }
+.dock-body .fretboard-container {
+  width: 100%;
+  min-width: 0;
+  margin-right: 0;
+  flex: 1;
+  border: none;
+  border-radius: 0;
+  border-right: none;
+}
+.dock-timeline-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
+.dock-body .timeline-container { border: none; border-radius: 0; min-width: 0; }
+
+.dock-gutter { position: absolute; z-index: 5; touch-action: none; }
+.dock-gutter.row { cursor: col-resize; }
+.dock-gutter.col { cursor: row-resize; }
+.dock-gutter::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.dock-gutter.row::after { left: 3px; right: 3px; top: 0; bottom: 0; }
+.dock-gutter.col::after { top: 3px; bottom: 3px; left: 0; right: 0; }
+.dock-gutter:hover::after { opacity: 0.6; }
+
+.dock-drop {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border: 2px solid var(--accent);
+  border-radius: var(--r-lg);
+  margin: 3px;
+  box-sizing: border-box;
+}
+.dock-ghost {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  padding: 3px 10px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--raise);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+body.dock-dragging, body.dock-resizing { user-select: none; cursor: grabbing; }
+body.dock-resizing { cursor: default; }
+body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
+
+.dock-collapse { margin-left: 0; width: 18px; padding: 0; font-size: 12px; height: 12px; line-height: 10px; }
+.dock-panel-menu .dock-handle { gap: 6px; }
