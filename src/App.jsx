@@ -10,9 +10,10 @@ import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore'
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
 import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
-import { refingerNotes } from './utils/position';
+import { refingerNotes, refingerNotesOctave, countInPosition, bestPosition } from './utils/position';
 import { detectBeats, fitTempo } from './utils/beatDetect';
-import { getClips, getSyncPoints, makeWarp, clipSpans, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
+import { makeTempoMap } from './utils/tempoMap';
+import { getClips, getSyncPoints, makeWarp, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
 import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
@@ -32,10 +33,9 @@ function createDefaultTrack(name = 'Track 1', instrument = 'clean-electric') {
 // Pitch scale applied by rubberband on top of the BufferSource's tempo resampling.
 // Tempo is done by playbackRate (which also moves pitch by tempoMult); with "keep pitch"
 // (default) we cancel that, and optional semitones shift the result.
-function audioPitchScale(track, liveBpm) {
-  const tempoMult = liveBpm / (track.originalBpm || liveBpm);
+function audioPitchScale(track, rate) {
   const semis = Math.pow(2, (track.pitchSemitones || 0) / 12);
-  return semis * (track.keepPitch === false ? 1 : 1 / tempoMult);
+  return semis * (track.keepPitch === false ? 1 : 1 / rate);
 }
 
 function getPlayableTracks(tracks) {
@@ -270,6 +270,30 @@ function App() {
   // Live tempo / pitch updates: BufferSource.playbackRate does the time-stretch, rubberband
   // applies the pitch correction (or the user's semitone shift). Re-apply whenever bpm or
   // any track's audio settings change.
+  // The recording is the master clock when it has sync points: this map turns beats into time.
+  const tempoMap = useMemo(() => makeTempoMap(tracks, bpm, timeSignature[1]), [tracks, bpm, timeSignature]);
+  const tempoMapRef = useRef(tempoMap);
+  tempoMapRef.current = tempoMap;
+  // Playback speed of a track's audio relative to the file: the BPM control, taken against the
+  // tempo of the recording that drives the grid (or the track's own import tempo without a map).
+  const audioRateOf = (track) => (tempoMapRef.current.active
+    ? tempoMapRef.current.mult
+    : bpmRef.current / (track.originalBpm || bpmRef.current));
+  // The timeline always reaches the end of the audio clips (import, move, tempo changes).
+  useEffect(() => {
+    let end = 0;
+    tracks.forEach(t => {
+      if (t.type !== 'audio') return;
+      const m = tempoMap.forTrack(t);
+      getClips(t).forEach(c => { end = Math.max(end, clipEndBeat(c, m)); });
+    });
+    if (!(end > 0)) return;
+    setBarSubdivisions(prev => {
+      let next = prev;
+      while (totalColumns(next) < end - 1e-6 && next.length < 999) next = [...next, timeSignature[0] || 4];
+      return next;
+    });
+  }, [tracks, tempoMap, timeSignature]);
   const applyChainParamsRef = useRef(() => {});
   useEffect(() => { applyChainParamsRef.current(); }, [bpm, tracks]);
 
@@ -296,9 +320,15 @@ function App() {
   });
   const [autoScroll, setAutoScroll] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('guitar-roll-auto-scroll'));
-      return { onHover: false, onInput: false, onPlayback: false, ...saved };
-    } catch { return { onHover: false, onInput: false, onPlayback: false }; }
+      const saved = JSON.parse(localStorage.getItem('guitar-roll-auto-scroll')) || {};
+      // Following the playhead is now on by default; reset an old stored "off" once.
+      if (!localStorage.getItem('guitar-roll-auto-scroll-playback-default')) {
+        saved.onPlayback = true;
+        localStorage.setItem('guitar-roll-auto-scroll', JSON.stringify({ onHover: false, onInput: false, ...saved }));
+        localStorage.setItem('guitar-roll-auto-scroll-playback-default', '1');
+      }
+      return { onHover: false, onInput: false, onPlayback: true, ...saved };
+    } catch { return { onHover: false, onInput: false, onPlayback: true }; }
   });
   const [hoverPill, setHoverPill] = useState(() => {
     try {
@@ -399,6 +429,12 @@ function App() {
   const positionRef = useRef(position);
   positionRef.current = position;
   const [playheadPreview, setPlayheadPreview] = useState(false);
+  // Octave fit: choosing a position may move the selected notes by whole octaves to fit it.
+  const [octaveFit, setOctaveFit] = useState(() => {
+    try { return localStorage.getItem('guitar-roll-octave-fit') === '1'; } catch { return false; }
+  });
+  const octaveFitRef = useRef(octaveFit);
+  octaveFitRef.current = octaveFit;
   const [positionMode, setPositionMode] = useState(false);
   const positionModeRef = useRef(false);
   positionModeRef.current = positionMode;
@@ -682,7 +718,27 @@ function App() {
     setPosition(pos);
     const sel = selectedNotesRef.current;
     if (!sel.size) return;
+    const before = notesRef.current;
+    const fit = countInPosition(before, sel, pos);
+    if (octaveFitRef.current && fit < sel.size) {
+      // Octave fit: shift the selection by whole octaves so it can sit in the window.
+      const res = refingerNotesOctave(before, sel, pos);
+      setNotes(() => res.notes);
+      if (res.shift !== 0) {
+        const n = Math.abs(res.shift);
+        showToast(`Moved the selection ${n} octave${n > 1 ? 's' : ''} ${res.shift < 0 ? 'down' : 'up'} to fit frets ${pos}–${pos + 4} (${res.count}/${sel.size} fit)`);
+      } else if (res.count < sel.size) {
+        showToast(`Only ${res.count} of ${sel.size} notes fit frets ${pos}–${pos + 4}, even with octave shifts`);
+      }
+      return;
+    }
     setNotes(prev => refingerNotes(prev, sel, pos));
+    // Pitch is kept, so notes whose pitch simply does not exist in the window stay outside it: say so.
+    if (fit < sel.size) {
+      const best = bestPosition(before, sel);
+      showToast(`${sel.size - fit} of ${sel.size} notes can't be played in frets ${pos}–${pos + 4} at their pitch.` +
+        (best.count > fit ? ` Best position: ${best.position} (${best.count}/${sel.size} fit), or turn on Octave fit.` : ' Turn on Octave fit to shift them by octaves.'));
+    }
   };
 
   // ---- Audio clip editing (active audio track) ----
@@ -702,41 +758,75 @@ function App() {
     setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, syncPoints: fn(getSyncPoints(t), t) } : t));
   }, [saveSnapshot, setTracksTracked]);
 
+  // The first sync point turns the recording into the master clock, which re-times the notes.
+  const confirmTempoMapChange = () => {
+    const tm = tempoMapRef.current;
+    if (tm.active) return true;
+    const hasNotes = tracksRef.current.some(t => t.type !== 'audio' && t.notes.length > 0);
+    if (!hasNotes) return true;
+    return confirm('Sync points make the grid follow this recording. Your notes keep their beats but will play at the recording\'s timing (they shift in time). Undo with Ctrl+Z. Continue?');
+  };
+  const syncBlockedByOtherTrack = (trackId) => {
+    const tm = tempoMapRef.current;
+    if (tm.active && tm.refId !== trackId) {
+      const ref = tracksRef.current.find(x => x.id === tm.refId);
+      showToast(`The tempo map comes from "${ref?.name || 'another audio track'}". Clear its sync points first.`);
+      return true;
+    }
+    return false;
+  };
+
+  // Add a sync point where the sound is at timeline `beat` of `clip` (the map itself does not change).
+  const addSyncPointAtBeat = useCallback((trackId, clip, beat) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    if (!t || syncBlockedByOtherTrack(trackId)) return;
+    const tm = tempoMapRef.current;
+    const m = tm.forTrack(t);
+    if (!confirmTempoMapChange()) return;
+    const time = clipBeatToTime(clip, beat, m);
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const fileBeat = makeWarp(t, spb).toBeat(time);
+    const c0 = getClips(t).reduce((a, c) => (c.start < a.start ? c : a));
+    const anchor = (getSyncPoints(t).length && Number.isFinite(t.syncAnchor)) ? t.syncAnchor : c0.start - c0.srcStart / spb;
+    saveSnapshot();
+    setTracksTracked(prev => prev.map(x => x.id === trackId
+      ? { ...x, syncAnchor: anchor, syncPoints: [...getSyncPoints(x), { id: crypto.randomUUID(), time, beat: fileBeat }] }
+      : x));
+  }, [showToast, saveSnapshot, setTracksTracked]);
+
   const addSyncPointAtPlayhead = useCallback((trackId) => {
     const t = tracksRef.current.find(x => x.id === trackId);
     if (!t) return;
     const beat = playingRef.current && playheadBeatRef.current != null ? playheadBeatRef.current : selectedBeatRef.current;
-    const warp = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
-    const clip = getClips(t).find(c => beat >= c.start && beat <= clipEndBeat(c, warp));
+    const m = tempoMapRef.current.forTrack(t);
+    const clip = getClips(t).find(c => beat >= c.start && beat <= clipEndBeat(c, m));
     if (!clip) { showToast('Put the playhead over the audio clip first'); return; }
-    const time = clipBeatToTime(clip, beat, warp);
-    updateSyncPoints(trackId, pts => [...pts, { id: crypto.randomUUID(), time, beat: warp.toBeat(time) }]);
-  }, [showToast, updateSyncPoints]);
-  // Auto sync: detect the beats of the recording and pin them to the grid (bar starts), so the
-  // audio follows the grid even when the performance drifts. Replaces existing pins (undoable).
+    addSyncPointAtBeat(trackId, clip, beat);
+  }, [showToast, addSyncPointAtBeat]);
+
+  // Auto sync: detect the beats of the recording, take its steady tempo as the project tempo and
+  // pin only the leftover drift, so the grid (and your notes) follow the audio. Undoable.
   const autoSyncPoints = useCallback((trackId) => {
     const t = tracksRef.current.find(x => x.id === trackId);
     const buffer = audioBuffersRef.current[trackId];
-    if (!t || !buffer) return;
+    if (!t || !buffer || syncBlockedByOtherTrack(trackId)) return;
     showToast('Detecting beats…');
     setTimeout(() => {
       const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
       let beats = [];
       try { beats = detectBeats(buffer, spb); } catch (err) { console.warn('beat detection failed', err); }
-      if (beats.length < 4) { showToast('Could not find a steady beat in this audio'); return; }
-      // 1) steady tempo of the recording, 2) leftover drift as sync points
-      const fit = fitTempo(beats);
+      const fit = beats.length >= 4 ? fitTempo(beats) : null;
       if (!fit) { showToast('Could not find a steady beat in this audio'); return; }
-      const curSpb = spb;
-      const newOriginalBpm = (t.originalBpm || bpmRef.current) * curSpb / fit.period; // audio's own tempo
-      const detectedBpm = 60 / fit.period * (4 / timeSigRef.current[1]) ;
+      if (!confirmTempoMapChange()) return;
+      // the audio keeps its own tempo; the project tempo becomes the same so it plays 1:1
+      const detectedBpm = Math.round(60 / fit.period * (4 / timeSigRef.current[1]) * 10) / 10;
       // label the first beat with the grid beat it already sits closest to
       const b0 = Math.max(1, Math.round(fit.t0 / fit.period));
       const bars = new Set(barStartBeats(barSubsRef.current));
       const step = timeSigRef.current[0] || 4;
       const maxDrift = Math.max(...fit.residual.map(Math.abs));
-      const pins = [];
       const offset = b0 * fit.period - fit.t0; // where the first beat sits vs. the grid beat it was given
+      const pins = [];
       if (maxDrift > 0.025 || Math.abs(offset) > 0.025) { // otherwise the steady tempo is already tight enough
         beats.forEach((_, k) => {
           const beat = b0 + k;
@@ -747,9 +837,15 @@ function App() {
         // tempo is steady: one pin is enough to put the beat on the grid (the rest plays 1:1)
         if (maxDrift <= 0.025) pins.splice(1);
       }
+      // keep the file's origin where the audio already sits on the grid
+      const c0 = getClips(t).reduce((a, c) => (c.start < a.start ? c : a), { start: 0, srcStart: 0 });
+      const syncAnchor = c0.start - c0.srcStart / spb;
       saveSnapshot();
-      setTracksTracked(prev => prev.map(x => x.id === trackId ? { ...x, originalBpm: newOriginalBpm, syncPoints: pins } : x));
-      showToast(`Detected ${detectedBpm.toFixed(1)} BPM · ${maxDrift > 0.025 ? `${pins.length} sync points correct the tempo drift` : 'steady tempo, no drift to correct'}`);
+      setTracksTracked(prev => prev.map(x => x.id === trackId
+        ? { ...x, originalBpm: detectedBpm, syncPoints: pins, syncAnchor }
+        : (x.type === 'audio' ? { ...x, syncPoints: [] } : x)));
+      setBpm(detectedBpm);
+      showToast(`Detected ${detectedBpm} BPM · ${maxDrift > 0.025 ? `${pins.length} sync points follow the tempo drift` : 'steady tempo, no drift to follow'}`);
     }, 30);
   }, [showToast, saveSnapshot, setTracksTracked]);
   const clearSyncPoints = useCallback((trackId) => updateSyncPoints(trackId, () => []), [updateSyncPoints]);
@@ -759,7 +855,7 @@ function App() {
     const t = activeAudioTrack();
     if (!t) return false;
     const beat = playingRef.current && playheadBeatRef.current != null ? playheadBeatRef.current : selectedBeatRef.current;
-    const spb = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
+    const spb = tempoMapRef.current.forTrack(t);
     const clips = getClips(t);
     let ids = selectedClipsRef.current;
     if (ids.size === 0) ids = new Set(clips.filter(c => beat > c.start && beat < clipEndBeat(c, spb)).map(c => c.id));
@@ -798,7 +894,7 @@ function App() {
     updateClips(t.id, () => res.clips);
     setSelectedClips(new Set(res.created));
     // make sure the timeline is long enough for the pasted clips
-    const spb = makeWarp(t, secPerBeat(t, bpmRef.current, timeSigRef.current[1]));
+    const spb = tempoMapRef.current.forTrack(t);
     const end = Math.max(...res.clips.map(c => clipEndBeat(c, spb)));
     setBarSubdivisions(prev => {
       let next = prev;
@@ -1536,7 +1632,7 @@ setPositionModeValue(null);
     chain = { trackId: track.id, buffer, gainNode, workletNode: null, sources: [], latencySamples: 0, failed: false, settled: false };
     audioSourcesRef.current.push(chain);
     const c = chain;
-    c.ready = createStretchNode(ctx, { numChannels: buffer.numberOfChannels, initialRatio: audioPitchScale(track, bpmRef.current) })
+    c.ready = createStretchNode(ctx, { numChannels: buffer.numberOfChannels, initialRatio: audioPitchScale(track, audioRateOf(track)) })
       .then(({ node, ready }) => {
         if (!audioSourcesRef.current.includes(c)) { try { node.disconnect(); } catch {} return null; }
         node.connect(c.gainNode);
@@ -1585,16 +1681,14 @@ setPositionModeValue(null);
 
   // Push current bpm / volume / pitch settings into the live chains.
   applyChainParamsRef.current = () => {
-    const bpm = bpmRef.current;
     audioSourcesRef.current.forEach((c) => {
       const track = tracksRef.current.find(t => t.id === c.trackId);
       if (!track) return;
-      const mult = bpm / (track.originalBpm || bpm);
+      const mult = audioRateOf(track);
       const now = c.gainNode.context.currentTime;
       try { c.gainNode.gain.setTargetAtTime(track.muted ? 0 : (track.volume ?? 1), now, 0.01); } catch {}
-      c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(mult * (src._k || 1), now); } catch {} });
-      // warped tracks get their per-segment pitch from the scheduled pass (re-queued on edits)
-      if (c.workletNode && !getSyncPoints(track).length) setStretchTempo(c.workletNode, audioPitchScale(track, bpm));
+      c.sources.forEach(src => { try { src.playbackRate.setValueAtTime(mult, now); } catch {} });
+      if (c.workletNode) setStretchTempo(c.workletNode, audioPitchScale(track, mult));
     });
   };
 
@@ -1614,78 +1708,51 @@ setPositionModeValue(null);
   // [fromBeat, endBeat), with fromBeat sounding at `startTime`. Clips are BufferSources
   // feeding the track's chain, so a loop can append another pass at the boundary.
   const scheduleAudioPass = useCallback((playable, fromBeat, startTime, ctx, endBeat) => {
-    const liveBpm = bpmRef.current;
-    const denom = timeSigRef.current[1];
-    const liveSpb = beatToTime(1, null, liveBpm, denom);
+    const tm = tempoMapRef.current;
+    const fromSec = tm.liveSec(fromBeat);
 
     playable.forEach(track => {
       if (track.type !== 'audio') return;
       const buffer = audioBuffersRef.current[track.id];
       if (!buffer) return;
 
-      const originalBpm = track.originalBpm || liveBpm;
-      const tempoMultiplier = liveBpm / originalBpm;
-      const spb = beatToTime(1, null, originalBpm, denom);
+      // The audio plays 1:1 (times the BPM control). With a tempo map the grid bends to the
+      // recording; without one a clip is attached to the grid at the tempo it was imported at.
+      const m = tm.forTrack(track);
+      const rate = audioRateOf(track);
       const chain = ensureAudioChain(track, buffer);
       // rubberband delays its output; start sources early by that much so audio stays on the grid
       const latencySec = (chain.latencySamples || 0) / ctx.sampleRate;
       const dest = chain.workletNode || chain.gainNode;
 
-      const warp = makeWarp(track, spb);
-      const semis = Math.pow(2, (track.pitchSemitones || 0) / 12);
-      const keepPitch = track.keepPitch !== false;
-      const timedPitch = []; // [{ time, ratio }] rubberband pitch per segment (sync points vary the rate)
       getClips(track).forEach(clip => {
-        const clipEnd = clipEndBeat(clip, warp);
-        if (Math.min(clipEnd, endBeat) - Math.max(clip.start, fromBeat) <= 1e-6) return;
-        // One BufferSource per span between sync points; each has its own rate so the
-        // recording is stretched to fit the grid. With no pins this is a single span.
-        clipSpans(clip, warp).forEach(span => {
-          const sa = clip.start + span.b0;
-          const sb = clip.start + span.b1;
-          const a = Math.max(sa, fromBeat);
-          const b = Math.min(sb, endBeat);
-          if (b - a <= 1e-6) return;
-          const beatsFull = span.b1 - span.b0;
-          // file seconds per timeline beat inside this span, relative to the unwarped grid
-          const k = beatsFull > 1e-9 ? ((span.t1 - span.t0) / beatsFull) / spb : 1;
-          const rate = tempoMultiplier * k;
-          const fracA = beatsFull > 1e-9 ? (a - sa) / beatsFull : 0;
-          const fracB = beatsFull > 1e-9 ? (b - sa) / beatsFull : 1;
-          let when = startTime + (a - fromBeat) * liveSpb - latencySec;
-          let offset = span.t0 + fracA * (span.t1 - span.t0);
-          let dur = (fracB - fracA) * (span.t1 - span.t0);
-          const lag = ctx.currentTime - when;
-          if (lag > 0) { // too late to start early: skip the part that already passed
-            offset += lag * rate;
-            dur -= lag * rate;
-            when = ctx.currentTime;
-            if (dur <= 0.001) return;
-          }
-          const source = ctx.createBufferSource();
-          source.buffer = buffer;
-          source.playbackRate.value = rate;
-          source._k = k;
-          source.connect(dest);
-          const sources = chain.sources;
-          source.onended = () => {
-            const i = sources.indexOf(source);
-            if (i >= 0) sources.splice(i, 1);
-          };
-          sources.push(source);
-          source.start(when, offset, dur); // offset/duration are in file time
-          timedPitch.push({ time: when, ratio: semis * (keepPitch ? 1 / rate : 1) });
-        });
-      });
-      if (chain.workletNode) {
-        if (warp.pts.length && timedPitch.length) {
-          timedPitch.sort((x, y) => x.time - y.time);
-          scheduleStretchTempo(chain.workletNode, timedPitch);
-        } else {
-          // no sync points: one pitch correction for the whole track
-          setStretchTempo(chain.workletNode, audioPitchScale(track, liveBpm));
+        const clipEnd = clipEndBeat(clip, m);
+        const a = Math.max(clip.start, fromBeat);
+        const b = Math.min(clipEnd, endBeat);
+        if (b - a <= 1e-6) return;
+        let when = startTime + (tm.liveSec(a) - fromSec) - latencySec;
+        let offset = clipBeatToTime(clip, a, m);
+        let dur = clipBeatToTime(clip, b, m) - offset;
+        const lag = ctx.currentTime - when;
+        if (lag > 0) { // too late to start early: skip the part that already passed
+          offset += lag * rate;
+          dur -= lag * rate;
+          when = ctx.currentTime;
+          if (dur <= 0.001) return;
         }
-      }
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.playbackRate.value = rate;
+        source.connect(dest);
+        const sources = chain.sources;
+        source.onended = () => {
+          const i = sources.indexOf(source);
+          if (i >= 0) sources.splice(i, 1);
+        };
+        sources.push(source);
+        source.start(when, offset, dur); // offset/duration are in file time
+      });
+      if (chain.workletNode) setStretchTempo(chain.workletNode, audioPitchScale(track, rate));
     });
   }, [ensureAudioChain]);
 
@@ -1743,7 +1810,7 @@ setPositionModeValue(null);
         rStart = loopRef.current ? loopStartRef.current : initialStart;
         rEnd = loopRef.current ? loopEndRef.current : tc;
       }
-      const rDuration = rEnd - rStart;
+      let rDuration = rEnd - rStart;
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
@@ -1761,16 +1828,22 @@ setPositionModeValue(null);
         nextBeatIndex -= rDuration;
         prevRStart = loopStartRef.current;
         prevRDuration = loopEndRef.current - loopStartRef.current;
+        // From here on (including the rest of this frame) the region is the loop itself, not the
+        // part of it we started in the middle of.
+        rStart = loopStartRef.current;
+        rDuration = prevRDuration;
         // Audio clips do not loop natively: queue the next pass at the boundary.
         scheduleAudioPass(getPlayableTracks(tracksRef.current), loopStartRef.current, nextBeatTime, ctx, loopEndRef.current);
       }
 
       // Compute current column's duration for playhead interpolation
-      const currentBeatAbs = rStart + (nextBeatIndex > 0 ? (nextBeatIndex - 1) % rDuration : 0);
-      const currentColDur = colDurationAtBeat(Math.min(currentBeatAbs, tc - 1), bs, bpm, timeSigRef.current[1]);
+      const currentBeatAbs = rStart + (nextBeatIndex > 0 ? (nextBeatIndex - 1) % rDuration : (firstPass ? 0 : rDuration - 1));
+      const currentColDur = tempoMapRef.current.colDur(Math.min(currentBeatAbs, tc - 1));
       const beatsSinceLastScheduled = (now - (nextBeatTime - currentColDur)) / currentColDur;
       const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
-      const playheadBeat = rStart + (playheadBeatIndex % rDuration);
+      // Just after a loop wrap the index is still in the last column of the previous pass (< 0):
+      // wrap it to the end of the loop instead of letting it fall before the loop start.
+      const playheadBeat = rStart + (((playheadBeatIndex % rDuration) + rDuration) % rDuration);
 
       if (!loopRef.current && playheadBeatIndex >= rDuration) {
         stopPlayback();
@@ -1789,7 +1862,7 @@ setPositionModeValue(null);
 
         const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
-        const colDur = colDurationAtBeat(Math.min(beat, tc - 1), bs, bpm, timeSigRef.current[1]);
+        const colDur = tempoMapRef.current.colDur(Math.min(beat, tc - 1));
 
         currentPlayable.forEach(track => {
           if (track.type === 'audio') return;
@@ -1836,10 +1909,10 @@ setPositionModeValue(null);
       if (!playingRef.current || playheadBeatRef.current == null) return;
       const ctx = getAudioContext();
       const playable = getPlayableTracks(tracksRef.current);
-      const liveSpb = beatToTime(1, null, bpmRef.current, timeSigRef.current[1]);
+      const tm = tempoMapRef.current;
       const maxLatency = audioSourcesRef.current.reduce((m, c) => Math.max(m, (c.latencySamples || 0) / ctx.sampleRate), 0);
       const startTime = ctx.currentTime + 0.03 + maxLatency;
-      const fromBeat = playheadBeatRef.current + (startTime - ctx.currentTime) / liveSpb;
+      const fromBeat = tm.liveBeat(tm.liveSec(playheadBeatRef.current) + (startTime - ctx.currentTime));
       const endBeat = loopRef.current ? loopEndRef.current : totalColumns(barSubsRef.current);
       stopAudioChains();
       scheduleAudioPass(playable, fromBeat, startTime, ctx, endBeat);
@@ -2161,6 +2234,13 @@ setPositionModeValue(null);
           title="Loop region: when on, drag the time strip to set, resize or move the loop"
         >
           Loop
+        </button>
+        <button
+          className={`tool-btn ${octaveFit ? 'active' : ''}`}
+          onClick={() => setOctaveFit(v => { const n = !v; try { localStorage.setItem('guitar-roll-octave-fit', n ? '1' : '0'); } catch {} return n; })}
+          title="Octave fit: when you choose a position (P) with notes selected, shift them up or down by whole octaves so they fit it. Changes pitch."
+        >
+          Octave fit
         </button>
         <button
           className={`tool-btn ${metronome ? 'active' : ''}`}
@@ -2625,6 +2705,8 @@ setPositionModeValue(null);
           setSelectedClips={setSelectedClips}
           onUpdateClips={updateClips}
           onUpdateSyncPoints={updateSyncPoints}
+          tempoMap={tempoMap}
+          onAddSyncPointAt={addSyncPointAtBeat}
           audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
             trackId: t.id,
             name: t.name,

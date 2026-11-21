@@ -28,6 +28,9 @@ function refingerExact(notes, selected, pos) {
       const used = new Set();
       result.forEach((o, j) => {
         if (idxs.includes(j) || !o) return;
+        // Selected notes that start at other times (melody notes whose durations run into each
+        // other) never block each other - only notes we are NOT moving hold their strings.
+        if (selected.has(j)) return;
         if (overlaps(n, o)) used.add(o.stringIndex);
       });
       return used;
@@ -162,7 +165,7 @@ export function refingerNotes(notes, selected, pos) {
     if (idxs.length < 2 || idxs.length > MAX_CHORD) continue;
     const blockedFor = (n) => {
       const used = new Set();
-      result.forEach((o, j) => { if (!idxs.includes(j) && overlaps(n, o)) used.add(o.stringIndex); });
+      result.forEach((o, j) => { if (!idxs.includes(j) && !selected.has(j) && overlaps(n, o)) used.add(o.stringIndex); });
       return used;
     };
     const voiced = voiceChord(notes, idxs, pos, blockedFor);
@@ -170,4 +173,58 @@ export function refingerNotes(notes, selected, pos) {
     voiced.forEach(v => { result[v.i] = { ...notes[v.i], stringIndex: v.s, fret: v.f }; });
   }
   return result;
+}
+
+// How many of the selected notes sit inside the window [pos, pos+4] after re-fingering.
+export function countInPosition(notes, selected, pos) {
+  const out = refingerNotes(notes, selected, pos);
+  let n = 0;
+  selected.forEach((i) => { if (out[i] && out[i].fret >= pos && out[i].fret <= pos + WINDOW) n++; });
+  return n;
+}
+
+// The position (0-20) that fits the most selected notes; ties go to the lowest.
+export function bestPosition(notes, selected) {
+  let best = 0, bestCount = -1;
+  for (let p = 0; p <= 20; p++) {
+    const c = countInPosition(notes, selected, p);
+    if (c > bestCount) { best = p; bestCount = c; }
+  }
+  return { position: best, count: bestCount };
+}
+
+// Fingering for a pitch near the window (any string); null when the guitar cannot play it.
+function placeNear(midi, pos) {
+  let best = null;
+  for (let st = 0; st < NUM_STRINGS; st++) {
+    const f = midi - getMidiNote(st, 0);
+    if (f < 0 || f > NUM_FRETS) continue;
+    const d = f < pos ? pos - f : f > pos + WINDOW ? f - pos - WINDOW : 0;
+    if (!best || d < best.d) best = { st, f, d };
+  }
+  return best;
+}
+
+// "Octave fit": move the whole selection up or down by whole octaves (one shift for all notes,
+// so the melody keeps its shape) to the shift that puts the most notes inside the window
+// [pos, pos+4]; ties go to the smallest shift. Returns { notes, shift } (shift in octaves).
+export function refingerNotesOctave(notes, selected, pos) {
+  let best = null;
+  for (const k of [0, -1, 1, -2, 2, -3, 3]) {
+    const moved = notes.slice();
+    let ok = true;
+    for (const i of selected) {
+      const n = notes[i];
+      if (!n) continue;
+      const p = placeNear(getMidiNote(n.stringIndex, n.fret) + 12 * k, pos);
+      if (!p) { ok = false; break; }
+      moved[i] = { ...n, stringIndex: p.st, fret: p.f };
+    }
+    if (!ok) continue;
+    const out = refingerNotes(moved, selected, pos);
+    let count = 0;
+    selected.forEach((i) => { if (out[i] && out[i].fret >= pos && out[i].fret <= pos + WINDOW) count++; });
+    if (!best || count > best.count) best = { notes: out, shift: k, count };
+  }
+  return best || { notes: refingerNotes(notes, selected, pos), shift: 0, count: 0 };
 }

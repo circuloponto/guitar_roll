@@ -74,34 +74,43 @@ export function makeWarp(track, spb) {
   };
 }
 
-// Accept a plain seconds-per-beat number (no pins) or a warp object.
-const asWarp = (w) => (typeof w === 'number'
-  ? { spb: w, pts: [], toBeat: (t) => t / w, toTime: (b) => b * w }
-  : w);
+// A "map" converts timeline beats <-> seconds of the audio's own time (baseSec / baseBeat) and
+// lists the beats where its slope changes (knotBeats). Without sync points it is linear.
+export const linearMap = (spb) => ({ spb, knotBeats: [], baseSec: (b) => b * spb, baseBeat: (s) => s / spb });
+const asMap = (m) => (typeof m === 'number' ? linearMap(m) : m);
 
-// Pieces of a clip between pins: [{ t0, t1, b0, b1 }] in file time / clip-relative beats.
-export function clipSpans(clip, warpLike) {
-  const w = asWarp(warpLike);
-  const base = w.toBeat(clip.srcStart);
-  const cuts = [clip.srcStart, ...w.pts.map(p => p.time).filter(t => t > clip.srcStart + 1e-9 && t < clip.srcEnd - 1e-9), clip.srcEnd];
+// Clips play the audio natively: the file time under a timeline beat follows the map.
+export const clipLenBeats = (clip, m) => {
+  const k = asMap(m);
+  return k.baseBeat(k.baseSec(clip.start) + (clip.srcEnd - clip.srcStart)) - clip.start;
+};
+export const clipEndBeat = (clip, m) => clip.start + clipLenBeats(clip, m);
+
+// File time under timeline beat `beat` for this clip.
+export const clipBeatToTime = (clip, beat, m) => {
+  const k = asMap(m);
+  return clip.srcStart + k.baseSec(beat) - k.baseSec(clip.start);
+};
+// Timeline beat at which file time `t` of this clip sounds.
+export const clipTimeToBeat = (clip, t, m) => {
+  const k = asMap(m);
+  return k.baseBeat(k.baseSec(clip.start) + t - clip.srcStart);
+};
+
+// Pieces of a clip between map knots: [{ t0, t1, b0, b1 }] in file time / clip-relative beats.
+export function clipSpans(clip, m) {
+  const k = asMap(m);
+  const end = clipEndBeat(clip, k);
+  const cuts = [clip.start, ...k.knotBeats.filter(b => b > clip.start + 1e-9 && b < end - 1e-9), end];
   const out = [];
   for (let i = 1; i < cuts.length; i++) {
-    out.push({ t0: cuts[i - 1], t1: cuts[i], b0: w.toBeat(cuts[i - 1]) - base, b1: w.toBeat(cuts[i]) - base });
+    out.push({
+      t0: clipBeatToTime(clip, cuts[i - 1], k), t1: clipBeatToTime(clip, cuts[i], k),
+      b0: cuts[i - 1] - clip.start, b1: cuts[i] - clip.start,
+    });
   }
   return out;
 }
-
-export const clipLenBeats = (clip, w) => {
-  const k = asWarp(w);
-  return k.toBeat(clip.srcEnd) - k.toBeat(clip.srcStart);
-};
-export const clipEndBeat = (clip, w) => clip.start + clipLenBeats(clip, w);
-
-// File time under timeline beat `beat` for this clip.
-export const clipBeatToTime = (clip, beat, w) => {
-  const k = asWarp(w);
-  return k.toTime(k.toBeat(clip.srcStart) + (beat - clip.start));
-};
 
 export function newClip(start, srcStart, srcEnd) {
   return { id: newId(), start, srcStart, srcEnd };

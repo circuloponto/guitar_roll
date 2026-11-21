@@ -66,6 +66,16 @@ export default function TrackStrip({
                 {track.name}
                 {track.muted && <span className="track-mini-badge">M</span>}
                 {track.solo && <span className="track-mini-badge solo">S</span>}
+                <span
+                  className="track-mini-x"
+                  role="button"
+                  title="Delete track"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if ((track.notes && track.notes.length > 0) || track.audioFileName) setConfirmDelete(track);
+                    else onDeleteTrack(track.id);
+                  }}
+                >×</span>
               </button>
             );
           })}
@@ -322,7 +332,7 @@ export default function TrackStrip({
 
       {confirmDelete && (
         <ConfirmDialog
-          message={`Delete track "${confirmDelete.name}" with ${confirmDelete.notes.length} note${confirmDelete.notes.length !== 1 ? 's' : ''}?`}
+          message={confirmDelete.notes?.length ? `Delete track "${confirmDelete.name}" with ${confirmDelete.notes.length} note${confirmDelete.notes.length !== 1 ? 's' : ''}?` : `Delete track "${confirmDelete.name}"?`}
           onConfirm={() => { onDeleteTrack(confirmDelete.id); setConfirmDelete(null); }}
           onCancel={() => setConfirmDelete(null)}
         />
