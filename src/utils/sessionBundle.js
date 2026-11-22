@@ -23,6 +23,8 @@ function audioTrackIds(state) {
   return [...ids];
 }
 
+export const sessionHasAudio = (state) => audioTrackIds(state).length > 0;
+
 // Save blob with a "save as" dialog where the browser has one, otherwise a named download.
 async function saveBlob(blob, suggestedName) {
   if ('showSaveFilePicker' in window) {

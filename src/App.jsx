@@ -57,6 +57,14 @@ function App() {
   const [tracks, setTracksRaw] = useState(() => [createDefaultTrack()]);
   const tracksRef = useRef(tracks);
   const audioBuffersRef = useRef({}); // { [trackId]: AudioBuffer } — original decoded
+  // Audio tracks whose file isn't in this browser (e.g. a session opened from JSON): offer to relink.
+  const [missingAudioIds, setMissingAudioIds] = useState(() => new Set());
+  const markAudioMissing = useCallback((id, missing) => setMissingAudioIds(prev => {
+    if (prev.has(id) === missing) return prev;
+    const next = new Set(prev);
+    if (missing) next.add(id); else next.delete(id);
+    return next;
+  }), []);
   const audioSourcesRef = useRef([]); // active AudioBufferSourceNodes during playback
   const [activeTrackId, setActiveTrackId] = useState(() => tracks[0]?.id);
   const activeTrackIdRef = useRef(activeTrackId);
@@ -584,17 +592,19 @@ function App() {
         if (t.type === 'audio' && t.audioFileName && !audioBuffersRef.current[t.id]) {
           try {
             const stored = await getAudioFile(t.id);
-            if (!stored) return;
+            if (!stored) { markAudioMissing(t.id, true); return; }
             const ctx = getAudioContext();
             ensureStretchReady(ctx).catch(() => {});
             const buffer = await ctx.decodeAudioData(stored.arrayBuffer.slice(0));
             audioBuffersRef.current[t.id] = buffer;
+            markAudioMissing(t.id, false);
             // Back-fill originalBpm for legacy tracks that predate the tempo-stretch feature.
             setTracksTracked(prev => prev.map(tr => tr.id === t.id
               ? (tr.originalBpm ? { ...tr } : { ...tr, originalBpm: bpmRef.current })
               : tr));
           } catch (e) {
             console.warn('Could not restore audio for track', t.id, e);
+            markAudioMissing(t.id, true);
           }
         }
       });
@@ -650,7 +660,7 @@ function App() {
     if (data.chordLibrary) {
       saveChordLibrary(data.chordLibrary);
     }
-  }, [setTracksTracked]);
+  }, [setTracksTracked, markAudioMissing]);
 
   // Close subdiv dial on outside click
   useEffect(() => {
@@ -2387,7 +2397,9 @@ setPositionModeValue(null);
   const handleLoadAudio = useCallback(async (sourceTrackId, file) => {
     try {
       const src = tracksRef.current.find(t => t.id === sourceTrackId);
-      const reuse = src && src.type === 'audio' && !src.audioFileName;
+      // Relink: an audio track from a saved session whose file isn't here keeps its clips and sync points.
+      const relink = !!(src && src.type === 'audio' && src.audioFileName && !audioBuffersRef.current[src.id]);
+      const reuse = (src && src.type === 'audio' && !src.audioFileName) || relink;
       const trackId = reuse ? sourceTrackId : crypto.randomUUID();
       const arrayBuffer = await file.arrayBuffer();
       // Persist raw bytes so audio survives reload
@@ -2401,8 +2413,13 @@ setPositionModeValue(null);
       const buffer = await ctx.decodeAudioData(arrayBuffer);
       const peaks = computeWaveformPeaks(buffer, 2000);
       audioBuffersRef.current[trackId] = buffer;
-      ensureAudioChain({ id: trackId, muted: false, volume: 1, originalBpm: bpmRef.current }, buffer);
-      const audioProps = {
+      ensureAudioChain({ id: trackId, muted: false, volume: 1, originalBpm: relink ? (src.originalBpm || bpmRef.current) : bpmRef.current }, buffer);
+      if (relink) markAudioMissing(trackId, false);
+      const audioProps = relink ? {
+        audioFileName: file.name,
+        audioDuration: buffer.duration,
+        waveformPeaks: Array.from(peaks),
+      } : {
         type: 'audio',
         audioFileName: file.name,
         audioDuration: buffer.duration,
@@ -2429,7 +2446,7 @@ setPositionModeValue(null);
     } catch (err) {
       alert('Failed to load audio file: ' + err.message);
     }
-  }, [setTracksTracked, switchTrack, ensureAudioChain]);
+  }, [setTracksTracked, switchTrack, ensureAudioChain, markAudioMissing]);
 
   const handleRemoveAudio = useCallback((trackId) => {
     dropAudioChain(trackId);
@@ -2831,6 +2848,7 @@ setPositionModeValue(null);
         onReorderTracks={handleReorderTracks}
         onRenameTrack={handleRenameTrack}
         onLoadAudio={handleLoadAudio}
+        missingAudioIds={missingAudioIds}
         onRemoveAudio={handleRemoveAudio}
         onAddSyncPoint={addSyncPointAtPlayhead}
         onAutoSync={autoSyncPoints}

@@ -10,7 +10,7 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
-  onLoadAudio, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
+  onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -234,6 +234,21 @@ export default function TrackStrip({
                       <span className="track-slider-label" style={{ color: 'var(--accent-hi)' }} title={track.audioFileName}>
                         🎵 {track.audioFileName.length > 12 ? track.audioFileName.slice(0, 12) + '…' : track.audioFileName}
                       </span>
+                      {missingAudioIds?.has(track.id) && (
+                        <button
+                          className="track-btn-lg"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const input = document.createElement('input');
+                            input.type = 'file';
+                            input.accept = '.wav,.mp3,.aiff,.aif,audio/*';
+                            input.onchange = () => { if (input.files[0]) onLoadAudio(track.id, input.files[0]); };
+                            input.click();
+                          }}
+                          title="The audio file isn't in this browser. Pick it again to relink it: sync points and edits are kept."
+                          style={{ color: 'var(--amber)', fontSize: 11 }}
+                        >Relink audio</button>
+                      )}
                       <button
                         className="track-btn-lg"
                         onClick={(e) => { e.stopPropagation(); onRemoveAudio(track.id); }}

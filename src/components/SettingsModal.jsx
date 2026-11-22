@@ -6,7 +6,7 @@ import {
   listSessions, saveSession, loadSession, deleteSession,
   exportToFile, importFromFile, stateToUrl, getSessionState,
 } from '../utils/storage';
-import { exportSessionZip, importSessionFile } from '../utils/sessionBundle';
+import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
   findConflicts, EDITABLE_HOTKEYS, REFERENCE_ACTIONS,
@@ -550,9 +550,27 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               </button>
             </div>
             <div className="settings-row-btns">
-              <button className="settings-btn" onClick={async () => {
-                await exportToFile(getSessionState(appState), `${appState.projectName || 'guitar-roll'}.json`);
-              }}>
+              <button
+                className="settings-btn"
+                title="Saves the session. If it has audio tracks it saves a .zip with the audio files inside, so importing it brings back the audio and sync points."
+                onClick={async () => {
+                  const state = getSessionState(appState);
+                  try {
+                    if (sessionHasAudio(state)) {
+                      const r = await exportSessionZip(state, `${appState.projectName || 'guitar-roll'}.zip`);
+                      if (r.saved) {
+                        setCopyMsg(`Exported with ${r.audioCount} audio file${r.audioCount === 1 ? '' : 's'}${r.missing.length ? ` (${r.missing.length} missing)` : ''}`);
+                        setTimeout(() => setCopyMsg(''), 3500);
+                      }
+                    } else {
+                      await exportToFile(state, `${appState.projectName || 'guitar-roll'}.json`);
+                    }
+                  } catch (error) {
+                    console.warn('Export failed', error);
+                    window.alert('Could not export: ' + (error.message || error));
+                  }
+                }}
+              >
                 Export to File
               </button>
               <button className="settings-btn" onClick={async () => {
@@ -566,26 +584,6 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 }
               }}>
                 Import from File
-              </button>
-            </div>
-            <div className="settings-row-btns">
-              <button
-                className="settings-btn"
-                title="A .zip with the session and its audio files. Import it again (Import from File) and the audio and sync points come back."
-                onClick={async () => {
-                  try {
-                    const r = await exportSessionZip(getSessionState(appState), `${appState.projectName || 'guitar-roll'}.zip`);
-                    if (r.saved) {
-                      setCopyMsg(`Exported with ${r.audioCount} audio file${r.audioCount === 1 ? '' : 's'}${r.missing.length ? ` (${r.missing.length} missing)` : ''}`);
-                      setTimeout(() => setCopyMsg(''), 3500);
-                    }
-                  } catch (error) {
-                    console.warn('Export failed', error);
-                    window.alert('Could not export: ' + (error.message || error));
-                  }
-                }}
-              >
-                Export with Audio (.zip)
               </button>
             </div>
             <div className="settings-row-btns">
