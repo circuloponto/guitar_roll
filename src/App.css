@@ -3436,3 +3436,73 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
   opacity: 0.9;
 }
 .scrub-handle:hover::before { background: var(--accent-hi); opacity: 1; }
+
+/* ==========================================================================
+   Sliders: a tall, easy-to-grab hit area with a thin visible track.
+   The old sliders were 3-4px tall boxes with bigger thumbs, which some browsers (Safari, Firefox)
+   hit-test by the box only, so they could barely be grabbed.
+   ========================================================================== */
+.track-slider,
+.velocity-slider,
+.track-volume,
+.synth-osc-row input[type="range"],
+.synth-filter-row input[type="range"],
+.synth-adsr input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+}
+.track-slider::-webkit-slider-runnable-track,
+.velocity-slider::-webkit-slider-runnable-track,
+.track-volume::-webkit-slider-runnable-track,
+.synth-osc-row input[type="range"]::-webkit-slider-runnable-track,
+.synth-filter-row input[type="range"]::-webkit-slider-runnable-track,
+.synth-adsr input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--off-hi);
+  border-radius: 2px;
+}
+.track-slider::-moz-range-track,
+.velocity-slider::-moz-range-track,
+.track-volume::-moz-range-track,
+.synth-osc-row input[type="range"]::-moz-range-track,
+.synth-filter-row input[type="range"]::-moz-range-track,
+.synth-adsr input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: var(--off-hi);
+  border-radius: 2px;
+}
+/* centre each thumb on the 4px track: margin-top = (4 - thumb) / 2 */
+.track-slider::-webkit-slider-thumb { margin-top: -4px; }
+.velocity-slider::-webkit-slider-thumb { margin-top: -3px; }
+.track-volume::-webkit-slider-thumb { margin-top: -2px; }
+.synth-osc-row input[type="range"]::-webkit-slider-thumb,
+.synth-filter-row input[type="range"]::-webkit-slider-thumb,
+.synth-adsr input[type="range"]::-webkit-slider-thumb { margin-top: -3px; }
+/* Firefox draws the moz thumbs for the synth sliders too */
+.synth-osc-row input[type="range"]::-moz-range-thumb,
+.synth-filter-row input[type="range"]::-moz-range-thumb,
+.synth-adsr input[type="range"]::-moz-range-thumb {
+  width: 10px; height: 10px; border: none; border-radius: 50%; background: var(--accent-hi); cursor: pointer;
+}
+
+/* Tracks reorder by their grip only, so the sliders and buttons in a row can be dragged normally */
+.track-row-grip {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  padding: 0 4px;
+  margin-right: 2px;
+  color: var(--mute);
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+  flex-shrink: 0;
+}
+.track-row-grip:hover { color: var(--fg); }

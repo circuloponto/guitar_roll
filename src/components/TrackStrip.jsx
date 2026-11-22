@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 import { getAllInstruments } from '../utils/audio';
 import { listColorSchemes } from '../utils/storage';
@@ -33,6 +33,12 @@ export default function TrackStrip({
     }
     setEditingId(null);
   };
+
+  // Ask the layout to resize the Tracks panel to its content (so the controls are not cut off).
+  useEffect(() => {
+    const t = setTimeout(() => window.dispatchEvent(new Event('guitar-roll-fit-tracks')), 30);
+    return () => clearTimeout(t);
+  }, [expanded, tracks.length]);
 
   const allInst = getAllInstruments();
   // eslint-disable-next-line no-unused-vars
@@ -107,11 +113,6 @@ export default function TrackStrip({
                 key={track.id}
                 className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
                 onClick={() => onSwitchTrack(track.id)}
-                draggable
-                onDragStart={(e) => {
-                  setDragIndex(index);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
@@ -128,6 +129,18 @@ export default function TrackStrip({
                 }}
                 onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
               >
+                <span
+                  className="track-row-grip"
+                  draggable
+                  title="Drag to reorder this track"
+                  onClick={(e) => e.stopPropagation()}
+                  onDragStart={(e) => {
+                    setDragIndex(index);
+                    e.dataTransfer.effectAllowed = 'move';
+                    const row = e.currentTarget.closest('.track-row');
+                    if (row) e.dataTransfer.setDragImage(row, 12, 12);
+                  }}
+                >⠿</span>
                 <div className="track-row-name">
                   {editingId === track.id ? (
                     <input

@@ -2,7 +2,9 @@
 // during a drag. Consumers call .start(clientX, clientY, moveCb) on mousedown, .update
 // on every mousemove, and .stop() on mouseup. moveCb fires after each auto-scroll tick
 // so the drag's computation can re-run against the new scroll offset.
-export function createAutoPan(getContainer) {
+// Options: { horizontalOnly: true } never scrolls vertically (for drags that start in the ruler),
+// { max } caps the scroll speed in px per frame (default 28).
+export function createAutoPan(getContainer, { horizontalOnly = false, max = 28 } = {}) {
   let state = null;
   const tick = () => {
     if (!state) return;
@@ -10,14 +12,16 @@ export function createAutoPan(getContainer) {
     if (body) {
       const rect = body.getBoundingClientRect();
       const EDGE = 60;
-      const MAX = 28;
+      const MAX = max;
       let dx = 0, dy = 0;
       if (state.clientX > rect.right - EDGE) {
         dx = Math.min(1, (state.clientX - (rect.right - EDGE)) / EDGE) * MAX;
       } else if (state.clientX < rect.left + EDGE) {
         dx = -Math.min(1, ((rect.left + EDGE) - state.clientX) / EDGE) * MAX;
       }
-      if (state.clientY > rect.bottom - EDGE) {
+      if (horizontalOnly) {
+        // no vertical panning
+      } else if (state.clientY > rect.bottom - EDGE) {
         dy = Math.min(1, (state.clientY - (rect.bottom - EDGE)) / EDGE) * MAX;
       } else if (state.clientY < rect.top + EDGE) {
         dy = -Math.min(1, ((rect.top + EDGE) - state.clientY) / EDGE) * MAX;

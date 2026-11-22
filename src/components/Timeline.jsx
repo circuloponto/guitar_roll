@@ -102,6 +102,8 @@ export default function Timeline({
 
   // Edge auto-pan during drags — see src/utils/autoPan.js
   const autoPan = useRef(createAutoPan(() => bodyRef.current)).current;
+  // Scrubbing scrolls sideways only, at a gentler pace
+  const scrubPan = useRef(createAutoPan(() => bodyRef.current, { horizontalOnly: true, max: 18 })).current;
 
   // Imperatively move playhead every frame during playback so it stays in sync with audio
   // even when the expensive timeline DOM is slow to re-render at high zoom-out.
@@ -514,8 +516,12 @@ export default function Timeline({
       if (hasAudio && !playing) scrubTo(b);
     };
     go(e.clientX);
-    const onMove = (me) => go(me.clientX);
+    // Past the edge of the timeline (or the window) the view keeps scrolling and the playhead
+    // follows, even when the pointer is held still.
+    scrubPan.start(e.clientX, e.clientY, (cx) => go(cx));
+    const onMove = (me) => { scrubPan.update(me.clientX, me.clientY); go(me.clientX); };
     const onUp = () => {
+      scrubPan.stop();
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       scrubEnd();

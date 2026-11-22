@@ -37,6 +37,24 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
 
   const commit = useCallback((t) => { setSt(t); saveState(t); }, []);
 
+  // The Tracks panel grows or shrinks to fit its content when the track list is expanded/collapsed.
+  useEffect(() => {
+    const fit = () => requestAnimationFrame(() => {
+      const el = containerRef.current;
+      const body = el?.querySelector('.dock-panel-tracks .dock-body');
+      if (!el || !body) return;
+      const st = stRef.current;
+      const H = el.clientHeight;
+      const centerPx = st.menu === 'top' ? H * (1 - st.sizes.menuTop) : H;
+      if (!(centerPx > 0)) return;
+      const need = body.scrollHeight + 16 /* handle */ + 10 /* border + padding */;
+      const t = Math.max(0.06, Math.min(0.6, need / centerPx));
+      if (Math.abs(t - st.sizes.tracks) > 0.004) commit({ ...st, sizes: { ...st.sizes, tracks: t } });
+    });
+    window.addEventListener('guitar-roll-fit-tracks', fit);
+    return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
+  }, [commit]);
+
   const resetLayout = useCallback(() => {
     clearSavedState();
     const el = containerRef.current;
