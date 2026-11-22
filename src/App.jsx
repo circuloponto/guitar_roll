@@ -3093,6 +3093,7 @@ setPositionModeValue(null);
             isActive: t.id === activeTrackId,
             bgOpacity: t.bgOpacity ?? 0.2,
             volume: t.volume,
+            muted: !!t.muted,
           }))}
           bpm={bpm}
           timeSignature={timeSignature}

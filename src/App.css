@@ -3413,3 +3413,26 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
   box-sizing: border-box;
 }
 .sync-pin-wave:hover { background: #fff; }
+
+/* Playhead grab handle in the ruler: drag to scrub the audio */
+.scrub-handle {
+  position: absolute;
+  bottom: 0;
+  width: 18px;
+  height: 14px;
+  margin-left: -9px;
+  z-index: 8;
+  cursor: ew-resize;
+}
+.scrub-handle::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  bottom: 0;
+  width: 12px;
+  height: 11px;
+  background: #fff;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  opacity: 0.9;
+}
+.scrub-handle:hover::before { background: var(--accent-hi); opacity: 1; }

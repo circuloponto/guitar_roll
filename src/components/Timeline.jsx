@@ -3,7 +3,7 @@ import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
   CELL_WIDTH
 } from '../utils/constants';
-import { getNoteName, playNote } from '../utils/audio';
+import { getNoteName, playNote, getAudioContext, getMasterOut } from '../utils/audio';
 import {
   TOTAL_PITCH_ROWS, PITCH_LIST, noteToPitchRow, pitchRowToMidi, midiToPitchRow,
   midiToNoteName, getMidiNote, closestComboForPitch, pitchRowCombos, getComboForPosition
@@ -12,6 +12,7 @@ import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNot
 import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
 import { onsetTimes } from '../utils/beatDetect';
+import { prepareScrub, scrubTarget, scrubStop } from '../utils/scrubVoice';
 import { clipSpans, clipBeatToTime, clipTimeToBeat, linearMap } from '../utils/audioClips';
 
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -474,6 +475,58 @@ export default function Timeline({
     window.addEventListener('mouseup', handleMouseUp);
   }, [notes, setNotes, setSelectedNotes, selectedNotes, freeMode, rowHeight, position, setPosition]);
 
+  // ---- Scrubbing: dragging the playhead plays the recording under it, tape style (see
+  // utils/scrubVoice.js): the sound follows the pointer's speed and direction smoothly. ----
+  const scrubTo = (beat) => {
+    audioTracks.forEach(at => {
+      const buf = at.audioBuffer;
+      if (!buf) return;
+      const m = mapFor(at);
+      const clip = at.muted ? null : (at.clips || []).find(c => beat >= c.start && beat <= clipTimeToBeat(c, c.srcEnd, m));
+      scrubTarget(buf, clip ? clipBeatToTime(clip, beat, m) : null, at.volume ?? 1);
+    });
+  };
+  const scrubEnd = () => audioTracks.forEach(at => { if (at.audioBuffer) scrubStop(at.audioBuffer); });
+  const scrubPrepare = () => audioTracks.forEach(at => { if (at.audioBuffer) prepareScrub(at.audioBuffer); });
+  // Warm the scrub voices shortly after audio appears so the first drag already has sound.
+  const audioBufferKey = audioTracks.map(a => (a.audioBuffer ? a.trackId : '')).join(',');
+  useEffect(() => {
+    if (!audioBufferKey.replace(/,/g, '')) return;
+    const t = setTimeout(() => scrubPrepare(), 800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [audioBufferKey]);
+
+  // Drag the playhead from a pointer: moves it freely (no grid snap when there is audio) and scrubs.
+  const startScrubDrag = (e, rectEl) => {
+    const rectOf = () => (rectEl || headerRef.current).getBoundingClientRect();
+    const hasAudio = audioTracks.some(a => a.audioBuffer);
+    const beatAt = (clientX) => {
+      const px = clientX - rectOf().left + (bodyRef.current ? bodyRef.current.scrollLeft : 0);
+      const raw = xToBeat(px, barSubdivisions, cellWidth, false);
+      const b = hasAudio || freeMode ? raw : Math.round(raw / snapUnit) * snapUnit;
+      return Math.max(0, Math.min(totalCols - 1, b));
+    };
+    if (hasAudio) scrubPrepare();
+    const go = (clientX) => {
+      const b = beatAt(clientX);
+      setSelectedBeat(b);
+      if (hasAudio && !playing) scrubTo(b);
+    };
+    go(e.clientX);
+    const onMove = (me) => go(me.clientX);
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      scrubEnd();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const startScrubDragRef = useRef(null);
+  startScrubDragRef.current = startScrubDrag;
+
   // Loop region drag on header
   const handleHeaderMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
@@ -511,21 +564,9 @@ export default function Timeline({
         loopDragRef.current = { mode: 'new', startCol, didMove: false };
       }
     } else {
-      // Loop is off: the header only places / scrubs the playhead. No loop region.
-      const placeHead = (clientX) => {
-        const px = clientX - rect.left + (bodyRef.current ? bodyRef.current.scrollLeft : scrollLeft);
-        const beat = snapBeat(xToBeat(px, barSubdivisions, cellWidth, false));
-        setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
-      };
-      placeHead(e.clientX);
+      // Loop is off: the header places / scrubs the playhead (with sound when there is audio).
       e.preventDefault();
-      const onMove = (me) => placeHead(me.clientX);
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-      };
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
+      startScrubDragRef.current(e);
       return;
     }
 
@@ -820,6 +861,9 @@ export default function Timeline({
         const beat = freeMode ? raw : Math.round(raw / snapUnit) * snapUnit;
         setSelectedBeat(Math.max(0, Math.min(totalCols - 1, beat)));
         marqueeDidDragRef.current = true;
+        // Keep dragging to scrub: the recording plays under the pointer.
+        e.preventDefault();
+        startScrubDragRef.current(e, bodyRef.current);
       }
       return;
     }
@@ -1505,7 +1549,7 @@ export default function Timeline({
       {/* Header row: piano spacer + bar numbers */}
       <div style={{ display: 'flex', flexShrink: 0 }}>
         <div className="piano-spacer" />
-        <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} style={{ flex: 1 }}
+        <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} onMouseEnter={scrubPrepare} style={{ flex: 1 }}
           onMouseMove={(e) => {
             if (!loop || loopDragRef.current) return;
             const rect = headerRef.current.getBoundingClientRect();
@@ -1660,6 +1704,15 @@ export default function Timeline({
                   window.addEventListener('mousemove', handleMove);
                   window.addEventListener('mouseup', handleUp);
                 }}
+              />
+            )}
+            {/* Grab handle on the playhead: drag it to scrub the audio, in any loop mode */}
+            {!playing && selectedBeat !== null && (
+              <div
+                className="scrub-handle"
+                style={{ left: beatToX(selectedBeat, barSubdivisions, cellWidth) }}
+                title="Drag to scrub: the recording plays under the playhead"
+                onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.preventDefault(); startScrubDrag(e); }}
               />
             )}
             {/* Playhead in header */}
