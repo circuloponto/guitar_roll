@@ -50,6 +50,8 @@ const DEFAULT_HOTKEYS = {
   nudgeRight: { label: 'Move Notes Right', description: 'Move selected notes later by one grid step', key: 'ArrowRight', modifiers: { alt: true } },
   nudgeUp: { label: 'Move Notes Up', description: 'Move selected notes up one semitone', key: 'ArrowUp', modifiers: { alt: true } },
   nudgeDown: { label: 'Move Notes Down', description: 'Move selected notes down one semitone', key: 'ArrowDown', modifiers: { alt: true } },
+  stretchNotes: { label: 'Stretch Selection', description: 'Grow the selection rhythmically: the shortest note grows by one rhythm step and everything else scales in proportion', key: ']', altOk: true },
+  compressNotes: { label: 'Compress Selection', description: 'Shrink the selection rhythmically: the shortest note shrinks by one rhythm step and everything else scales in proportion', key: '[', altOk: true },
   selectAtPlayhead: { label: 'Select Notes at Playhead', description: 'Select all notes at the current playhead position', key: 'Tab' },
   cursorMode: { label: 'Cursor Mode (Hold)', description: 'Hold to move the timeline cursor without placing a note', key: 'k' },
   jumpPrevNote: { label: 'Jump to Previous Note', description: 'Move playhead to the previous note position', key: 'ArrowLeft', modifiers: { ctrl: true } },
@@ -101,10 +103,13 @@ export function matchesHotkey(e, hotkey) {
   const shift = hotkey.modifiers?.shift || false;
   const alt = hotkey.modifiers?.alt || false;
 
+  // `altOk` is for keys typed with Alt on some layouts (e.g. [ and ] are Alt+8 / Alt+9 on a
+  // Portuguese keyboard, AltGr+8 / AltGr+9 on Windows): the character already says which key it is.
+  const altOk = !!hotkey.altOk && e.altKey;
   return keyMatch &&
-    (ctrl ? (e.ctrlKey || e.metaKey) : !(e.ctrlKey || e.metaKey)) &&
+    (ctrl ? (e.ctrlKey || e.metaKey) : (altOk || !(e.ctrlKey || e.metaKey))) &&
     (shift ? e.shiftKey : !e.shiftKey) &&
-    (alt ? e.altKey : !e.altKey);
+    (alt ? e.altKey : (altOk || !e.altKey));
 }
 
 // Check if a wheel event matches a wheel hotkey config
@@ -165,6 +170,6 @@ export const EDITABLE_HOTKEYS = [
   'jumpPrevNote', 'jumpNextNote',
   'zoomIn', 'zoomOut', 'zoomWheel', 'verticalZoomIn', 'verticalZoomOut', 'verticalZoomWheel', 'velocityWheel',
   'machineGunMode', 'fingeringMode', 'positionMode', 'stringDown', 'stringUp',
-  'transposeSemiDown', 'transposeSemiUp', 'transposeOctaveDown', 'transposeOctaveUp', 'nudgeLeft', 'nudgeRight', 'nudgeUp', 'nudgeDown', 'selectAtPlayhead',
+  'transposeSemiDown', 'transposeSemiUp', 'transposeOctaveDown', 'transposeOctaveUp', 'nudgeLeft', 'nudgeRight', 'nudgeUp', 'nudgeDown', 'stretchNotes', 'compressNotes', 'selectAtPlayhead',
   'clearSelection', 'selectAll', 'splitNote', 'cursorMode', 'cheatSheet', 'escape', 'rhythmUnit', 'instanceColor',
 ];

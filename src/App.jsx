@@ -1416,6 +1416,44 @@ setPositionModeValue(null);
           }
         }
       }
+      // Stretch / compress the selection: the shortest note changes by one rhythm step and every
+      // note start (from the earliest) and length scales by the same factor, so the rhythm keeps its shape.
+      // Keyboard layouts differ in what e.key says when Alt/AltGr is held, so also accept the
+      // physical keys: the bracket keys themselves, or Alt+8 / Alt+9 (where [ and ] live on e.g.
+      // a Portuguese layout), as long as the hotkey is still at its default [ ].
+      const bracketDefault = hk.stretchNotes?.key === ']' && hk.compressNotes?.key === '[';
+      const codeStretch = bracketDefault && !e.shiftKey && !e.metaKey
+        && (e.code === 'BracketRight' || (e.altKey && e.code === 'Digit9'));
+      const codeCompress = bracketDefault && !e.shiftKey && !e.metaKey
+        && (e.code === 'BracketLeft' || (e.altKey && e.code === 'Digit8'));
+      const isStretch = matchesHotkey(e, hk.stretchNotes) || codeStretch;
+      const isCompress = matchesHotkey(e, hk.compressNotes) || codeCompress;
+      if (selectedNotesRef.current.size > 0 && (isStretch || isCompress)) {
+        e.preventDefault();
+        const dir = isStretch ? 1 : -1;
+        const FLOOR = 1 / 32;
+        const step = noteDurationRef.current > 0 ? noteDurationRef.current : 1;
+        const round = (x) => Math.round(x * 1e6) / 1e6;
+        const sel = [...selectedNotesRef.current].map(i => notesRef.current[i]).filter(Boolean);
+        const anchor = Math.min(...sel.map(n => n.beat));
+        const minLen = Math.min(...sel.map(n => n.duration || 1));
+        const factor = Math.max(FLOOR, minLen + dir * step) / minLen;
+        if (Math.abs(factor - 1) > 1e-9) {
+          const total = totalColumns(barSubsRef.current);
+          const maxEnd = Math.max(...sel.map(n => anchor + (n.beat - anchor) * factor + Math.max(FLOOR, (n.duration || 1) * factor)));
+          setNotes(prev => prev.map((n, i) => selectedNotesRef.current.has(i)
+            ? { ...n, beat: round(anchor + (n.beat - anchor) * factor), duration: Math.max(FLOOR, round((n.duration || 1) * factor)) }
+            : n));
+          if (maxEnd > total + 1e-6) {
+            // Grow the timeline so the stretched phrase fits.
+            setBarSubdivisions(prev => {
+              let next = prev;
+              while (totalColumns(next) < maxEnd - 1e-6 && next.length < 999) next = [...next, timeSigRef.current[0] || 4];
+              return next;
+            });
+          }
+        }
+      }
       if (!transposeHandled && matchesHotkey(e, hk.bendUp)) {
         if (selectedNotesRef.current.size > 0) {
           e.preventDefault();
