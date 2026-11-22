@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 import { getAllInstruments } from '../utils/audio';
 import { listColorSchemes } from '../utils/storage';
 import ConfirmDialog from './ConfirmDialog';
@@ -64,8 +64,21 @@ export default function TrackStrip({
                 onClick={() => onSwitchTrack(track.id)}
               >
                 {track.name}
-                {track.muted && <span className="track-mini-badge">M</span>}
-                {track.solo && <span className="track-mini-badge solo">S</span>}
+                {(() => {
+                  // One speaker icon: on = you will hear this track, off = muted or silenced by another track's solo.
+                  const silencedBySolo = !track.muted && !track.solo && tracks.some(t => t.solo);
+                  const audible = !track.muted && !silencedBySolo;
+                  return (
+                    <span
+                      className={`track-mini-speaker ${audible ? 'on' : 'off'}`}
+                      role="button"
+                      title={track.muted ? 'Muted — click to unmute' : silencedBySolo ? 'Silent: another track is soloed — click to mute' : 'Click to mute'}
+                      onClick={(e) => { e.stopPropagation(); onToggleMute(track.id); }}
+                    >
+                      {audible ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                    </span>
+                  );
+                })()}
                 <span
                   className="track-mini-x"
                   role="button"

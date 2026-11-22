@@ -3381,3 +3381,18 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
 
 /* Icon-only toolbar buttons */
 .tool-btn svg { display: block; }
+
+/* Collapsed track tabs: one speaker icon (on / off) instead of M / S badges */
+.track-mini-speaker {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 2px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--soft);
+}
+.track-mini-speaker.off { color: var(--danger); opacity: 0.85; }
+.track-mini-speaker:hover { color: var(--fg); background: var(--off-hi); }
+.track-mini-speaker.off:hover { color: var(--danger); }
+.track-mini-speaker svg { display: block; }
