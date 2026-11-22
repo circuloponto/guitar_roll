@@ -188,3 +188,23 @@ export function fitTempo(beats) {
   });
   return { period, t0, residual: smooth };
 }
+
+
+// Times (seconds) of the clear attacks in a recording: local peaks of the onset curve. Cached per
+// buffer. Used to snap the waveform handle of a sync point onto the hit it belongs to.
+const onsetCache = new WeakMap();
+export function onsetTimes(buffer) {
+  const hit = onsetCache.get(buffer);
+  if (hit) return hit;
+  const { novelty, frameSec } = onsetStrength(buffer);
+  const out = [];
+  for (let f = 2; f < novelty.length - 2; f++) {
+    const v = novelty[f];
+    if (v < 1.2) continue; // novelty is normalised to its own RMS: below ~1 is not an attack
+    if (v >= novelty[f - 1] && v >= novelty[f + 1] && v >= novelty[f - 2] && v >= novelty[f + 2]) {
+      out.push(f * frameSec + (FRAME / 2) / buffer.sampleRate);
+    }
+  }
+  onsetCache.set(buffer, out);
+  return out;
+}

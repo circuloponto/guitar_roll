@@ -553,7 +553,7 @@ function App() {
   activeSongIdRef.current = activeSongId;
   const songHistoryRef = useRef({}); // { [songId]: { undo, redo } } — in memory only
   const liveRef = useRef({});
-  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature };
+  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature, timelineZoom };
   const captureSong = useCallback(() => ({
     ...liveRef.current,
     tracks: tracksRef.current,
@@ -2177,6 +2177,11 @@ setPositionModeValue(null);
     setSelectedBeat(snap.selectedBeat || 0);
     setSelectedNotes(new Set());
     setSelectedClips(new Set());
+    // Each tab remembers its own timeline zoom; one with audio but no saved zoom fits the song.
+    if (Number.isFinite(snap.timelineZoom)) setTimelineZoom(snap.timelineZoom);
+    else if (snap.tracks.some(t => t.type === 'audio')) fitZoomPendingRef.current = true;
+    else setTimelineZoom(1);
+    requestAnimationFrame(() => { if (timelineBodyRef.current) timelineBodyRef.current.scrollLeft = 0; });
   }, [applyState]);
 
   const switchSong = useCallback((id) => {

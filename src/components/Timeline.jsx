@@ -11,6 +11,7 @@ import {
 import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNotes, beatToX as beatToXUtil, xToBeat as xToBeatUtil, gridTotalWidth, colWidth, durationToWidth as durationToWidthUtil, timeToBeat } from '../utils/barLayout';
 import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
+import { onsetTimes } from '../utils/beatDetect';
 import { clipSpans, clipBeatToTime, clipTimeToBeat, linearMap } from '../utils/audioClips';
 
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -658,6 +659,14 @@ export default function Timeline({
     window.addEventListener('mouseup', onUp);
   };
 
+  // Find the recording's attacks ahead of time so the waveform handle can snap to them without a stall.
+  const syncBuffer = tempoMap && tempoMap.active ? (audioTracks.find(a => a.trackId === tempoMap.refId)?.audioBuffer || null) : null;
+  useEffect(() => {
+    if (!syncBuffer) return;
+    const t = setTimeout(() => { try { onsetTimes(syncBuffer); } catch { /* ignore */ } }, 400);
+    return () => clearTimeout(t);
+  }, [syncBuffer]);
+
   // ---- Sync points: pin the sound at a spot in the audio to a grid position ----
   const newPinId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
   const handleClipDoubleClick = (e, at, clip) => {
@@ -674,10 +683,18 @@ export default function Timeline({
     if (e.button === 2) { onUpdateSyncPoints(at.trackId, pts => pts.filter(p => p.id !== pin.id)); return; }
     if (e.button !== 0 || !tempoMap || !tempoMap.active) return;
     const tm = tempoMap;
-    const sorted = [...(at.syncPoints || [])].sort((a, b) => a.time - b.time);
-    const idx = sorted.findIndex(p => p.id === pin.id);
-    const lo = idx > 0 ? sorted[idx - 1].beat + 0.005 : 0.005;
-    const hi = idx < sorted.length - 1 ? sorted[idx + 1].beat - 0.005 : Infinity;
+    // Top handle: which grid beat the pin sits on. The sound it is attached to stays put.
+    const { prev, next } = pinNeighbours(at, pin);
+    const spb0 = tm.spb0;
+    let lo = prev.beat + Math.max(0.005, (pin.time - prev.time) / (MAX_RATE * spb0));
+    let hi = Infinity;
+    if (next) {
+      lo = Math.max(lo, next.beat - (next.time - pin.time) / (MIN_RATE * spb0));
+      hi = next.beat - Math.max(0.005, (next.time - pin.time) / (MAX_RATE * spb0));
+    } else {
+      hi = prev.beat + (pin.time - prev.time) / (MIN_RATE * spb0);
+    }
+    if (hi < lo) hi = lo;
     let saved = false;
     const onMove = (me) => {
       if (!saved) { saveSnapshot(); saved = true; }
@@ -687,6 +704,66 @@ export default function Timeline({
       if (!me.altKey && Math.abs(line - tb) * cellWidth <= 6) tb = line;
       const fileBeat = Math.min(hi, Math.max(lo, tm.beatToFileBeat(tb)));
       onUpdateSyncPoints(at.trackId, pts => pts.map(p => (p.id === pin.id ? { ...p, beat: fileBeat } : p)), false);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Neighbours of a pin (the implicit file-start anchor counts as one) and the slowest / fastest
+  // the audio may play between two pins, so a drag can't flatten or invert the grid.
+  const MIN_RATE = 0.25, MAX_RATE = 4;
+  const pinNeighbours = (at, pin) => {
+    const sorted = [...(at.syncPoints || [])].sort((a, b) => a.time - b.time);
+    const idx = sorted.findIndex(p => p.id === pin.id);
+    return {
+      prev: idx > 0 ? sorted[idx - 1] : { time: 0, beat: 0 },
+      next: idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null,
+    };
+  };
+
+  // Bottom handle: which point of the waveform the pin is attached to. The grid beat stays put and
+  // the waveform slides under the pin (drag right = the waveform moves right with the pointer).
+  const handlePinWaveMouseDown = (e, at, clip, pin) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.button !== 0 || !tempoMap || !tempoMap.active) return;
+    const tm = tempoMap; // frozen for the whole drag
+    const { prev, next } = pinNeighbours(at, pin);
+    const spb0 = tm.spb0;
+    const B = pin.beat;
+    let lo = prev.time + Math.max(0.005, MIN_RATE * spb0 * (B - prev.beat));
+    let hi = prev.time + MAX_RATE * spb0 * (B - prev.beat);
+    if (next) {
+      lo = Math.max(lo, next.time - MAX_RATE * spb0 * (next.beat - B));
+      hi = Math.min(hi, next.time - Math.max(0.005, MIN_RATE * spb0 * (next.beat - B)));
+    } else {
+      hi = Math.min(hi, at.audioDuration || Infinity);
+    }
+    lo = Math.max(lo, 0);
+    if (hi < lo) return;
+    const onsets = at.audioBuffer ? onsetTimes(at.audioBuffer) : [];
+    const startBeat = clipPointerBeat(e.clientX);
+    let saved = false;
+    const onMove = (me) => {
+      if (!saved) { saveSnapshot(); saved = true; }
+      const delta = clipPointerBeat(me.clientX) - startBeat;
+      let t = tm.timeOfFileBeat(B - delta);
+      // light magnet onto the nearest attack within a few pixels (Alt = none)
+      if (!me.altKey && onsets.length) {
+        let best = null, bestPx = 7;
+        for (const o of onsets) {
+          if (o < lo || o > hi) continue;
+          const px = Math.abs(tm.fileBeatOfTime(o) - tm.fileBeatOfTime(t)) * cellWidth;
+          if (px < bestPx) { bestPx = px; best = o; }
+        }
+        if (best != null) t = best;
+      }
+      t = Math.min(hi, Math.max(lo, t));
+      onUpdateSyncPoints(at.trackId, pts => pts.map(p => (p.id === pin.id ? { ...p, time: t } : p)), false);
     };
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
@@ -1951,11 +2028,19 @@ export default function Timeline({
                         key={p.id}
                         className={`sync-pin${interactive ? '' : ' passive'}`}
                         style={{ left: px }}
-                        title={interactive ? 'Sync point: drag to line this sound up with the grid Alt = no snapping. Right-click to remove.' : undefined}
+                        title={interactive ? 'Sync point: drag the top handle to move it along the grid (which beat this sound is on). Alt = no snapping. Right-click to remove.' : undefined}
                         onMouseDown={interactive ? (e) => handlePinMouseDown(e, at, clip, p) : undefined}
                         onContextMenu={interactive ? (e) => e.preventDefault() : undefined}
                         onDoubleClick={interactive ? (e) => e.stopPropagation() : undefined}
-                      />
+                      >
+                        {interactive && (
+                          <span
+                            className="sync-pin-wave"
+                            title="Waveform handle: slide the recording under this pin to put it on the exact hit (the beat stays). Alt = no snapping."
+                            onMouseDown={(e) => handlePinWaveMouseDown(e, at, clip, p)}
+                          />
+                        )}
+                      </div>
                     );
                   })}
                   {interactive && (

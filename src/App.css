@@ -3396,3 +3396,20 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
 .track-mini-speaker:hover { color: var(--fg); background: var(--off-hi); }
 .track-mini-speaker.off:hover { color: var(--danger); }
 .track-mini-speaker svg { display: block; }
+
+/* Sync pin: top triangle = grid (timeline) handle, bottom diamond = waveform handle */
+.sync-pin-wave {
+  position: absolute;
+  left: -7px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+  background: #ffd54a;
+  border: 2px solid var(--ink);
+  transform: rotate(45deg);
+  border-radius: 2px;
+  cursor: col-resize;
+  z-index: 2;
+  box-sizing: border-box;
+}
+.sync-pin-wave:hover { background: #fff; }
