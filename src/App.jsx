@@ -1,7 +1,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
-import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset } from './utils/audio';
+import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset, loadUltrabox } from './utils/audio';
+import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
@@ -326,6 +327,24 @@ function App() {
     setTimelineZoom(z => Math.max(0.02, Math.min(z, fit)));
     requestAnimationFrame(() => { if (timelineBodyRef.current) timelineBodyRef.current.scrollLeft = 0; });
   }, [tracks, tempoMap]);
+  // UltraBox instruments: load the engine when a track uses one and render its notes ahead of time.
+  const [ultraboxLoaded, setUltraboxLoaded] = useState(ultraboxReady());
+  useEffect(() => {
+    if (!tracks.some(t => isUltrabox(t.instrument))) return;
+    if (!ultraboxLoaded) { loadUltrabox().then(() => setUltraboxLoaded(true)).catch(() => {}); return; }
+    const timer = setTimeout(() => {
+      const ctx = getAudioContext();
+      tracks.forEach(t => {
+        if (!isUltrabox(t.instrument) || t.type === 'audio') return;
+        const spb = tempoMapRef.current.liveSpb || 0.5;
+        prewarmNotes(ctx, t.instrument, t.notes.map(n => ({
+          midi: getMidiNote(n.stringIndex, n.fret),
+          duration: Math.max(0.05, (n.duration || 1) * spb),
+        })));
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [tracks, ultraboxLoaded]);
   const applyChainParamsRef = useRef(() => {});
   useEffect(() => { applyChainParamsRef.current(); }, [bpm, tracks]);
 
@@ -2592,6 +2611,7 @@ setPositionModeValue(null);
           title="Instrument"
           onChange={(e) => {
             const inst = e.target.value;
+            if (isUltrabox(inst)) loadUltrabox().then(() => playNote(1, 3, 0.6, 0.8, inst)).catch(() => {});
             setInstrument(inst);
             setInstrumentState(inst);
             setTracksTracked(prev => prev.map(t =>
@@ -2599,8 +2619,15 @@ setPositionModeValue(null);
             ));
           }}
         >
-          {Object.entries(instrumentList).map(([id, inst]) => (
+          {Object.entries(instrumentList).filter(([, inst]) => !inst.group).map(([id, inst]) => (
             <option key={id} value={id}>{inst.label}</option>
+          ))}
+          {[...new Set(Object.values(instrumentList).map(i => i.group).filter(Boolean))].map(group => (
+            <optgroup key={group} label={group}>
+              {Object.entries(instrumentList).filter(([, inst]) => inst.group === group).map(([id, inst]) => (
+                <option key={id} value={id}>{inst.label}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
         <button

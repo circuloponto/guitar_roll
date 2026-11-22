@@ -1,3 +1,5 @@
+import { isUltrabox, playUltraboxNote, loadUltrabox, ULTRABOX_INSTRUMENTS } from './ultrabox';
+
 // Guitar note frequencies for standard tuning (E2 A2 D3 G3 B3 E4)
 const STRING_OPEN_NOTES = [
   { note: 'E2', freq: 82.41 },
@@ -97,6 +99,8 @@ export function getAllInstruments() {
   Object.entries(custom).forEach(([id, p]) => {
     all[id] = { label: p.name || id };
   });
+  // UltraBox presets, grouped by category in the picker
+  ULTRABOX_INSTRUMENTS.forEach(u => { all[u.id] = { label: u.name, group: `UltraBox · ${u.cat}` }; });
   return all;
 }
 
@@ -729,10 +733,16 @@ function applyPitchEffects(oscs, freq, startTime, duration, note) {
   }
 }
 
+const midiOf = (stringIndex, fret) => Math.round(69 + 12 * Math.log2(getNoteFrequency(stringIndex, fret) / 440));
+
 export function playNote(stringIndex, fret, duration = 0.5, velocity = 0.8, instrument, volume = 1) {
   const ctx = getAudioContext();
   const inst = instrument || currentInstrument;
   const gain = 0.3 * velocity * volume;
+  if (isUltrabox(inst)) {
+    playUltraboxNote(ctx, getMasterOut(), inst, midiOf(stringIndex, fret), ctx.currentTime, duration, gain);
+    return;
+  }
   if (inst === 'drums') {
     synthDrum(ctx, stringIndex, ctx.currentTime, gain);
     return;
@@ -754,6 +764,11 @@ export function playNoteAtTime(stringIndex, fret, startTime, duration = 0.3, vel
 
   if (inst === 'drums') {
     synthDrum(ctx, stringIndex, startTime, gain);
+    return;
+  }
+  if (isUltrabox(inst)) {
+    const slide = noteProps && noteProps.slideTo != null ? noteProps.slideTo - fret : 0;
+    playUltraboxNote(ctx, getMasterOut(), inst, midiOf(stringIndex, fret), startTime, duration, gain, noteProps, slide);
     return;
   }
   const freq = getNoteFrequency(stringIndex, fret);
@@ -788,3 +803,6 @@ export function playClickAtTime(time, accent = false) {
 }
 
 export { getAudioContext, getMasterOut };
+
+// Start loading the UltraBox engine (when an UltraBox instrument is chosen or a session uses one).
+export { loadUltrabox };
