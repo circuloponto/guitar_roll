@@ -15,6 +15,7 @@ class ScrubProcessor extends AudioWorkletProcessor {
     this.pos = 0;
     this.target = 0;
     this.active = false;
+    this.hold = false; // keep sounding at a standstill (a smooth freeze), not only while moving
     this.v = 0;
     this.g = 0;
     this.G = Math.round(GRAIN_SEC * sampleRate);
@@ -29,6 +30,8 @@ class ScrubProcessor extends AudioWorkletProcessor {
       if (m.type === 'load') {
         this.data = m.data;
         this.sr = m.sr;
+      } else if (m.type === 'hold') {
+        this.hold = !!m.on;
       } else if (m.type === 'target') {
         if (m.active) {
           if (!this.active) { this.pos = m.t; this.v = 0; this.prevStart = null; }
@@ -82,7 +85,7 @@ class ScrubProcessor extends AudioWorkletProcessor {
       this.v += (vt - this.v) * 0.002;
       this.pos += this.v * dt;
       const av = Math.abs(this.v);
-      const gt = av > 0.03 ? Math.min(1, av * 20) : 0; // full level from a slow crawl, silent when still
+      const gt = this.hold && this.active ? 1 : (av > 0.03 ? Math.min(1, av * 20) : 0); // full level from a slow crawl; silent when still unless held
       this.g += (gt - this.g) * 0.004;
 
       if (this.g > 1e-3 && ++this.sinceSpawn >= this.H) {

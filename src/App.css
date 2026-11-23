@@ -3627,3 +3627,7 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
 
 /* Synth editor inside Settings > Synth */
 .synth-embedded { max-width: 640px; }
+
+/* Alt + Space held: the timeline can be dragged under the playhead */
+body.altspace-held .timeline-container,
+body.altspace-held .timeline-container * { cursor: grab !important; }

@@ -73,6 +73,9 @@ export const REFERENCE_ACTIONS = [
   { label: 'Brush Erase', description: 'Right-click + drag across notes to delete them', display: 'Right Click + Drag' },
   { label: 'Marquee Erase', description: 'Marquee-select and delete notes', display: 'Shift + Right Click + Drag' },
   { label: 'Duplicate Notes', description: 'Alt-drag selected notes to duplicate instead of move', display: 'Alt + Drag' },
+  { label: 'Play From Pointer', description: 'Start playback at the subdivision mark just before the pointer on the timeline', display: 'Shift + Space' },
+  { label: 'Sound the Playhead', description: 'Hold to hear what is at the playhead (notes once, audio while held)', display: 'Alt + Space' },
+  { label: 'Drag the Timeline Under the Playhead', description: 'Hold Alt + Space and drag the timeline: the playhead stays put and you keep hearing what is under it', display: 'Alt + Space + Drag' },
   { label: 'Shift-Drag Selection', description: 'Add to / remove from selection while dragging a marquee', display: 'Shift + Drag' },
 ];
 

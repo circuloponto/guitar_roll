@@ -53,6 +53,11 @@ export function scrubTarget(buffer, fileTime, volume = 1) {
   return true;
 }
 
+export function scrubHold(buffer, on) {
+  const v = voices.get(buffer);
+  if (v && v.ready) v.node.port.postMessage({ type: 'hold', on });
+}
+
 export function scrubStop(buffer) {
   const v = voices.get(buffer);
   if (v && v.ready) v.node.port.postMessage({ type: 'target', t: 0, active: false });

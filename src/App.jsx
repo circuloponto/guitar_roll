@@ -5,7 +5,7 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOu
 import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
 import { groupTracks as groupTracksFn, ungroupTracks as ungroupTracksFn, normalizeGroups, tidyTrackGroups } from './utils/trackGroups';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
-import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
+import { xToBeat, defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
@@ -1252,6 +1252,11 @@ setPositionModeValue(null);
           return next.length > 0 ? next[0].beat : b;
         });
       }
+      if (e.code === 'Space' && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        if (!e.repeat) playFromPointerRef.current?.();
+        return;
+      }
       if (matchesHotkey(e, hk.playStop)) {
         e.preventDefault();
         handlePlayRef.current();
@@ -1618,6 +1623,10 @@ setPositionModeValue(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     const handleKeyUp = (e) => {
+      // Shift + Space plays only while the keys are down
+      if ((e.code === 'Space' || e.key === 'Shift') && shiftPlayOriginRef.current != null) {
+        stopShiftPlayRef.current?.();
+      }
       if (e.code === 'KeyX') {
         xHeldRef.current = false;
         setXHeld(false);
@@ -1676,7 +1685,10 @@ setPositionModeValue(null);
       }
     };
     window.addEventListener('keyup', handleKeyUp);
+    const onBlur = () => stopShiftPlayRef.current?.();
+    window.addEventListener('blur', onBlur);
     return () => {
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       if (positionTimeoutRef.current) clearTimeout(positionTimeoutRef.current);
@@ -2166,6 +2178,50 @@ setPositionModeValue(null);
   }, [playing, stopPlayback, startPlayback]);
 
   handlePlayRef.current = handlePlayFromHead;
+
+  // Shift + Space: play from the pointer. The start jumps to the nearest subdivision mark before
+  // the pointer, wherever the playhead was. (Pointer off the timeline: from the playhead.)
+  const shiftPlayOriginRef = useRef(null);
+  const playFromPointerRef = useRef(null);
+  playFromPointerRef.current = () => {
+    const body = timelineBodyRef.current;
+    const m = lastMousePosRef.current;
+    let beat = selectedBeatRef.current;
+    const box = body?.closest('.timeline-container')?.getBoundingClientRect();
+    if (body && box && m.x >= box.left && m.x <= box.right && m.y >= box.top && m.y <= box.bottom) {
+      const r = body.getBoundingClientRect();
+      const raw = xToBeat(m.x - r.left + body.scrollLeft, barSubsRef.current, CELL_WIDTH * liveRef.current.timelineZoom, false);
+      const snap = snapUnitRef.current || 1;
+      beat = Math.max(0, Math.min(totalColumns(barSubsRef.current) - 1, Math.floor(raw / snap + 1e-9) * snap));
+    }
+    // Shift + Space is momentary: remember the playhead so it can go back when the keys are released
+    if (shiftPlayOriginRef.current == null) shiftPlayOriginRef.current = selectedBeatRef.current;
+    if (playingRef.current) stopPlayback();
+    startPlayback(beat);
+  };
+  const stopShiftPlay = () => {
+    const origin = shiftPlayOriginRef.current;
+    if (origin == null) return;
+    shiftPlayOriginRef.current = null;
+    if (playingRef.current) stopPlayback();
+    setSelectedBeat(origin);
+    selectedBeatRef.current = origin;
+  };
+  const stopShiftPlayRef = useRef(null);
+  stopShiftPlayRef.current = stopShiftPlay;
+
+  // Alt + Space: play the notes that sit at this beat once (the audio part is the scrub voice)
+  const auditionNotesAt = useCallback((beat) => {
+    getPlayableTracks(tracksRef.current).forEach(t => {
+      if (t.type === 'audio') return;
+      t.notes.forEach(n => {
+        if (n.ghost) return;
+        if (beat >= n.beat - 1e-6 && beat < n.beat + (n.duration || 1) - 1e-6) {
+          playNote(n.stringIndex, n.fret, Math.min(1.2, Math.max(0.25, (n.duration || 1) * (tempoMapRef.current.liveSpb || 0.5))), n.velocity ?? 0.8, t.instrument, t.volume);
+        }
+      });
+    });
+  }, []);
 
   const handleClear = useCallback(() => {
     setNotes([]);
@@ -3210,6 +3266,7 @@ setPositionModeValue(null);
           onUpdateSyncPoints={updateSyncPoints}
           tempoMap={tempoMap}
           onAddSyncPointAt={addSyncPointAtBeat}
+          onAuditionNotes={auditionNotesAt}
           audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
             trackId: t.id,
             name: t.name,

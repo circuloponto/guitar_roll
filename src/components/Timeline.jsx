@@ -12,7 +12,7 @@ import { totalColumns, barStartBeats, beatToBar, beatLabel, isBarStart, remapNot
 import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
 import { onsetTimes } from '../utils/beatDetect';
-import { prepareScrub, scrubTarget, scrubStop } from '../utils/scrubVoice';
+import { prepareScrub, scrubTarget, scrubStop, scrubHold } from '../utils/scrubVoice';
 import { clipSpans, clipBeatToTime, clipTimeToBeat, linearMap } from '../utils/audioClips';
 
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -56,7 +56,7 @@ export default function Timeline({
   chordPreview,
   autoScroll,
   audioTracks = [],
-  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {}, tempoMap = null, onAddSyncPointAt = null,
+  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {}, tempoMap = null, onAddSyncPointAt = null, onAuditionNotes = null,
   bpm = 120,
   timeSignature = [4, 4],
   bodyRefExternal,
@@ -488,7 +488,91 @@ export default function Timeline({
       scrubTarget(buf, clip ? clipBeatToTime(clip, beat, m) : null, at.volume ?? 1);
     });
   };
-  const scrubEnd = () => audioTracks.forEach(at => { if (at.audioBuffer) scrubStop(at.audioBuffer); });
+  const scrubEnd = () => audioTracks.forEach(at => { if (at.audioBuffer) { scrubHold(at.audioBuffer, false); scrubStop(at.audioBuffer); } });
+  const scrubHoldAll = (on) => audioTracks.forEach(at => { if (at.audioBuffer) scrubHold(at.audioBuffer, on); });
+
+  // Alt + Space: sound whatever is at the playhead (notes once, audio for as long as the keys are held).
+  // Alt + Space + drag: the timeline moves under a playhead that stays where it is on screen,
+  // and you keep hearing what is under it.
+  const altSpaceRef = useRef(false);
+  const audioTracksRef = useRef(audioTracks);
+  audioTracksRef.current = audioTracks;
+  const mapForRef = useRef(null);
+  const selectedBeatLive = useRef(selectedBeat);
+  selectedBeatLive.current = selectedBeat;
+  const auditionRef = useRef(null);
+  auditionRef.current = { onAuditionNotes, playing };
+  useEffect(() => {
+    const isTyping = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT');
+    const stop = () => {
+      if (!altSpaceRef.current) return;
+      altSpaceRef.current = false;
+      document.body.classList.remove('altspace-held');
+      audioTracksRef.current.forEach(at => { if (at.audioBuffer) { scrubHold(at.audioBuffer, false); scrubStop(at.audioBuffer); } });
+    };
+    const down = (e) => {
+      if (e.code !== 'Space' || !e.altKey || isTyping(e)) return;
+      e.preventDefault();
+      if (e.repeat || altSpaceRef.current || auditionRef.current.playing) return;
+      altSpaceRef.current = true;
+      document.body.classList.add('altspace-held');
+      const beat = selectedBeatLive.current;
+      auditionRef.current.onAuditionNotes?.(beat);
+      audioTracksRef.current.forEach(at => {
+        if (!at.audioBuffer) return;
+        prepareScrub(at.audioBuffer);
+        const m = mapForRef.current(at);
+        const clip = at.muted ? null : (at.clips || []).find(c => beat >= c.start && beat <= clipTimeToBeat(c, c.srcEnd, m));
+        scrubTarget(at.audioBuffer, clip ? clipBeatToTime(clip, beat, m) : null, at.volume ?? 1);
+        scrubHold(at.audioBuffer, true);
+      });
+    };
+    const up = (e) => { if (e.code === 'Space' || e.key === 'Alt') stop(); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', stop);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', stop);
+      stop();
+    };
+  }, []);
+
+  const startContentDrag = (e) => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const startClientX = e.clientX;
+    // The playhead keeps its place on screen for the whole drag. If it is scrolled out of view, bring
+    // it to the middle first (its beat does not change).
+    const headX = beatToX(selectedBeatLive.current, barSubdivisions, cellWidth);
+    if (headX < body.scrollLeft + 8 || headX > body.scrollLeft + body.clientWidth - 8) {
+      body.scrollLeft = Math.max(0, headX - body.clientWidth / 2);
+    }
+    const startScroll = body.scrollLeft;
+    const playX = Math.max(0, Math.min(body.clientWidth - 1, headX - startScroll));
+    const go = (clientX) => {
+      const maxScroll = Math.max(0, body.scrollWidth - body.clientWidth);
+      body.scrollLeft = Math.max(0, Math.min(maxScroll, startScroll - (clientX - startClientX)));
+      const beat = Math.max(0, Math.min(totalCols - 1, xToBeat(playX + body.scrollLeft, barSubdivisions, cellWidth, false)));
+      // pin the playhead line to its place on screen right now (state updates lag a frame behind the scroll)
+      const line = body.querySelector('.playhead');
+      if (line) line.style.left = `${playX + body.scrollLeft}px`;
+      setSelectedBeat(beat);
+      scrubTo(beat);
+      scrubHoldAll(true);
+    };
+    const onMove = (me) => go(me.clientX);
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // keep sounding if the keys are still down, otherwise stop
+      if (!altSpaceRef.current) scrubEnd();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   const scrubPrepare = () => audioTracks.forEach(at => { if (at.audioBuffer) prepareScrub(at.audioBuffer); });
   // Warm the scrub voices shortly after audio appears so the first drag already has sound.
   const audioBufferKey = audioTracks.map(a => (a.audioBuffer ? a.trackId : '')).join(',');
@@ -648,6 +732,7 @@ export default function Timeline({
   // Beat <-> audio-time map for a track: the project tempo map when a recording drives the grid,
   // otherwise the track's own constant import tempo.
   const mapFor = (at) => (tempoMap && tempoMap.active ? tempoMap : linearMap(clipSecPerBeat(at)));
+  mapForRef.current = mapFor;
   const clipPointerBeat = (clientX) => {
     const r = bodyRef.current.getBoundingClientRect();
     return xToBeat(clientX - r.left + bodyRef.current.scrollLeft, barSubdivisions, cellWidth, false);
@@ -1532,7 +1617,16 @@ export default function Timeline({
   }
 
   return (
-    <div className="timeline-container" style={{ position: 'relative' }}>
+    <div
+      className="timeline-container"
+      style={{ position: 'relative' }}
+      onMouseDownCapture={(e) => {
+        if (!altSpaceRef.current || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        startContentDrag(e);
+      }}
+    >
       {showVerticalZoomButtons && setTimelineVerticalZoom && (
         <div className="timeline-vzoom-dock" style={{
           position: 'absolute', top: 4, right: 8, zIndex: 5,
