@@ -23,7 +23,7 @@ import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import Dock from './components/Dock';
-import { Repeat } from 'lucide-react';
+import CycleIcon from './components/CycleIcon';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
 import { makeSongId, makeGroupId, nextTabName, GROUP_COLOURS, moveSong as moveSongList, moveGroup as moveGroupList, assignSongToGroup as assignSongList } from './utils/songs';
@@ -2588,7 +2588,7 @@ setPositionModeValue(null);
           title="Loop region: when on, drag the time strip to set, resize or move the loop"
           aria-label="Loop"
         >
-          <Repeat size={16} />
+          <CycleIcon size={18} />
         </button>
         <button
           className={`tool-btn ${octaveFit ? 'active' : ''}`}
