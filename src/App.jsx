@@ -24,6 +24,7 @@ import SynthEditor from './components/SynthEditor';
 import ChordPalette from './components/ChordPalette';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
+import { Metronome } from 'lucide-react';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
 import { makeSongId, makeGroupId, nextTabName, GROUP_COLOURS, moveSong as moveSongList, moveGroup as moveGroupList, assignSongToGroup as assignSongList } from './utils/songs';
@@ -2601,8 +2602,9 @@ setPositionModeValue(null);
           className={`tool-btn ${metronome ? 'active' : ''}`}
           onClick={() => setMetronome(m => !m)}
           title="Metronome"
+          aria-label="Metronome"
         >
-          Metronome
+          <Metronome size={18} />
         </button>
         <span className="toolbar-label">Inst:</span>
         <select
