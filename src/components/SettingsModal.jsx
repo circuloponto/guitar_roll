@@ -107,7 +107,12 @@ function getSessionSchemes(appState, savedSchemes) {
 }
 
 export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave }) {
-  const [page, setPage] = useState('main'); // main, schemes, editScheme, sessions, hotkeys
+  // Preferences-style layout: one tab per topic (like Ableton's Preferences).
+  const [tab, setTab] = useState(() => { try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
+  const [colorsView, setColorsView] = useState('list');   // list | edit
+  const [projectView, setProjectView] = useState('main'); // main | sessions
+  const selectTab = (id) => { setTab(id); try { localStorage.setItem('guitar-roll-settings-tab', id); } catch { /* ignore */ } };
+  const openSchemes = () => { setTab('look'); setColorsView('list'); };
   const [editingScheme, setEditingScheme] = useState(null); // { name, originalName, colors }
   const [sessions, setSessions] = useState(listSessions);
   const [sessionName, setSessionName] = useState('');
@@ -148,7 +153,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
         oldName: identicalScheme[0],
         colors,
       });
-      setPage('schemes');
+      openSchemes();
       return true;
     }
 
@@ -165,7 +170,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
         oldName: identicalScheme[0],
         colors,
       });
-      setPage('schemes');
+      openSchemes();
       return true;
     }
 
@@ -281,333 +286,8 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     setNameConflict(null);
   };
 
-  // --- Main page ---
-  if (page === 'main') {
-    return (
-      <div className="settings-overlay" onClick={onClose}>
-        <div className="settings-popup settings-popup-main" onClick={e => e.stopPropagation()}>
-          <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
-          <h2 className="settings-title">Settings</h2>
-
-          <div className="settings-columns">
-          <div className="settings-col">
-
-          <div className="settings-group">Playback</div>
-
-          <div className="settings-section">
-            <h3>Hover Sound Preview</h3>
-            <p className="settings-desc">Play the note under the cursor on hover.</p>
-            <div className="settings-checks">
-              {[
-                { key: 'fretboard', label: 'Fretboard' },
-                { key: 'pianoRoll', label: 'Piano Roll Keys' },
-                { key: 'timelineNotes', label: 'Timeline Notes' },
-              ].map(({ key, label }) => (
-                <label key={key} className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={hoverPreview[key] || false}
-                    onChange={(e) => onHoverPreviewChange({ ...hoverPreview, [key]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <div className="settings-row" style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Volume</span>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={Math.round((hoverPreview.volume ?? 0.3) * 100)}
-                onChange={(e) => onHoverPreviewChange({ ...hoverPreview, volume: Number(e.target.value) / 100 })}
-                style={{ width: 120 }}
-              />
-              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((hoverPreview.volume ?? 0.3) * 100)}%</span>
-            </div>
-          </div>
-
-          <div className="settings-group">Display</div>
-
-          <div className="settings-section">
-            <h3>Accent Color</h3>
-            <p className="settings-desc">Highlight color used for the play button, active tabs, selections and the loop region.</p>
-            <div className="settings-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="color"
-                value={accent || DEFAULT_ACCENT}
-                onChange={(e) => onAccentChange(e.target.value)}
-                style={{ width: 44, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 4, background: 'transparent', cursor: 'pointer' }}
-                aria-label="Accent color"
-              />
-              <span style={{ fontSize: 12, color: 'var(--mute)', fontFamily: 'var(--mono)' }}>{(accent || DEFAULT_ACCENT).toUpperCase()}</span>
-              <button className="tool-btn" onClick={() => onAccentChange(DEFAULT_ACCENT)} disabled={(accent || DEFAULT_ACCENT).toLowerCase() === DEFAULT_ACCENT}>Reset</button>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>Tuplet Grid Lines</h3>
-            <p className="settings-desc">Subdivision lines between beats in the grid.</p>
-            <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={tupletLines?.visible ?? true}
-                  onChange={(e) => onTupletLinesChange({ ...tupletLines, visible: e.target.checked })}
-                />
-                Show subdivision lines
-              </label>
-            </div>
-            <div className="settings-row" style={{ marginTop: 6 }}>
-              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Opacity</span>
-              <input
-                type="range"
-                min={5}
-                max={100}
-                value={Math.round((tupletLines?.opacity ?? 0.35) * 100)}
-                onChange={(e) => onTupletLinesChange({ ...tupletLines, opacity: Number(e.target.value) / 100 })}
-                style={{ width: 120 }}
-                disabled={!(tupletLines?.visible ?? true)}
-              />
-              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((tupletLines?.opacity ?? 0.35) * 100)}%</span>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>Fretboard</h3>
-            <span className="settings-sublabel">Auto-scroll to keep frets in view</span>
-            <div className="settings-checks">
-              {[
-                { key: 'onHover', label: 'On note hover' },
-                { key: 'onInput', label: 'On note input' },
-                { key: 'onPlayback', label: 'During playback' },
-              ].map(({ key, label }) => (
-                <label key={key} className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={autoScroll?.[key] ?? true}
-                    onChange={(e) => onAutoScrollChange({ ...autoScroll, [key]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-            <span className="settings-sublabel">Note marker under the cursor</span>
-            <div className="settings-checks">
-              {[
-                { key: 'fretboard', label: 'On fretboard hover' },
-                { key: 'pianoRoll', label: 'On piano roll hover' },
-              ].map(({ key, label }) => (
-                <label key={key} className="settings-check">
-                  <input
-                    type="checkbox"
-                    checked={hoverPill?.[key] ?? true}
-                    onChange={(e) => onHoverPillChange({ ...hoverPill, [key]: e.target.checked })}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
-
-            <span className="settings-sublabel">Input behavior</span>
-            <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={fretboardAutoForward ?? false}
-                  onChange={(e) => onFretboardAutoForwardChange(e.target.checked)}
-                />
-                Auto-forward after note input / duration change
-              </label>
-            </div>
-            <div className="settings-row" style={{ marginTop: 6 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: fretboardAutoForward ? '#ccc' : '#888', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={fretboardAutoForwardExcludeAdjacent ?? true}
-                  onChange={(e) => onFretboardAutoForwardExcludeAdjacentChange(e.target.checked)}
-                  disabled={!fretboardAutoForward}
-                />
-                Exclude adjacent mode from auto-forward
-              </label>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>Timeline</h3>
-            <p className="settings-desc">On-screen controls for the timeline pane.</p>
-            <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={showTimelineVerticalZoomButtons !== false}
-                  onChange={(e) => onShowTimelineVerticalZoomButtonsChange(e.target.checked)}
-                />
-                Dock vertical zoom buttons (top-right)
-              </label>
-            </div>
-
-              <div className="settings-row" style={{ marginTop: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={swungDisplay ?? false}
-                    onChange={(e) => onSwungDisplayChange(e.target.checked)}
-                  />
-                  Swung grid display
-                </label>
-              </div>
-
-              <div className="settings-row" style={{ marginTop: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={resetMultOnSubdiv ?? true}
-                    onChange={(e) => onResetMultOnSubdivChange(e.target.checked)}
-                  />
-                  Changing ÷ number resets × to 1
-                </label>
-              </div>
-
-              <div className="settings-row" style={{ marginTop: 6 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={rhythmAltersSelected ?? true}
-                    onChange={(e) => onRhythmAltersSelectedChange(e.target.checked)}
-                  />
-                  Changing ÷ or × alters selected note lengths
-                </label>
-              </div>
-          </div>
-
-          </div>
-          <div className="settings-col">
-
-          <div className="settings-group">Customization</div>
-
-          <div className="settings-section">
-            <h3>Keyboard Shortcuts</h3>
-            <p className="settings-desc">View and rebind editor hotkeys and mouse-wheel actions.</p>
-            <button className="settings-btn" onClick={() => setPage('hotkeys')}>
-              Manage Hotkeys
-            </button>
-          </div>
-
-          <div className="settings-section">
-            <h3>Color Schemes</h3>
-            <p className="settings-desc">Per-note colors for notes on the fretboard and timeline.</p>
-            <button className="settings-btn" onClick={() => setPage('schemes')}>
-              Manage Color Schemes
-            </button>
-            <div className="settings-row" style={{ marginTop: 6 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={selectingSchemeClosesMenu ?? true}
-                  onChange={(e) => onSelectingSchemeClosesMenuChange(e.target.checked)}
-                />
-                Selecting a scheme closes the instance-color menu
-              </label>
-            </div>
-          </div>
-
-          <div className="settings-group">Project</div>
-
-          <div className="settings-section">
-            <h3>Autosave</h3>
-            <p className="settings-desc">Back up this session in your browser while you work.</p>
-            <div className="settings-row">
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={autoSave ?? true}
-                  onChange={(e) => onAutoSaveChange(e.target.checked)}
-                />
-                Autosave every 30 seconds
-              </label>
-            </div>
-            <div className="settings-row-btns">
-              <button
-                className="settings-btn"
-                onClick={() => {
-                  if (!window.confirm('Replace the current session with the last autosave?')) return;
-                  if (!onRestoreAutosave?.()) window.alert('There is no autosave yet.');
-                  else onClose();
-                }}
-              >
-                Restore last autosave
-              </button>
-            </div>
-          </div>
-
-          <div className="settings-section">
-            <h3>Sessions</h3>
-            <p className="settings-desc">Save in this browser, move between devices as files, or share as a link.</p>
-            <div className="settings-row-btns">
-              <button className="settings-btn" onClick={() => { refreshSessions(); setPage('sessions'); }}>
-                Save / Load Session
-              </button>
-            </div>
-            <div className="settings-row-btns">
-              <button
-                className="settings-btn"
-                title="Saves the session. If it has audio tracks it saves a .zip with the audio files inside, so importing it brings back the audio and sync points."
-                onClick={async () => {
-                  const state = getSessionState(appState);
-                  try {
-                    if (sessionHasAudio(state)) {
-                      const r = await exportSessionZip(state, `${appState.projectName || 'guitar-roll'}.zip`);
-                      if (r.saved) {
-                        setCopyMsg(`Exported with ${r.audioCount} audio file${r.audioCount === 1 ? '' : 's'}${r.missing.length ? ` (${r.missing.length} missing)` : ''}`);
-                        setTimeout(() => setCopyMsg(''), 3500);
-                      }
-                    } else {
-                      await exportToFile(state, `${appState.projectName || 'guitar-roll'}.json`);
-                    }
-                  } catch (error) {
-                    console.warn('Export failed', error);
-                    window.alert('Could not export: ' + (error.message || error));
-                  }
-                }}
-              >
-                Export to File
-              </button>
-              <button className="settings-btn" onClick={async () => {
-                try {
-                  const { data, audioCount } = await importSessionFile();
-                  onApplyState(data);
-                  if (audioCount) { setCopyMsg(`Imported with ${audioCount} audio file${audioCount > 1 ? 's' : ''}`); setTimeout(() => setCopyMsg(''), 3000); }
-                } catch (error) {
-                  console.warn('Import failed', error);
-                  if (error && error !== 'No file') window.alert('Could not import this file: ' + (error.message || error));
-                }
-              }}>
-                Import from File
-              </button>
-            </div>
-            <div className="settings-row-btns">
-              <button className="settings-btn" onClick={() => {
-                const url = stateToUrl(getSessionState(appState));
-                navigator.clipboard.writeText(url);
-                setCopyMsg('Link copied!');
-                setTimeout(() => setCopyMsg(''), 2000);
-              }}>
-                Copy Share Link
-              </button>
-              {copyMsg && <span className="settings-copy-msg">{copyMsg}</span>}
-            </div>
-          </div>
-
-          </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // --- Color Schemes manager page ---
-  if (page === 'schemes') {
+  // --- Colors tab: scheme manager / editor ---
+  const renderSchemesView = () => {
     const savedSchemes = listColorSchemes();
     const sessionSchemeEntries = getSessionSchemes(appState, savedSchemes);
     const savedSchemesList = Object.entries(savedSchemes)
@@ -666,7 +346,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 originalName: scheme.name,
                 colors: { ...scheme.colors },
               });
-              setPage('editScheme');
+              setColorsView('edit');
             }}>Edit</button>
             {isSessionItem && !isSavedScheme && (
               <button className="settings-btn-sm" onClick={() => saveSchemeToLibrary(scheme)}>
@@ -689,15 +369,8 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
         </div>
       );
     }
-
     return (
       <>
-        <div className="settings-overlay" onClick={onClose}>
-          <div className="settings-popup" onClick={e => e.stopPropagation()}>
-            <button className="settings-back-arrow" onClick={() => setPage('main')} title="Back to Settings" aria-label="Back">&larr;</button>
-            <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
-            <h2 className="settings-title settings-title--centered">Color Schemes</h2>
-
           <div className="settings-section">
             <h3>Session Schemes</h3>
 
@@ -742,7 +415,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 originalName: '',
                 colors: defaultSchemeColors(),
               });
-              setPage('editScheme');
+              setColorsView('edit');
             }}>
               + Create Scheme
             </button>
@@ -773,50 +446,14 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               </div>
             ))}
           </div>
-
-        </div>
-        {confirm && (
-          <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
-        )}
-        {nameConflict && (
-          <div className="confirm-overlay" onClick={() => setNameConflict(null)}>
-            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-              <div className="confirm-message">
-                {nameConflict.type === 'session'
-                  ? `You have an identical scheme in the session already (${nameConflict.oldName}).`
-                  : `You have an identical scheme in Saved already (${nameConflict.oldName}).`}
-              </div>
-              <div className="confirm-actions vertical">
-                <button
-                  className="settings-btn"
-                  onClick={renameExistingSchemeToNewName}
-                >
-                  Rename "{nameConflict.oldName}" to "{nameConflict.newName}"
-                </button>
-                <button
-                  className="settings-btn"
-                  onClick={useExistingSchemeName}
-                >
-                  Rename "{nameConflict.newName}" to "{nameConflict.oldName}"
-                </button>
-                <button className="settings-btn" onClick={() => setNameConflict(null)}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
       </>
     );
-  }
+  };
 
-  // --- Edit color scheme page ---
-  if (page === 'editScheme' && editingScheme) {
-    return (
-      <div className="settings-overlay" onClick={onClose}>
-        <div className="settings-popup settings-popup-wide" onClick={e => e.stopPropagation()}>
-          <h2 className="settings-title">{editingScheme.originalName ? 'Edit Color Scheme' : 'New Color Scheme'}</h2>
+  const renderEditView = () => (
+    <div>
+      <button className="settings-link-btn" onClick={() => setColorsView('list')}>&larr; Back to Color Schemes</button>
+          <h3 className="settings-subtitle">{editingScheme.originalName ? 'Edit Color Scheme' : 'New Color Scheme'}</h3>
 
           <div className="settings-row">
             <span className="settings-label">Name:</span>
@@ -880,7 +517,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                   [newName]: colors,
                 },
               });
-              setPage('schemes');
+              setColorsView('list');
             }}>
               Add to Session
             </button>
@@ -933,31 +570,24 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               }
 
               setSchemeLibraryVersion(version => version + 1);
-              setPage('schemes');
+              setColorsView('list');
             }}>
               Save Scheme
             </button>
-            <button className="settings-btn" onClick={() => setPage('schemes')}>
+            <button className="settings-btn" onClick={() => setColorsView('list')}>
               Cancel
             </button>
           </div>
-        </div>
-      </div>
-    );
-  }
+    </div>
+  );
 
-  // --- Sessions page ---
-  if (page === 'sessions') {
+  const renderSessionsView = () => {
     const sessionNames = Object.keys(sessions).sort((a, b) =>
       (sessions[b].savedAt || 0) - (sessions[a].savedAt || 0)
     );
     return (
-      <div className="settings-overlay" onClick={onClose}>
-        <div className="settings-popup" onClick={e => e.stopPropagation()}>
-          <button className="settings-back-arrow" onClick={() => setPage('main')} title="Back to Settings" aria-label="Back">&larr;</button>
-          <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
-          <h2 className="settings-title">Sessions</h2>
-
+      <div>
+        <button className="settings-link-btn" onClick={() => setProjectView('main')}>&larr; Back to Project</button>
           <div className="settings-row" style={{ marginBottom: 12 }}>
             <input
               type="text"
@@ -1002,24 +632,380 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               </div>
             ))}
           </div>
+      </div>
+    );
+  };
 
+  const TABS = [
+    { id: 'look', label: 'Look & Feel' },
+    { id: 'playback', label: 'Playback' },
+    { id: 'fretboard', label: 'Fretboard' },
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'shortcuts', label: 'Shortcuts' },
+    { id: 'project', label: 'Project' },
+  ];
+  const activeTab = TABS.some(t => t.id === tab) ? tab : 'look';
+
+  let pane = null;
+  if (activeTab === 'look') {
+    pane = colorsView === 'edit' && editingScheme ? renderEditView() : (
+      <>
+          <div className="settings-section">
+            <h3>Accent Color</h3>
+            <p className="settings-desc">Highlight color used for the play button, active tabs, selections and the loop region.</p>
+            <div className="settings-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input
+                type="color"
+                value={accent || DEFAULT_ACCENT}
+                onChange={(e) => onAccentChange(e.target.value)}
+                style={{ width: 44, height: 28, padding: 0, border: '1px solid var(--line)', borderRadius: 4, background: 'transparent', cursor: 'pointer' }}
+                aria-label="Accent color"
+              />
+              <span style={{ fontSize: 12, color: 'var(--mute)', fontFamily: 'var(--mono)' }}>{(accent || DEFAULT_ACCENT).toUpperCase()}</span>
+              <button className="tool-btn" onClick={() => onAccentChange(DEFAULT_ACCENT)} disabled={(accent || DEFAULT_ACCENT).toLowerCase() === DEFAULT_ACCENT}>Reset</button>
+            </div>
+          </div>
+        <div className="settings-section">
+          <h3>Layout</h3>
+          <p className="settings-desc">Drag a panel by its title bar to move it, and resize panels from the lines between them.</p>
+          <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
         </div>
+        <h3 className="settings-subtitle" style={{ marginTop: 24 }}>Colors</h3>
+        {renderSchemesView()}
+        <div className="settings-section" style={{ marginTop: 16 }}>
+          <h3>Instance Color Menu</h3>
+          <div className="settings-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={selectingSchemeClosesMenu ?? true}
+                onChange={(e) => onSelectingSchemeClosesMenuChange(e.target.checked)}
+              />
+              Selecting a scheme closes the instance-color menu
+            </label>
+          </div>
+        </div>
+      </>
+    );
+  } else if (activeTab === 'playback') {
+    pane = (<>
+          <div className="settings-section">
+            <h3>Hover Sound Preview</h3>
+            <p className="settings-desc">Play the note under the cursor on hover.</p>
+            <div className="settings-checks">
+              {[
+                { key: 'fretboard', label: 'Fretboard' },
+                { key: 'pianoRoll', label: 'Piano Roll Keys' },
+                { key: 'timelineNotes', label: 'Timeline Notes' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={hoverPreview[key] || false}
+                    onChange={(e) => onHoverPreviewChange({ ...hoverPreview, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Volume</span>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round((hoverPreview.volume ?? 0.3) * 100)}
+                onChange={(e) => onHoverPreviewChange({ ...hoverPreview, volume: Number(e.target.value) / 100 })}
+                style={{ width: 120 }}
+              />
+              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((hoverPreview.volume ?? 0.3) * 100)}%</span>
+            </div>
+          </div>
+    </>);
+  } else if (activeTab === 'fretboard') {
+    pane = (<>
+          <div className="settings-section">
+            <h3>Fretboard</h3>
+            <span className="settings-sublabel">Auto-scroll to keep frets in view</span>
+            <div className="settings-checks">
+              {[
+                { key: 'onHover', label: 'On note hover' },
+                { key: 'onInput', label: 'On note input' },
+                { key: 'onPlayback', label: 'During playback' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={autoScroll?.[key] ?? true}
+                    onChange={(e) => onAutoScrollChange({ ...autoScroll, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <span className="settings-sublabel">Note marker under the cursor</span>
+            <div className="settings-checks">
+              {[
+                { key: 'fretboard', label: 'On fretboard hover' },
+                { key: 'pianoRoll', label: 'On piano roll hover' },
+              ].map(({ key, label }) => (
+                <label key={key} className="settings-check">
+                  <input
+                    type="checkbox"
+                    checked={hoverPill?.[key] ?? true}
+                    onChange={(e) => onHoverPillChange({ ...hoverPill, [key]: e.target.checked })}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+
+            <span className="settings-sublabel">Input behavior</span>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={fretboardAutoForward ?? false}
+                  onChange={(e) => onFretboardAutoForwardChange(e.target.checked)}
+                />
+                Auto-forward after note input / duration change
+              </label>
+            </div>
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: fretboardAutoForward ? '#ccc' : '#888', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={fretboardAutoForwardExcludeAdjacent ?? true}
+                  onChange={(e) => onFretboardAutoForwardExcludeAdjacentChange(e.target.checked)}
+                  disabled={!fretboardAutoForward}
+                />
+                Exclude adjacent mode from auto-forward
+              </label>
+            </div>
+          </div>
+    </>);
+  } else if (activeTab === 'timeline') {
+    pane = (<>
+          <div className="settings-section">
+            <h3>Tuplet Grid Lines</h3>
+            <p className="settings-desc">Subdivision lines between beats in the grid.</p>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={tupletLines?.visible ?? true}
+                  onChange={(e) => onTupletLinesChange({ ...tupletLines, visible: e.target.checked })}
+                />
+                Show subdivision lines
+              </label>
+            </div>
+            <div className="settings-row" style={{ marginTop: 6 }}>
+              <span style={{ fontSize: 13, color: 'var(--soft)', marginRight: 8 }}>Opacity</span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                value={Math.round((tupletLines?.opacity ?? 0.35) * 100)}
+                onChange={(e) => onTupletLinesChange({ ...tupletLines, opacity: Number(e.target.value) / 100 })}
+                style={{ width: 120 }}
+                disabled={!(tupletLines?.visible ?? true)}
+              />
+              <span style={{ fontSize: 12, color: 'var(--mute)', marginLeft: 6 }}>{Math.round((tupletLines?.opacity ?? 0.35) * 100)}%</span>
+            </div>
+          </div>
+          <div className="settings-section">
+            <h3>Timeline</h3>
+            <p className="settings-desc">On-screen controls for the timeline pane.</p>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showTimelineVerticalZoomButtons !== false}
+                  onChange={(e) => onShowTimelineVerticalZoomButtonsChange(e.target.checked)}
+                />
+                Dock vertical zoom buttons (top-right)
+              </label>
+            </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={swungDisplay ?? false}
+                    onChange={(e) => onSwungDisplayChange(e.target.checked)}
+                  />
+                  Swung grid display
+                </label>
+              </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={resetMultOnSubdiv ?? true}
+                    onChange={(e) => onResetMultOnSubdivChange(e.target.checked)}
+                  />
+                  Changing ÷ number resets × to 1
+                </label>
+              </div>
+
+              <div className="settings-row" style={{ marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={rhythmAltersSelected ?? true}
+                    onChange={(e) => onRhythmAltersSelectedChange(e.target.checked)}
+                  />
+                  Changing ÷ or × alters selected note lengths
+                </label>
+              </div>
+          </div>
+    </>);
+  } else if (activeTab === 'shortcuts') {
+    pane = <HotkeysPage onHotkeysChange={onHotkeysChange} />;
+  } else if (activeTab === 'project') {
+    pane = projectView === 'sessions' ? renderSessionsView() : (<>
+          <div className="settings-section">
+            <h3>Autosave</h3>
+            <p className="settings-desc">Back up this session in your browser while you work.</p>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={autoSave ?? true}
+                  onChange={(e) => onAutoSaveChange(e.target.checked)}
+                />
+                Autosave every 30 seconds
+              </label>
+            </div>
+            <div className="settings-row-btns">
+              <button
+                className="settings-btn"
+                onClick={() => {
+                  if (!window.confirm('Replace the current session with the last autosave?')) return;
+                  if (!onRestoreAutosave?.()) window.alert('There is no autosave yet.');
+                  else onClose();
+                }}
+              >
+                Restore last autosave
+              </button>
+            </div>
+          </div>
+          <div className="settings-section">
+            <h3>Sessions</h3>
+            <p className="settings-desc">Save in this browser, move between devices as files, or share as a link.</p>
+            <div className="settings-row-btns">
+              <button className="settings-btn" onClick={() => { refreshSessions(); setProjectView('sessions'); }}>
+                Save / Load Session
+              </button>
+            </div>
+            <div className="settings-row-btns">
+              <button
+                className="settings-btn"
+                title="Saves the session. If it has audio tracks it saves a .zip with the audio files inside, so importing it brings back the audio and sync points."
+                onClick={async () => {
+                  const state = getSessionState(appState);
+                  try {
+                    if (sessionHasAudio(state)) {
+                      const r = await exportSessionZip(state, `${appState.projectName || 'guitar-roll'}.zip`);
+                      if (r.saved) {
+                        setCopyMsg(`Exported with ${r.audioCount} audio file${r.audioCount === 1 ? '' : 's'}${r.missing.length ? ` (${r.missing.length} missing)` : ''}`);
+                        setTimeout(() => setCopyMsg(''), 3500);
+                      }
+                    } else {
+                      await exportToFile(state, `${appState.projectName || 'guitar-roll'}.json`);
+                    }
+                  } catch (error) {
+                    console.warn('Export failed', error);
+                    window.alert('Could not export: ' + (error.message || error));
+                  }
+                }}
+              >
+                Export to File
+              </button>
+              <button className="settings-btn" onClick={async () => {
+                try {
+                  const { data, audioCount } = await importSessionFile();
+                  onApplyState(data);
+                  if (audioCount) { setCopyMsg(`Imported with ${audioCount} audio file${audioCount > 1 ? 's' : ''}`); setTimeout(() => setCopyMsg(''), 3000); }
+                } catch (error) {
+                  console.warn('Import failed', error);
+                  if (error && error !== 'No file') window.alert('Could not import this file: ' + (error.message || error));
+                }
+              }}>
+                Import from File
+              </button>
+            </div>
+            <div className="settings-row-btns">
+              <button className="settings-btn" onClick={() => {
+                const url = stateToUrl(getSessionState(appState));
+                navigator.clipboard.writeText(url);
+                setCopyMsg('Link copied!');
+                setTimeout(() => setCopyMsg(''), 2000);
+              }}>
+                Copy Share Link
+              </button>
+              {copyMsg && <span className="settings-copy-msg">{copyMsg}</span>}
+            </div>
+          </div>
+    </>);
+  }
+
+  return (
+    <div className="settings-overlay" onClick={onClose}>
+      <div className="settings-prefs" onClick={e => e.stopPropagation()}>
+        <nav className="settings-tabs" aria-label="Settings sections">
+          <div className="settings-tabs-title">Settings</div>
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              className={`settings-tab${activeTab === t.id ? ' active' : ''}`}
+              onClick={() => selectTab(t.id)}
+            >{t.label}</button>
+          ))}
+        </nav>
+        <div className="settings-pane">
+          <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
+          <h2 className="settings-pane-title">{TABS.find(t => t.id === activeTab)?.label}</h2>
+          {pane}
+        </div>
+      </div>
         {confirm && (
           <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
         )}
-      </div>
-    );
-  }
-
-  // --- Hotkeys page ---
-  if (page === 'hotkeys') {
-    return <HotkeysPage onBack={() => setPage('main')} onClose={onClose} onHotkeysChange={onHotkeysChange} />;
-  }
-
-  return null;
+        {nameConflict && (
+          <div className="confirm-overlay" onClick={() => setNameConflict(null)}>
+            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+              <div className="confirm-message">
+                {nameConflict.type === 'session'
+                  ? `You have an identical scheme in the session already (${nameConflict.oldName}).`
+                  : `You have an identical scheme in Saved already (${nameConflict.oldName}).`}
+              </div>
+              <div className="confirm-actions vertical">
+                <button
+                  className="settings-btn"
+                  onClick={renameExistingSchemeToNewName}
+                >
+                  Rename "{nameConflict.oldName}" to "{nameConflict.newName}"
+                </button>
+                <button
+                  className="settings-btn"
+                  onClick={useExistingSchemeName}
+                >
+                  Rename "{nameConflict.newName}" to "{nameConflict.oldName}"
+                </button>
+                <button className="settings-btn" onClick={() => setNameConflict(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+    </div>
+  );
 }
 
-function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
+function HotkeysPage({ onHotkeysChange }) {
   const [hotkeys, setHotkeys] = useState(loadHotkeys);
   const [recording, setRecording] = useState(null); // hotkey id being recorded
   const conflicts = findConflicts(hotkeys);
@@ -1065,19 +1051,11 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
   };
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-popup settings-popup-hotkeys" onClick={e => e.stopPropagation()}>
-        <button className="settings-back-arrow" onClick={onBack} title="Back to Settings" aria-label="Back">&larr;</button>
-        <button className="settings-x" onClick={onClose} title="Close" aria-label="Close">&times;</button>
-        <button
-          className="settings-btn"
-          onClick={handleReset}
-          style={{ position: 'absolute', top: 10, right: 48, padding: '5px 10px', fontSize: 12 }}
-        >
-          Reset to Defaults
-        </button>
-        <h2 className="settings-title settings-title--centered">Keyboard Shortcuts</h2>
-        <p className="settings-desc" style={{ marginTop: -6 }}>Click a key to rebind it. Hover a shortcut for details.</p>
+    <div>
+      <div className="settings-pane-actions">
+        <p className="settings-desc" style={{ margin: 0 }}>Click a key to rebind it. Hover a shortcut for details.</p>
+        <button className="settings-btn" onClick={handleReset}>Reset to Defaults</button>
+      </div>
 
         {conflicts.length > 0 && (
           <div className="hotkey-conflicts">
@@ -1126,7 +1104,6 @@ function HotkeysPage({ onBack, onClose, onHotkeysChange }) {
           ))}
         </div>
 
-      </div>
     </div>
   );
 }

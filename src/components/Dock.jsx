@@ -61,6 +61,14 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     setSt(defaultState(el?.clientWidth, el?.clientHeight));
   }, []);
 
+  // "Reset layout" from Settings > Look & Feel
+  useEffect(() => {
+    const on = () => resetLayout();
+    window.addEventListener('guitar-roll-reset-layout', on);
+    return () => window.removeEventListener('guitar-roll-reset-layout', on);
+  }, [resetLayout]);
+
+
   // ---- resize a split by dragging its gutter ----
   const startResize = (e, g) => {
     e.preventDefault();

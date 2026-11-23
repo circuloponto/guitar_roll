@@ -3506,3 +3506,84 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
   flex-shrink: 0;
 }
 .track-row-grip:hover { color: var(--fg); }
+
+/* ==========================================================================
+   Settings as a preferences window: topic tabs on the left, the options for that topic on the right
+   ========================================================================== */
+.settings-prefs {
+  position: relative;
+  display: flex;
+  width: min(900px, 94vw);
+  height: min(640px, 88vh);
+  background: var(--frame);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 190px;
+  flex-shrink: 0;
+  padding: 18px 10px;
+  background: var(--ink);
+  border-right: 1px solid var(--hairline);
+  overflow-y: auto;
+}
+.settings-tabs-title {
+  padding: 2px 10px 14px;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.settings-tab {
+  text-align: left;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-md);
+  color: var(--soft);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.settings-tab:hover { background: var(--off); color: var(--fg); }
+.settings-tab.active { background: var(--accent); color: #fff; }
+.settings-pane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  padding: 22px 28px 28px;
+  overflow-y: auto;
+}
+.settings-pane-title {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--fg);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.settings-subtitle { margin: 4px 0 14px; font-size: 15px; font-weight: 600; color: var(--fg); }
+.settings-pane .settings-section { margin-bottom: 18px; }
+.settings-pane-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.settings-link-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 14px;
+  color: var(--accent-hi);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-link-btn:hover { text-decoration: underline; }
+.settings-prefs .settings-x { position: absolute; top: 12px; right: 14px; z-index: 2; }
+@media (max-width: 640px) {
+  .settings-prefs { flex-direction: column; width: 96vw; height: 92vh; }
+  .settings-tabs { flex-direction: row; width: auto; overflow-x: auto; padding: 8px; border-right: none; border-bottom: 1px solid var(--hairline); }
+  .settings-tabs-title { display: none; }
+  .settings-tab { white-space: nowrap; }
+}
