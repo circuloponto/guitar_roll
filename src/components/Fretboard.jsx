@@ -689,6 +689,34 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           );
         })}
 
+        {/* An open string that is sounding (note at the playhead, or playing) glows in its scheme color */}
+        {(() => {
+          const open = new Map();
+          activeNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: false }); });
+          playingNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: true }); });
+          const nutTop = cellTopPx(1);
+          return [...open.entries()].map(([si, { note, live }]) => {
+            const color = getNoteColor(note);
+            const left = `${PADDING_LEFT + (si / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`;
+            const thickness = NUM_STRINGS - si;
+            const glow = live ? `0 0 16px 5px ${color}` : `0 0 10px 3px ${color}`;
+            return (
+              <div key={`open-glow-${si}`} style={{ pointerEvents: 'none' }}>
+                <div style={{
+                  position: 'absolute', left, top: 0, height: nutTop, width: Math.max(3, thickness * 1.2),
+                  background: color, boxShadow: glow, transform: 'translateX(-50%)', borderRadius: 2,
+                  opacity: live ? 1 : 0.9, zIndex: 2,
+                }} />
+                <div style={{
+                  position: 'absolute', left, top: nutTop, bottom: 0, width: Math.max(1.5, thickness * 0.5),
+                  background: color, boxShadow: glow, transform: 'translateX(-50%)',
+                  opacity: live ? 1 : 0.9, zIndex: 2,
+                }} />
+              </div>
+            );
+          });
+        })()}
+
         {/* Fret numbers on the right */}
         {Array.from({ length: TOTAL_CELLS }, (_, fret) => (
           <div key={`fnum-${fret}`} style={{
