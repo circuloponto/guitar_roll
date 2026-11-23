@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Eye, EyeOff, Volume2, VolumeX } from 'lucide-react';
 import { getAllInstruments } from '../utils/audio';
 import { listColorSchemes } from '../utils/storage';
@@ -10,6 +10,8 @@ export default function TrackStrip({
   onToggleMute, onToggleSolo, onSetVolume,
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
+  trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
+  onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag,
   onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
@@ -21,6 +23,37 @@ export default function TrackStrip({
   const [schemesVersion, setSchemesVersion] = useState(0); // bump to refresh dropdown
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [ctxMenu, setCtxMenu] = useState(null); // { kind: 'track' | 'group', id, x, y }
+
+  // Selection modifiers: Ctrl/Cmd toggles, Shift selects a range, a plain click selects one track.
+  const clickMode = (e) => (e.ctrlKey || e.metaKey ? 'toggle' : e.shiftKey ? 'range' : 'single');
+  const groupById = (id) => trackGroups.find(g => g.id === id) || null;
+  const isHiddenByGroup = (track) => !!(track.groupId && groupById(track.groupId)?.collapsed);
+  const isFirstOfGroup = (index) => !!tracks[index].groupId && (index === 0 || tracks[index - 1].groupId !== tracks[index].groupId);
+  const openTrackMenu = (e, track) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedTrackIds.has(track.id)) onSelectTrack(track.id, 'single');
+    setCtxMenu({ kind: 'track', id: track.id, x: e.clientX, y: e.clientY });
+  };
+  const openGroupMenu = (e, gid) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ kind: 'group', id: gid, x: e.clientX, y: e.clientY });
+  };
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', key);
+    window.addEventListener('blur', close);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', key);
+      window.removeEventListener('blur', close);
+    };
+  }, [ctxMenu]);
 
   const startRename = (track) => {
     setEditingId(track.id);
@@ -61,13 +94,32 @@ export default function TrackStrip({
           {expanded ? '▾' : '▸'} Tracks ({tracks.length})
         </button>
         <div className="track-tabs-row">
-          {tracks.map(track => {
+          {tracks.map((track, tIndex) => {
             const isActive = track.id === activeTrackId;
+            const grp = track.groupId ? groupById(track.groupId) : null;
+            const pill = grp && isFirstOfGroup(tIndex) ? (
+              <span
+                key={`gpill-${grp.id}`}
+                className={`track-group-pill ${grp.collapsed ? 'collapsed' : ''}`}
+                style={{ '--group-colour': grp.colour }}
+                title={`${grp.name}: click to ${grp.collapsed ? 'expand' : 'collapse'}, right-click for options`}
+                onClick={() => onToggleTrackGroup(grp.id)}
+                onContextMenu={(e) => openGroupMenu(e, grp.id)}
+              >
+                <span className="track-group-dot" />
+                {grp.name}
+                {grp.collapsed && <span className="track-group-count">{tracks.filter(t => t.groupId === grp.id).length}</span>}
+              </span>
+            ) : null;
+            if (isHiddenByGroup(track)) return pill;
             return (
+              <Fragment key={track.id}>
+              {pill}
               <button
-                key={track.id}
-                className={`track-tab-mini ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''}`}
-                onClick={() => onSwitchTrack(track.id)}
+                className={`track-tab-mini ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''} ${selectedTrackIds.has(track.id) && selectedTrackIds.size > 1 ? 'selected' : ''} ${grp ? 'in-group' : ''}`}
+                style={grp ? { '--group-colour': grp.colour } : undefined}
+                onClick={(e) => onSelectTrack(track.id, clickMode(e))}
+                onContextMenu={(e) => openTrackMenu(e, track)}
               >
                 {track.name}
                 {(() => {
@@ -96,6 +148,7 @@ export default function TrackStrip({
                   }}
                 >×</span>
               </button>
+              </Fragment>
             );
           })}
           <button className="track-add-btn-mini" onClick={onAddTrack} title="Add track">+</button>
@@ -108,11 +161,47 @@ export default function TrackStrip({
           {tracks.map((track, index) => {
             const isActive = track.id === activeTrackId;
             const instLabel = allInst[track.instrument]?.label || track.instrument;
-            return (
+            const grp = track.groupId ? groupById(track.groupId) : null;
+            const members = grp ? tracks.filter(t => t.groupId === grp.id) : [];
+            const header = grp && isFirstOfGroup(index) ? (
               <div
-                key={track.id}
-                className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''} ${dragOverIndex === index ? 'drag-over' : ''}`}
-                onClick={() => onSwitchTrack(track.id)}
+                key={`ghead-${grp.id}`}
+                className="track-group-header"
+                style={{ '--group-colour': grp.colour }}
+                onContextMenu={(e) => openGroupMenu(e, grp.id)}
+              >
+                <button className="track-group-caret" onClick={() => onToggleTrackGroup(grp.id)} title={grp.collapsed ? 'Expand group' : 'Collapse group'}>
+                  {grp.collapsed ? '▸' : '▾'}
+                </button>
+                <span className="track-group-dot" />
+                <span
+                  className="track-group-name"
+                  title="Double-click to rename"
+                  onDoubleClick={() => { const n = window.prompt('Group name', grp.name); if (n && n.trim()) onRenameTrackGroup(grp.id, n.trim()); }}
+                >{grp.name}</span>
+                <span className="track-group-count">{members.length} tracks</span>
+                <button
+                  className={`track-btn-lg ${members.every(t => t.muted) ? 'active-red' : ''}`}
+                  onClick={() => onTrackGroupFlag(grp.id, 'muted')}
+                  title="Mute / unmute the whole group"
+                >M</button>
+                <button
+                  className={`track-btn-lg ${members.every(t => t.solo) ? 'active-yellow' : ''}`}
+                  onClick={() => onTrackGroupFlag(grp.id, 'solo')}
+                  title="Solo the whole group"
+                >S</button>
+                <button className="track-btn-lg" onClick={() => onRemoveTrackGroup(grp.id)} title="Ungroup these tracks (Ctrl+Shift+G)">Ungroup</button>
+              </div>
+            ) : null;
+            if (isHiddenByGroup(track)) return header;
+            return (
+              <Fragment key={track.id}>
+              {header}
+              <div
+                className={`track-row ${isActive ? 'active' : ''} ${track.muted ? 'muted' : ''} ${dragOverIndex === index ? 'drag-over' : ''} ${selectedTrackIds.has(track.id) && selectedTrackIds.size > 1 ? 'selected' : ''} ${grp ? 'in-group' : ''}`}
+                style={grp ? { '--group-colour': grp.colour } : undefined}
+                onClick={(e) => onSelectTrack(track.id, clickMode(e))}
+                onContextMenu={(e) => openTrackMenu(e, track)}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = 'move';
@@ -365,11 +454,68 @@ export default function TrackStrip({
                   title="Delete track"
                 >DEL</button>
               </div>
+              </Fragment>
             );
           })}
           <button className="track-add-btn" onClick={onAddTrack} title="Add track">+ Add Track</button>
         </div>
       )}
+
+      {ctxMenu && (() => {
+        const stop = (e) => e.stopPropagation();
+        const close = () => setCtxMenu(null);
+        const pos = { left: Math.min(ctxMenu.x, window.innerWidth - 230), top: Math.min(ctxMenu.y, window.innerHeight - 260) };
+        if (ctxMenu.kind === 'group') {
+          const g = groupById(ctxMenu.id);
+          if (!g) return null;
+          return (
+            <div className="tab-context-menu" style={pos} onMouseDown={stop}>
+              <div className="tab-context-menu-title">{g.name}</div>
+              <button className="tab-context-menu-item" onClick={() => { const n = window.prompt('Group name', g.name); if (n && n.trim()) onRenameTrackGroup(g.id, n.trim()); close(); }}>Rename group</button>
+              <button className="tab-context-menu-item" onClick={() => { onToggleTrackGroup(g.id); close(); }}>{g.collapsed ? 'Expand group' : 'Collapse group'}</button>
+              <label className="tab-context-menu-colour-picker">
+                <span className="tab-context-menu-label">Colour</span>
+                <span className="tab-context-menu-colour-swatch" style={{ background: g.colour }} />
+                <input type="color" value={g.colour} onChange={(e) => onSetTrackGroupColour(g.id, e.target.value)} onMouseDown={stop} aria-label="Pick group colour" />
+              </label>
+              <div className="tab-context-menu-divider" />
+              <button className="tab-context-menu-item danger" onClick={() => { onRemoveTrackGroup(g.id); close(); }}>Ungroup tracks</button>
+            </div>
+          );
+        }
+        const t = tracks.find(x => x.id === ctxMenu.id);
+        if (!t) return null;
+        const selCount = selectedTrackIds.size;
+        const selTracks = tracks.filter(x => selectedTrackIds.has(x.id));
+        const anyGrouped = selTracks.some(x => x.groupId);
+        const otherGroups = trackGroups.filter(g => !selTracks.every(x => x.groupId === g.id));
+        return (
+          <div className="tab-context-menu" style={pos} onMouseDown={stop}>
+            <div className="tab-context-menu-title">{selCount > 1 ? `${selCount} tracks selected` : t.name}</div>
+            <button
+              className="tab-context-menu-item"
+              disabled={selCount < 2}
+              title={selCount < 2 ? 'Select two or more tracks first (Ctrl/Cmd or Shift + click)' : ''}
+              onClick={() => { onGroupTracks(); close(); }}
+            >Group Tracks<span className="tab-context-menu-key">Ctrl+G</span></button>
+            {otherGroups.length > 0 && (
+              <>
+                <div className="tab-context-menu-label">Add to group</div>
+                {otherGroups.map(g => (
+                  <button key={g.id} className="tab-context-menu-item" onClick={() => { onGroupTracks(g.id); close(); }}>
+                    <span className="tab-context-menu-swatch" style={{ background: g.colour }} />{g.name}
+                  </button>
+                ))}
+              </>
+            )}
+            {anyGrouped && (
+              <button className="tab-context-menu-item" onClick={() => { onUngroupTracks(); close(); }}>Remove from group<span className="tab-context-menu-key">Ctrl+Shift+G</span></button>
+            )}
+            <div className="tab-context-menu-divider" />
+            <button className="tab-context-menu-item" onClick={() => { onDuplicateTrack(t.id); close(); }}>Duplicate track</button>
+          </div>
+        );
+      })()}
 
       {confirmDelete && (
         <ConfirmDialog

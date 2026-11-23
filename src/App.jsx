@@ -3,6 +3,7 @@ import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset, loadUltrabox } from './utils/audio';
 import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
+import { groupTracks as groupTracksFn, ungroupTracks as ungroupTracksFn, normalizeGroups, tidyTrackGroups } from './utils/trackGroups';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
 import { defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
@@ -68,6 +69,16 @@ function App() {
     return next;
   }), []);
   const audioSourcesRef = useRef([]); // active AudioBufferSourceNodes during playback
+  const [trackGroups, setTrackGroupsRaw] = useState([]);   // [{ id, name, colour, collapsed }]
+  const trackGroupsRef = useRef(trackGroups);
+  const setTrackGroups = useCallback((updater) => {
+    setTrackGroupsRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      trackGroupsRef.current = next;
+      return next;
+    });
+  }, []);
+  const [selectedTrackIds, setSelectedTrackIds] = useState(() => new Set());
   const [activeTrackId, setActiveTrackId] = useState(() => tracks[0]?.id);
   const activeTrackIdRef = useRef(activeTrackId);
   activeTrackIdRef.current = activeTrackId;
@@ -103,6 +114,7 @@ function App() {
   // Snapshot helpers for undo/redo
   const takeSnapshot = useCallback(() => ({
     tracks: JSON.parse(JSON.stringify(tracksRef.current)),
+    trackGroups: JSON.parse(JSON.stringify(trackGroupsRef.current)),
     activeTrackId: activeTrackIdRef.current,
     timeSignature: timeSigRef.current,
     barSubdivisions: barSubsRef.current,
@@ -127,6 +139,7 @@ function App() {
       return;
     }
     setTracksTracked(() => snap.tracks);
+    if (snap.trackGroups) setTrackGroups(snap.trackGroups);
     if (snap.activeTrackId) {
       activeTrackIdRef.current = snap.activeTrackId;
       setActiveTrackId(snap.activeTrackId);
@@ -135,7 +148,7 @@ function App() {
     if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
     if (snap.selectedBeat !== undefined && snap.autoForward) setSelectedBeat(snap.selectedBeat);
     if (snap.selectedNotes) setSelectedNotes(new Set(snap.selectedNotes));
-  }, [setTracksTracked, setActiveNotes]);
+  }, [setTracksTracked, setActiveNotes, setTrackGroups]);
   
   // setNotes: pushes undo, for one-shot operations
   const setNotes = useCallback((updater) => {
@@ -573,7 +586,7 @@ function App() {
   activeSongIdRef.current = activeSongId;
   const songHistoryRef = useRef({}); // { [songId]: { undo, redo } } — in memory only
   const liveRef = useRef({});
-  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature, timelineZoom };
+  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature, timelineZoom, trackGroups };
   const captureSong = useCallback(() => ({
     ...liveRef.current,
     tracks: tracksRef.current,
@@ -635,6 +648,9 @@ function App() {
         return [{ ...track, notes: data.notes }];
       });
     }
+    if (data.trackGroups !== undefined) setTrackGroups(Array.isArray(data.trackGroups) ? data.trackGroups : []);
+    else if (data.tracks !== undefined) setTrackGroups([]);
+    if (data.tracks !== undefined) setSelectedTrackIds(new Set());
     if (data.bpm !== undefined) setBpm(data.bpm);
     if (data.swing !== undefined) setSwing(data.swing);
     if (data.loop !== undefined) setLoop(data.loop);
@@ -680,7 +696,7 @@ function App() {
     if (data.chordLibrary) {
       saveChordLibrary(data.chordLibrary);
     }
-  }, [setTracksTracked, markAudioMissing]);
+  }, [setTracksTracked, markAudioMissing, setTrackGroups]);
 
   // Close subdiv dial on outside click
   useEffect(() => {
@@ -737,11 +753,11 @@ function App() {
         tracks, bpm, swing, loop, loopStart, loopEnd,
         stringColors, synesthesia, sessionScheme, sessionSchemes,
         projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers,
-        songs: songsWithLive(), songGroups, activeSongId,
+        songs: songsWithLive(), songGroups, activeSongId, trackGroups,
       }));
     }, 400);
     return () => clearTimeout(t);
-  }, [tracks, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId]);
+  }, [tracks, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, rhythmUnit, rhythmMult, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId, trackGroups]);
 
   // Autosave toggle
   const [autoSave, setAutoSave] = useState(() => {
@@ -760,14 +776,14 @@ function App() {
         bpm, swing, loop, loopStart, loopEnd,
         stringColors, synesthesia, sessionScheme, sessionSchemes,
         projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
-        songs: songsWithLive(), songGroups, activeSongId,
+        songs: songsWithLive(), songGroups, activeSongId, trackGroups,
       });
       const blank = tracksRef.current.every(t => t.type !== 'audio' && !(t.notes && t.notes.length))
         && songsRef.current.length <= 1;
       if (!blank) saveAutosave(state);
     }, 30000);
     return () => clearInterval(interval);
-  }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId]);
+  }, [autoSave, bpm, swing, loop, loopStart, loopEnd, stringColors, synesthesia, sessionScheme, sessionSchemes, projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers, songs, songGroups, activeSongId, trackGroups]);
 
   const totalBeats = totalColumns(barSubdivisions);
   const handlePlayRef = useRef(null);
@@ -1506,6 +1522,22 @@ setPositionModeValue(null);
         e.preventDefault();
         if (handleToggleSoloRef.current) handleToggleSoloRef.current();
       }
+      if (matchesHotkey(e, hk.soloGroup)) {
+        e.preventDefault();
+        handleGroupHotkeyRef.current?.('solo');
+      }
+      if (matchesHotkey(e, hk.muteGroup)) {
+        e.preventDefault();
+        handleGroupHotkeyRef.current?.('muted');
+      }
+      if (matchesHotkey(e, hk.groupTracks)) {
+        e.preventDefault();
+        handleGroupTracksRef.current?.();
+      }
+      if (matchesHotkey(e, hk.ungroupTracks)) {
+        e.preventDefault();
+        handleUngroupTracksRef.current?.();
+      }
       if (matchesHotkey(e, hk.muteTrack)) {
         e.preventDefault();
         if (handleToggleMuteRef.current) handleToggleMuteRef.current(activeTrackIdRef.current);
@@ -2186,6 +2218,7 @@ setPositionModeValue(null);
       loopStart: snap.loopStart, loopEnd: snap.loopEnd, subdivisions: snap.subdivisions,
       rhythmUnit: snap.rhythmUnit, rhythmMult: snap.rhythmMult, markers: snap.markers,
       barSubdivisions: snap.barSubdivisions, timeSignature: snap.timeSignature,
+      trackGroups: snap.trackGroups || [],
     });
     const active = snap.tracks.find(t => t.id === snap.activeTrackId) || snap.tracks[0];
     if (active) {
@@ -2356,9 +2389,96 @@ setPositionModeValue(null);
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      return next;
+      return normalizeGroups(next);
     });
   }, [setTracksTracked]);
+
+  // ---- Track selection and track groups ----
+  // Plain click = just this track; Ctrl/Cmd = add or remove; Shift = everything from the active track.
+  const handleSelectTrack = useCallback((trackId, mode = 'single') => {
+    if (mode === 'toggle') {
+      setSelectedTrackIds(prev => {
+        const next = new Set(prev.size ? prev : [activeTrackIdRef.current]);
+        if (next.has(trackId)) next.delete(trackId); else next.add(trackId);
+        return next;
+      });
+    } else if (mode === 'range') {
+      const list = tracksRef.current;
+      const a = list.findIndex(t => t.id === activeTrackIdRef.current);
+      const b = list.findIndex(t => t.id === trackId);
+      if (a < 0 || b < 0) return;
+      const [lo, hi] = a < b ? [a, b] : [b, a];
+      setSelectedTrackIds(new Set(list.slice(lo, hi + 1).map(t => t.id)));
+    } else {
+      switchTrack(trackId);
+      setSelectedTrackIds(new Set([trackId]));
+    }
+  }, [switchTrack]);
+
+  const applyGroupResult = useCallback((r) => {
+    saveSnapshot();
+    setTracksTracked(r.tracks);
+    setTrackGroups(r.groups);
+  }, [saveSnapshot, setTracksTracked, setTrackGroups]);
+
+  const handleGroupTracks = useCallback((intoGroupId = null) => {
+    const ids = [...selectedTrackIds];
+    if (ids.length < 2 && !intoGroupId) { showToast('Select two or more tracks first (Ctrl/Cmd or Shift + click), then group them.'); return; }
+    applyGroupResult(groupTracksFn(tracksRef.current, trackGroupsRef.current, ids, intoGroupId));
+  }, [selectedTrackIds, applyGroupResult, showToast]);
+
+  const handleUngroupTracks = useCallback(() => {
+    const ids = selectedTrackIds.size ? [...selectedTrackIds] : [activeTrackIdRef.current];
+    if (!tracksRef.current.some(t => ids.includes(t.id) && t.groupId)) return;
+    applyGroupResult(ungroupTracksFn(tracksRef.current, trackGroupsRef.current, ids));
+  }, [selectedTrackIds, applyGroupResult]);
+
+  const handleRemoveTrackGroup = useCallback((gid) => {
+    const ids = tracksRef.current.filter(t => t.groupId === gid).map(t => t.id);
+    applyGroupResult(ungroupTracksFn(tracksRef.current, trackGroupsRef.current, ids, true));
+  }, [applyGroupResult]);
+
+  const handleToggleTrackGroup = useCallback((gid) => {
+    setTrackGroups(prev => prev.map(g => (g.id === gid ? { ...g, collapsed: !g.collapsed } : g)));
+  }, [setTrackGroups]);
+  const handleRenameTrackGroup = useCallback((gid, name) => {
+    setTrackGroups(prev => prev.map(g => (g.id === gid ? { ...g, name } : g)));
+  }, [setTrackGroups]);
+  const handleSetTrackGroupColour = useCallback((gid, colour) => {
+    setTrackGroups(prev => prev.map(g => (g.id === gid ? { ...g, colour } : g)));
+  }, [setTrackGroups]);
+  // Group mute / solo act on every member (like pressing M / S on each).
+  const handleTrackGroupFlag = useCallback((gid, flag) => {
+    setTracksTracked(prev => {
+      const members = prev.filter(t => t.groupId === gid);
+      const all = members.length > 0 && members.every(t => t[flag]);
+      return prev.map(t => (t.groupId === gid ? { ...t, [flag]: !all } : t));
+    });
+  }, [setTracksTracked]);
+  // Hotkeys: act on the group the active track belongs to.
+  const handleGroupHotkey = useCallback((flag) => {
+    const active = tracksRef.current.find(t => t.id === activeTrackIdRef.current);
+    if (!active?.groupId) { showToast('The active track is not in a group.'); return; }
+    const gid = active.groupId;
+    if (flag === 'muted') { handleTrackGroupFlag(gid, 'muted'); return; }
+    // Solo: like the solo-track key, solo only this group (again = back to normal)
+    setTracksTracked(prev => {
+      const onlyThisGroup = prev.every(t => (t.groupId === gid ? t.solo : !t.solo));
+      return prev.map(t => ({ ...t, solo: onlyThisGroup ? false : t.groupId === gid }));
+    });
+  }, [handleTrackGroupFlag, setTracksTracked, showToast]);
+  const handleGroupHotkeyRef = useRef(null);
+  handleGroupHotkeyRef.current = handleGroupHotkey;
+  const handleGroupTracksRef = useRef(null);
+  handleGroupTracksRef.current = handleGroupTracks;
+  const handleUngroupTracksRef = useRef(null);
+  handleUngroupTracksRef.current = handleUngroupTracks;
+
+  // Groups with no tracks left (deleted, replaced by an import) disappear.
+  useEffect(() => {
+    const alive = new Set(tracks.map(t => t.groupId).filter(Boolean));
+    if (trackGroups.some(g => !alive.has(g.id))) setTrackGroups(prev => prev.filter(g => alive.has(g.id)));
+  }, [tracks, trackGroups, setTrackGroups]);
 
   const handleDeleteTrack = useCallback((trackId) => {
     setTracksTracked(prev => {
@@ -2880,6 +3000,16 @@ setPositionModeValue(null);
         onDeleteTrack={handleDeleteTrack}
         onDuplicateTrack={handleDuplicateTrack}
         onReorderTracks={handleReorderTracks}
+        trackGroups={trackGroups}
+        selectedTrackIds={selectedTrackIds}
+        onSelectTrack={handleSelectTrack}
+        onGroupTracks={handleGroupTracks}
+        onUngroupTracks={handleUngroupTracks}
+        onRemoveTrackGroup={handleRemoveTrackGroup}
+        onToggleTrackGroup={handleToggleTrackGroup}
+        onRenameTrackGroup={handleRenameTrackGroup}
+        onSetTrackGroupColour={handleSetTrackGroupColour}
+        onTrackGroupFlag={handleTrackGroupFlag}
         onRenameTrack={handleRenameTrack}
         onLoadAudio={handleLoadAudio}
         missingAudioIds={missingAudioIds}
@@ -3216,7 +3346,7 @@ setPositionModeValue(null);
             tracks, bpm, loop, loopStart, loopEnd,
             stringColors, synesthesia, sessionScheme, sessionSchemes,
             projectName, subdivisions, metronome, barSubdivisions, timeSignature, markers,
-            songs: songsWithLive(), songGroups, activeSongId,
+            songs: songsWithLive(), songGroups, activeSongId, trackGroups,
           }}
           onApplyState={applyState}
           accent={accent}

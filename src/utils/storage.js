@@ -78,6 +78,7 @@ export function getSessionState(appState) {
     timeSignature: appState.timeSignature,
     songs: appState.songs,
     songGroups: appState.songGroups,
+    trackGroups: appState.trackGroups,
     activeSongId: appState.activeSongId,
     metronome: appState.metronome,
     barSubdivisions: appState.barSubdivisions,

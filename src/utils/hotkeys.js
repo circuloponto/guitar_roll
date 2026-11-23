@@ -28,6 +28,10 @@ const DEFAULT_HOTKEYS = {
   bendDown: { label: 'Bend Down', description: 'Decrease bend on selected notes', key: 'ArrowDown', modifiers: { shift: true } },
   toggleSlide: { label: 'Toggle Slide', description: 'Toggle slide to next note on selected', key: 's', modifiers: { shift: true } },
   soloTrack: { label: 'Solo Track', description: 'Solo the selected track (press again to unsolo)', key: 's' },
+  groupTracks: { label: 'Group Tracks', description: 'Group the selected tracks (select several with Ctrl/Cmd or Shift + click)', key: 'g', modifiers: { ctrl: true } },
+  ungroupTracks: { label: 'Ungroup Tracks', description: 'Take the selected tracks out of their group', key: 'g', modifiers: { ctrl: true, shift: true } },
+  soloGroup: { label: 'Solo Group', description: 'Solo the group of the active track (press again to unsolo)', key: 'u' },
+  muteGroup: { label: 'Mute Group', description: 'Mute or unmute the group of the active track', key: 'u', modifiers: { shift: true } },
   muteTrack: { label: 'Mute Track', description: 'Mute or unmute the selected track', key: 'm', modifiers: { shift: true } },
   prevMarker: { label: 'Previous Marker', description: 'Jump to previous marker', key: 'PageUp' },
   nextMarker: { label: 'Next Marker', description: 'Jump to next marker', key: 'PageDown' },
@@ -165,7 +169,7 @@ export function formatHotkey(hotkey) {
 // Editable hotkey IDs (ones users can change)
 export const EDITABLE_HOTKEYS = [
   'noteJump', 'freeMode', 'durationMode', 'moveMode', 'adjacentMode',
-  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'soloTrack', 'muteTrack', 'voiceLeading',
+  'deleteNotes', 'toggleGhost', 'bendUp', 'bendDown', 'toggleSlide', 'soloTrack', 'muteTrack', 'groupTracks', 'ungroupTracks', 'soloGroup', 'muteGroup', 'voiceLeading',
   'prevMarker', 'nextMarker', 'playStop', 'returnToStart', 'prevBeat', 'nextBeat',
   'jumpPrevNote', 'jumpNextNote',
   'zoomIn', 'zoomOut', 'zoomWheel', 'verticalZoomIn', 'verticalZoomOut', 'verticalZoomWheel', 'velocityWheel',
