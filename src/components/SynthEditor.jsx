@@ -10,7 +10,7 @@ import ConfirmDialog from './ConfirmDialog';
 const WAVE_TYPES = ['sine', 'triangle', 'sawtooth', 'square'];
 const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass'];
 
-export default function SynthEditor({ currentInstrument, onInstrumentChange, onClose }) {
+export default function SynthEditor({ currentInstrument, onInstrumentChange, onClose, embedded = false }) {
   const customPresets = loadCustomPresets();
   const allPresets = { ...SYNTH_PRESETS, ...Object.fromEntries(Object.entries(customPresets).map(([id, p]) => [id, p])) };
 
@@ -93,10 +93,18 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
   const trem = params.tremolo || { rate: 0, depth: 0 };
   const vib = params.vibrato || { rate: 0, depth: 0 };
 
-  return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-popup synth-editor" onClick={(e) => e.stopPropagation()}>
-        <h2 className="settings-title">Synth Editor</h2>
+  // A plain function (not a component) so the inputs inside keep focus between renders.
+  const wrap = (children) => (embedded
+    ? <div className="synth-embedded">{children}</div>
+    : (
+      <div className="settings-overlay" onClick={onClose}>
+        <div className="settings-popup synth-editor" onClick={(e) => e.stopPropagation()}>{children}</div>
+      </div>
+    ));
+
+  return wrap(
+    <>
+        {!embedded && <h2 className="settings-title">Synth Editor</h2>}
 
         {/* Preset selector */}
         <div className="settings-section">
@@ -230,12 +238,11 @@ export default function SynthEditor({ currentInstrument, onInstrumentChange, onC
           <button className="settings-btn" onClick={handleSave} disabled={!presetName.trim()}>
             Save{dirty ? ' *' : ''}
           </button>
-          <button className="settings-btn settings-close" onClick={onClose}>Close</button>
+          {!embedded && <button className="settings-btn settings-close" onClick={onClose}>Close</button>}
         </div>
-      </div>
       {confirm && (
         <ConfirmDialog message={confirm.message} onConfirm={confirm.onConfirm} onCancel={() => setConfirm(null)} />
       )}
-    </div>
+    </>
   );
 }

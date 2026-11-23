@@ -3624,3 +3624,6 @@ body.dock-dragging iframe, body.dock-resizing iframe { pointer-events: none; }
 .tab-context-menu-item:disabled { opacity: 0.4; cursor: default; }
 .tab-context-menu-item:disabled:hover { background: transparent; }
 .tab-context-menu-key { margin-left: auto; padding-left: 18px; color: var(--mute); font-size: 11px; }
+
+/* Synth editor inside Settings > Synth */
+.synth-embedded { max-width: 640px; }

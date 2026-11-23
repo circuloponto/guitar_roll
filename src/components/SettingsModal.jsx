@@ -6,6 +6,7 @@ import {
   listSessions, saveSession, loadSession, deleteSession,
   exportToFile, importFromFile, stateToUrl, getSessionState,
 } from '../utils/storage';
+import SynthEditor from './SynthEditor';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
@@ -106,9 +107,9 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, initialTab, synthInstrument, onSynthInstrumentChange }) {
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
-  const [tab, setTab] = useState(() => { try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
+  const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
   const [projectView, setProjectView] = useState('main'); // main | sessions
   const selectTab = (id) => { setTab(id); try { localStorage.setItem('guitar-roll-settings-tab', id); } catch { /* ignore */ } };
@@ -639,6 +640,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
   const TABS = [
     { id: 'look', label: 'Look & Feel' },
     { id: 'playback', label: 'Playback' },
+    { id: 'synth', label: 'Synth' },
     { id: 'fretboard', label: 'Fretboard' },
     { id: 'timeline', label: 'Timeline' },
     { id: 'shortcuts', label: 'Shortcuts' },
@@ -722,6 +724,8 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             </div>
           </div>
     </>);
+  } else if (activeTab === 'synth') {
+    pane = <SynthEditor embedded currentInstrument={synthInstrument} onInstrumentChange={onSynthInstrumentChange} />;
   } else if (activeTab === 'fretboard') {
     pane = (<>
           <div className="settings-section">

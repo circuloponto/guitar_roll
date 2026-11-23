@@ -453,7 +453,7 @@ function App() {
   const [instanceColorMenuPos, setInstanceColorMenuPos] = useState({ left: window.innerWidth / 2, top: window.innerHeight / 2, right: null });
   const [showMultDial, setShowMultDial] = useState(false);
   const multDialRef = useRef(null);
-  const [showSynthEditor, setShowSynthEditor] = useState(false);
+  const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
   const [chordPreview, setChordPreview] = useState(null);
   const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
   const [showVoiceLeading, setShowVoiceLeading] = useState(false);
@@ -2754,13 +2754,6 @@ setPositionModeValue(null);
         </select>
         <button
           className="tool-btn"
-          onClick={() => setShowSynthEditor(true)}
-          title="Edit synth parameters"
-        >
-          Synth
-        </button>
-        <button
-          className="tool-btn"
           onClick={() => {
             if (!confirm('Start a new session? Unsaved changes will be lost.')) return;
             const track = createDefaultTrack();
@@ -2798,7 +2791,7 @@ setPositionModeValue(null);
         </button>
         <button
           className="tool-btn"
-          onClick={() => { setShowSettings(true);}}
+          onClick={() => { setSettingsTab(null); setShowSettings(true); }}
           title="Settings"
         >
           Settings
@@ -3325,21 +3318,6 @@ setPositionModeValue(null);
         />
       )}
 
-      {showSynthEditor && (
-        <SynthEditor
-          currentInstrument={activeTrack?.instrument || instrument}
-          onInstrumentChange={(id) => {
-            setInstrument(id);
-            setInstrumentState(id);
-            setTracksTracked(prev => prev.map(t =>
-              t.id === activeTrackId ? { ...t, instrument: id } : t
-            ));
-            setInstrumentList(getAllInstruments());
-          }}
-          onClose={() => { setShowSynthEditor(false); setInstrumentList(getAllInstruments()); }}
-        />
-      )}
-
       {showSettings && (
         <SettingsModal
           appState={{
@@ -3358,7 +3336,17 @@ setPositionModeValue(null);
             return true;
           }}
           onAccentChange={handleAccentChange}
-          onClose={() => setShowSettings(false)}
+          onClose={() => { setShowSettings(false); setSettingsTab(null); setInstrumentList(getAllInstruments()); }}
+          initialTab={settingsTab}
+          synthInstrument={activeTrack?.instrument || instrument}
+          onSynthInstrumentChange={(id) => {
+            setInstrument(id);
+            setInstrumentState(id);
+            setTracksTracked(prev => prev.map(t =>
+              t.id === activeTrackId ? { ...t, instrument: id } : t
+            ));
+            setInstrumentList(getAllInstruments());
+          }}
           hoverPreview={hoverPreview}
           onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
           tupletLines={tupletLines}
