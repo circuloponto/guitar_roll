@@ -200,6 +200,11 @@ function App() {
     }
   }, []);
   const [projectName, setProjectName] = useState('Guitar Roll');
+  // Browser tab title: "<session name> - Fretroll"
+  useEffect(() => {
+    const name = (projectName || '').trim();
+    document.title = name ? `${name} - Fretroll` : 'Fretroll';
+  }, [projectName]);
   const [playing, setPlaying] = useState(false);
   const [currentBeat, setCurrentBeat] = useState(null);
   // Imperative playhead ref — updated every audio frame, consumed by Timeline
