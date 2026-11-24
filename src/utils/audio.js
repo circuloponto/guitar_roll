@@ -1,4 +1,4 @@
-import { isUltrabox, playUltraboxNote, loadUltrabox, ULTRABOX_INSTRUMENTS } from './ultrabox';
+import { isUltrabox, playUltraboxNote, loadUltrabox, ULTRABOX_INSTRUMENTS, loadCustomUltrabox } from './ultrabox';
 
 // Guitar note frequencies for standard tuning (E2 A2 D3 G3 B3 E4)
 const STRING_OPEN_NOTES = [
@@ -101,6 +101,7 @@ export function getAllInstruments() {
   });
   // UltraBox presets, grouped by category in the picker
   ULTRABOX_INSTRUMENTS.forEach(u => { all[u.id] = { label: u.name, group: `UltraBox · ${u.cat}` }; });
+  loadCustomUltrabox().forEach(c => { all[c.id] = { label: c.name, group: 'UltraBox · My instruments' }; });
   return all;
 }
 

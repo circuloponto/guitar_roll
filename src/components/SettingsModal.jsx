@@ -6,7 +6,6 @@ import {
   listSessions, saveSession, loadSession, deleteSession,
   exportToFile, importFromFile, stateToUrl, getSessionState, DOWNLOAD_HINT,
 } from '../utils/storage';
-import SynthEditor from './SynthEditor';
 import { SENSITIVITY } from '../utils/transcribe';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
@@ -109,7 +108,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab }) {
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
@@ -644,7 +643,6 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     { id: 'look', label: 'Look & Feel' },
     { id: 'toolbar', label: 'Toolbar' },
     { id: 'playback', label: 'Playback' },
-    { id: 'synth', label: 'Synth' },
     { id: 'transcription', label: 'Transcription' },
     { id: 'fretboard', label: 'Fretboard' },
     { id: 'timeline', label: 'Timeline' },
@@ -920,8 +918,6 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
         </div>
       </>
     );
-  } else if (activeTab === 'synth') {
-    pane = <SynthEditor embedded currentInstrument={synthInstrument} onInstrumentChange={onSynthInstrumentChange} />;
   } else if (activeTab === 'fretboard') {
     pane = (<>
           <div className="settings-section">

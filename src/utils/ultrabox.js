@@ -14,6 +14,39 @@ const OUTPUT_GAIN = 0.25; // the engine renders loud (peaks up to ~2)
 const TAIL_SEC = 1.4;     // release / reverb tail rendered after the note ends
 const MAX_CACHE = 800;
 
+// ---- instruments you edited or saved yourself (kept in this browser) ----
+const CUSTOM_KEY = 'guitar-roll-ub-custom';
+export const CUSTOM_PREFIX = UB_PREFIX + 'Custom/';
+export function loadCustomUltrabox() {
+  try { const l = JSON.parse(localStorage.getItem(CUSTOM_KEY)); return Array.isArray(l) ? l : []; } catch { return []; }
+}
+function writeCustom(list) { try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch { /* ignore */ } }
+export const isCustomUltrabox = (id) => typeof id === 'string' && id.startsWith(CUSTOM_PREFIX);
+export function saveCustomUltrabox(id, name, settings) {
+  const list = loadCustomUltrabox().filter(c => c.id !== id);
+  list.push({ id, name, settings });
+  writeCustom(list);
+  invalidateUltrabox(id);
+}
+export function deleteCustomUltrabox(id) {
+  writeCustom(loadCustomUltrabox().filter(c => c.id !== id));
+  invalidateUltrabox(id);
+}
+export function uniqueCustomId(name) {
+  const taken = new Set(loadCustomUltrabox().map(c => c.id));
+  let id = CUSTOM_PREFIX + name, n = 2;
+  while (taken.has(id) || ULTRABOX_INSTRUMENTS.some(u => u.id === id)) id = `${CUSTOM_PREFIX}${name} ${n++}`;
+  return id;
+}
+// The parameter set of any UltraBox instrument (built-in preset or your own), or null.
+export function getUltraboxSettings(id) {
+  const c = loadCustomUltrabox().find(x => x.id === id);
+  if (c) return c.settings;
+  return presets?.get(id)?.settings || null;
+}
+export const ultraboxName = (id) => loadCustomUltrabox().find(c => c.id === id)?.name
+  || ULTRABOX_INSTRUMENTS.find(u => u.id === id)?.name || id;
+
 let engine = null;
 let presets = null;
 let loading = null;
@@ -53,15 +86,16 @@ function renderRaw(preset, midi, dur) {
   const ticks = Math.max(1, Math.round(dur / secPerTick));
   const beatsPerBar = Math.max(8, Math.ceil(ticks / tpb) + 4);
   const inst = JSON.parse(JSON.stringify(preset.settings));
+  const drums = inst.type === 'drumset'; // drum sounds live on a noise channel, one pitch per drum
   const song = {
     format: 'UltraBox', version: 5, scale: 'Free', key: 'C', keyOctave: 0, introBars: 0, loopBars: 1,
     beatsPerBar, ticksPerBeat: tpb, beatsPerMinute: bpm, reverb: 0, masterGain: 100,
     layeredInstruments: false, patternInstruments: false,
     channels: [{
-      type: 'pitch', name: '', octaveScrollBar: 0, sequence: [1],
+      type: drums ? 'noise' : 'pitch', name: '', octaveScrollBar: 0, sequence: [1],
       instruments: [Object.assign({ volume: 0 }, inst)],
       patterns: [{ notes: [{
-        pitches: [midi - 12], // the engine's pitch 0 is MIDI 12
+        pitches: [drums ? midi % 12 : midi - 12], // the engine's pitch 0 is MIDI 12
         points: [{ tick: 0, pitchBend: 0, volume: 100, forMod: false }, { tick: ticks, pitchBend: 0, volume: 100, forMod: false }],
         continuesLastPattern: false,
       }] }],
@@ -79,6 +113,9 @@ function renderRaw(preset, midi, dur) {
 }
 
 const cache = new Map(); // key -> AudioBuffer (insertion order = age)
+function invalidateUltrabox(id) {
+  for (const k of [...cache.keys()]) if (k.startsWith(id + '|')) cache.delete(k);
+}
 
 function keyOf(id, midi, bucket) { return `${id}|${midi}|${bucket}`; }
 
@@ -86,8 +123,9 @@ function keyOf(id, midi, bucket) { return `${id}|${midi}|${bucket}`; }
 // loaded yet or the preset is unknown / silent.
 export function getNoteBuffer(ctx, id, midi, duration) {
   if (!ultraboxReady()) return null;
-  const preset = presets.get(id);
-  if (!preset) return null;
+  const settings = getUltraboxSettings(id);
+  if (!settings) return null;
+  const preset = { settings };
   const bucket = durationBucket(duration);
   const key = keyOf(id, midi, bucket);
   let buf = cache.get(key);

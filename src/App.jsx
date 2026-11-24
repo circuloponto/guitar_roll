@@ -25,7 +25,7 @@ import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
-import SynthEditor from './components/SynthEditor';
+import UltraboxEditor from './components/UltraboxEditor';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
 import { Metronome, Undo2, Redo2 } from 'lucide-react';
@@ -492,6 +492,13 @@ function App() {
   const [showMultDial, setShowMultDial] = useState(false);
   const multDialRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
+  const [tracksTab, setTracksTab] = useState('tracks'); // the Tracks window holds two tabs: Tracks | Synth
+  const [synthOpened, setSynthOpened] = useState(false);
+  const chooseTracksTab = (t) => {
+    setTracksTab(t);
+    if (t === 'synth') setSynthOpened(true);
+    window.dispatchEvent(new CustomEvent(t === 'synth' ? 'guitar-roll-tracks-height' : 'guitar-roll-fit-tracks', { detail: { share: 0.62 } }));
+  };
   // Toolbar customisation: which controls show, their order and size (like FL Studio's toolbar)
   const [toolbarCfg, setToolbarCfg] = useState(loadToolbar);
   const [tbMenu, setTbMenu] = useState(null); // right-click menu on the toolbar
@@ -3295,6 +3302,24 @@ setPositionModeValue(null);
       )}
       tracks={(
       <>
+      <div className="panel-tabs" data-tab={tracksTab}>
+        <button className={tracksTab === 'tracks' ? 'active' : ''} onClick={() => chooseTracksTab('tracks')}>Tracks</button>
+        <button className={tracksTab === 'synth' ? 'active' : ''} onClick={() => chooseTracksTab('synth')}>Synth</button>
+      </div>
+      {synthOpened && (
+        <div className="synth-pane">
+          <UltraboxEditor
+            visible={tracksTab === 'synth'}
+            currentInstrument={activeTrack?.instrument || instrument}
+            onInstrumentChange={(id) => {
+              setInstrument(id);
+              setInstrumentState(id);
+              setTracksTracked(prev => prev.map(t => (t.id === activeTrackId ? { ...t, instrument: id } : t)));
+              setInstrumentList(getAllInstruments());
+            }}
+          />
+        </div>
+      )}
       <SongTabs
         songs={songs}
         groups={songGroups}
@@ -3710,15 +3735,6 @@ setPositionModeValue(null);
           onAccentChange={handleAccentChange}
           onClose={() => { setShowSettings(false); setSettingsTab(null); setInstrumentList(getAllInstruments()); }}
           initialTab={settingsTab}
-          synthInstrument={activeTrack?.instrument || instrument}
-          onSynthInstrumentChange={(id) => {
-            setInstrument(id);
-            setInstrumentState(id);
-            setTracksTracked(prev => prev.map(t =>
-              t.id === activeTrackId ? { ...t, instrument: id } : t
-            ));
-            setInstrumentList(getAllInstruments());
-          }}
           hoverPreview={hoverPreview}
           onHoverPreviewChange={(v) => { setHoverPreview(v); localStorage.setItem('guitar-roll-hover-preview', JSON.stringify(v)); }}
           tupletLines={tupletLines}

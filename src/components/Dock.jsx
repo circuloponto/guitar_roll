@@ -80,6 +80,25 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
   }, [commit]);
 
+  // Make the Tracks window this tall (a share of the dock area), e.g. when the Synth tab opens.
+  useEffect(() => {
+    const on = (e) => {
+      const el = containerRef.current;
+      const s = stRef.current;
+      if (!el || s.floating.tracks || s.minimized.tracks) return;
+      const par = findParent(s.tree, 'tracks');
+      if (!par || par.node.dir !== 'col') return;
+      const g = computeRects(s.tree, { w: el.clientWidth, h: el.clientHeight }, s.minimized).gutters.find(x => x.path === par.path);
+      if (!g) return;
+      const want = Math.min(0.8, e.detail?.share || 0.6);
+      const own = par.isA ? par.node.ratio : 1 - par.node.ratio;
+      if (own >= want) return;
+      commit(setRatioAt(s, par.path, par.isA ? want : 1 - want));
+    };
+    window.addEventListener('guitar-roll-tracks-height', on);
+    return () => window.removeEventListener('guitar-roll-tracks-height', on);
+  }, [commit]);
+
   const resetLayout = useCallback(() => {
     clearSavedState();
     const el = containerRef.current;
