@@ -4,7 +4,7 @@ import ConfirmDialog from './ConfirmDialog';
 import {
   listColorSchemes, saveColorScheme, deleteColorScheme,
   listSessions, saveSession, loadSession, deleteSession,
-  exportToFile, importFromFile, stateToUrl, getSessionState,
+  exportToFile, importFromFile, stateToUrl, getSessionState, DOWNLOAD_HINT,
 } from '../utils/storage';
 import SynthEditor from './SynthEditor';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
@@ -118,6 +118,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
   const [sessions, setSessions] = useState(listSessions);
   const [sessionName, setSessionName] = useState('');
   const [copyMsg, setCopyMsg] = useState('');
+  const [exportHint, setExportHint] = useState('');
   const [confirm, setConfirm] = useState(null); // { message, onConfirm }
   const [schemeLibraryVersion, setSchemeLibraryVersion] = useState(0);
   const [nameConflict, setNameConflict] = useState(null); // { type, newName, oldName, colors }
@@ -945,9 +946,11 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                       if (r.saved) {
                         setCopyMsg(`Exported with ${r.audioCount} audio file${r.audioCount === 1 ? '' : 's'}${r.missing.length ? ` (${r.missing.length} missing)` : ''}`);
                         setTimeout(() => setCopyMsg(''), 3500);
+                        setExportHint(r.saved === 'download' ? DOWNLOAD_HINT : '');
                       }
                     } else {
-                      await exportToFile(state, `${appState.projectName || 'guitar-roll'}.json`);
+                      const how = await exportToFile(state, `${appState.projectName || 'guitar-roll'}.json`);
+                      setExportHint(how === 'download' ? DOWNLOAD_HINT : '');
                     }
                   } catch (error) {
                     console.warn('Export failed', error);
@@ -970,6 +973,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 Import from File
               </button>
             </div>
+            {exportHint && <p className="settings-desc" style={{ marginTop: 6 }}>{exportHint}</p>}
             <div className="settings-row-btns">
               <button className="settings-btn" onClick={() => {
                 const url = stateToUrl(getSessionState(appState));

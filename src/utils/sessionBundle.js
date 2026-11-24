@@ -25,7 +25,8 @@ function audioTrackIds(state) {
 
 export const sessionHasAudio = (state) => audioTrackIds(state).length > 0;
 
-// Save blob with a "save as" dialog where the browser has one, otherwise a named download.
+// Save blob with the system save dialog where the browser has one (Chromium), otherwise a named
+// download the browser handles. Returns 'picker' | 'download' | false (cancelled).
 async function saveBlob(blob, suggestedName) {
   if ('showSaveFilePicker' in window) {
     try {
@@ -36,15 +37,12 @@ async function saveBlob(blob, suggestedName) {
       const w = await handle.createWritable();
       await w.write(blob);
       await w.close();
-      return true;
+      return 'picker';
     } catch (err) {
       if (err.name === 'AbortError') return false;
     }
   }
-  const entered = window.prompt('Save as (file name):', suggestedName);
-  if (entered === null) return false;
-  let name = entered.trim() || suggestedName;
-  if (!/\.zip$/i.test(name)) name += '.zip';
+  const name = suggestedName;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -53,7 +51,7 @@ async function saveBlob(blob, suggestedName) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 10000);
-  return true;
+  return 'download';
 }
 
 // Returns { saved, audioCount, missing } — `missing` lists audio tracks whose file wasn't in the browser.

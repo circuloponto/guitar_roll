@@ -169,6 +169,10 @@ export function deleteColorScheme(name) {
 }
 
 // --- File export/import ---
+// Returns 'picker' (the system save dialog was used), 'download' (the browser downloaded it with the
+// suggested name) or 'cancelled'. Chromium browsers (Chrome, Edge, Arc, ... on Mac and Windows) open
+// the native save dialog; Safari and Firefox have no such API, so the browser's own download
+// settings decide whether you get asked where to save.
 export async function exportToFile(state, suggestedFilename = 'guitar-roll-session.json') {
   // Try using File System Access API for save dialog
   if ('showSaveFilePicker' in window) {
@@ -183,20 +187,14 @@ export async function exportToFile(state, suggestedFilename = 'guitar-roll-sessi
       const writable = await fileHandle.createWritable();
       await writable.write(JSON.stringify(state, null, 2));
       await writable.close();
-      return;
+      return 'picker';
     } catch (err) {
       // User cancelled the dialog
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') return 'cancelled';
     }
   }
-  
-  // Safari/Firefox (incl. all macOS/iOS browsers except Chromium) have no save dialog API:
-  // ask for the file name ourselves so the user still gets a "save as" step.
-  const entered = window.prompt('Save as (file name):', suggestedFilename);
-  if (entered === null) return; // cancelled
-  let name = entered.trim() || suggestedFilename;
-  if (!/\.json$/i.test(name)) name += '.json';
-  suggestedFilename = name;
+
+  // No save dialog API (Safari, Firefox): hand the file to the browser with the suggested name.
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -205,8 +203,12 @@ export async function exportToFile(state, suggestedFilename = 'guitar-roll-sessi
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000); // Safari needs the URL to outlive the click
+  setTimeout(() => URL.revokeObjectURL(url), 10000); // Safari needs the URL to outlive the click
+  return 'download';
 }
+
+// Shown after a download that did not go through a save dialog.
+export const DOWNLOAD_HINT = 'Saved to your Downloads folder. To choose the name and place each time: Safari > Settings > General > File download location > Ask for each download (Firefox: Settings > General > Downloads > Always ask where to save files).';
 // Note: This function becomes async, so also needs the call in SettingsModal.jsx to be async
 
 export function importFromFile() {
