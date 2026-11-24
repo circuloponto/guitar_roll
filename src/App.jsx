@@ -432,6 +432,12 @@ function App() {
   const [showFretNumbers, setShowFretNumbers] = useState(() => {
     try { return localStorage.getItem('guitar-roll-show-fret-numbers') !== 'false'; } catch { return true; }
   });
+  const [openDots, setOpenDots] = useState(() => {
+    try { return localStorage.getItem('guitar-roll-open-dots') !== 'false'; } catch { return true; }
+  });
+  const [openScroll, setOpenScroll] = useState(() => {
+    try { return localStorage.getItem('guitar-roll-open-scroll') !== 'false'; } catch { return true; }
+  });
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
     try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
@@ -3200,6 +3206,8 @@ setPositionModeValue(null);
           tempoMap={tempoMap}
           noteFadeFactor={NOTE_FADE_PRESETS[noteFade]}
           showFretNumbers={showFretNumbers}
+          openDots={openDots}
+          openScroll={openScroll}
           selectedExtraNotes={showSelectedOnFretboard && selectedNotes.size > 0 && !playing
             ? [...selectedNotes].map(idx => notes[idx]).filter(n => n && !(selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)))
             : []}
@@ -3443,6 +3451,10 @@ setPositionModeValue(null);
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
           noteFade={noteFade}
+          openDots={openDots}
+          onOpenDotsChange={(v) => { setOpenDots(v); try { localStorage.setItem('guitar-roll-open-dots', String(v)); } catch { /* ignore */ } }}
+          openScroll={openScroll}
+          onOpenScrollChange={(v) => { setOpenScroll(v); try { localStorage.setItem('guitar-roll-open-scroll', String(v)); } catch { /* ignore */ } }}
           showFretNumbers={showFretNumbers}
           onShowFretNumbersChange={(v) => { setShowFretNumbers(v); try { localStorage.setItem('guitar-roll-show-fret-numbers', String(v)); } catch { /* ignore */ } }}
           onNoteFadeChange={(v) => { setNoteFade(v); try { localStorage.setItem('guitar-roll-note-fade', v); } catch { /* ignore */ } }}

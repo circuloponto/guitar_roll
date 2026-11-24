@@ -10,7 +10,7 @@ import { beatToX as beatToXUtil } from '../utils/barLayout';
 
 // Animated note flashes during playback (see utils/noteFade.js). It redraws itself every frame while
 // playing and reads the continuous playhead from a ref, so it never waits on the app's renders.
-function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteColor, cellCenterPx, PADDING_LEFT, PADDING_RIGHT }) {
+function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteColor, cellCenterPx, PADDING_LEFT, PADDING_RIGHT, openDots = true }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!playing) return undefined;
@@ -48,9 +48,13 @@ function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteC
             <div style={{ position: 'absolute', left, top: nutTop, bottom: 0, width: Math.max(1.5, thickness * 0.5), background: color, opacity: env, boxShadow: `0 0 ${16 * env}px ${5 * env}px ${color}`, transform: 'translateX(-50%)', zIndex: 2 }} />
           </>
         )}
-        <div style={{ position: 'absolute', left, top, width: 38, height: 18, borderRadius: 9, background: '#000', opacity: env, transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 2 }} />
-        <div style={{ position: 'absolute', left, top, width: 60, height: 30, borderRadius: '50%', background: color, filter: 'blur(14px)', opacity: 0.8 * env, transform: 'translate(-50%, -50%)', zIndex: 5 }} />
-        <div style={{ position: 'absolute', left, top, width: 32, height: 12, borderRadius: 6, background: color, opacity: Math.min(1, env * 1.15), boxShadow: `0 0 ${10 * env}px ${3 * env}px ${color}`, transform: `translate(-50%, -50%) rotate(-50deg) scale(${0.9 + 0.2 * env})`, zIndex: 7 }} />
+        {(openDots || note.fret > 0) && (
+          <>
+            <div style={{ position: 'absolute', left, top, width: 38, height: 18, borderRadius: 9, background: '#000', opacity: env, transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 2 }} />
+            <div style={{ position: 'absolute', left, top, width: 60, height: 30, borderRadius: '50%', background: color, filter: 'blur(14px)', opacity: 0.8 * env, transform: 'translate(-50%, -50%)', zIndex: 5 }} />
+            <div style={{ position: 'absolute', left, top, width: 32, height: 12, borderRadius: 6, background: color, opacity: Math.min(1, env * 1.15), boxShadow: `0 0 ${10 * env}px ${3 * env}px ${color}`, transform: `translate(-50%, -50%) rotate(-50deg) scale(${0.9 + 0.2 * env})`, zIndex: 7 }} />
+          </>
+        )}
       </div>
     );
   });
@@ -72,7 +76,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, showFretNumbers = true, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, showFretNumbers = true, openDots = true, openScroll = true, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -233,6 +237,11 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   // With the fade on, FadeLayer draws what is playing; the older always-on glow is for "Off".
   const fadeOn = playing && noteFadeFactor > 0;
   const shownPlaying = fadeOn ? [] : playingNotes;
+  // Settings > Fretboard: open strings can be shown as a string glow only, without the note dot
+  const dotOk = (n) => openDots || n.fret > 0;
+  const dotActive = openDots ? activeNotes : activeNotes.filter(dotOk);
+  const dotExtra = openDots ? selectedExtraNotes : selectedExtraNotes.filter(dotOk);
+  const dotPlaying = openDots ? shownPlaying : shownPlaying.filter(dotOk);
 
   const handleMouseDown = useCallback((e) => {
     const result = getStringAndFret(e);
@@ -554,6 +563,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   useEffect(() => {
     if (!(autoScroll?.onHover ?? true)) return;
     if (!hoveredNote || !scrollRef.current || hover) return;
+    if (!openScroll && hoveredNote.fret === 0) return;
     const noteTop = cellTopPx(hoveredNote.fret);
     const noteBottom = noteTop + FRET_HEIGHT;
     const container = scrollRef.current;
@@ -565,14 +575,15 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     } else if (noteBottom > viewBottom) {
       container.scrollTo({ top: noteBottom - container.clientHeight + 20, behavior: 'smooth' });
     }
-  }, [hoveredNote, hover, autoScroll]);
+  }, [hoveredNote, hover, autoScroll, openScroll]);
 
   // Auto-scroll fretboard to show playing notes during playback
   useEffect(() => {
     if (!(autoScroll?.onPlayback ?? true)) return;
-    if (!playingNotes.length || !scrollRef.current) return;
+    const scrollNotes = openScroll ? playingNotes : playingNotes.filter(n => n.fret > 0);
+    if (!scrollNotes.length || !scrollRef.current) return;
     let minFret = Infinity, maxFret = -Infinity;
-    for (const n of playingNotes) {
+    for (const n of scrollNotes) {
       if (n.fret < minFret) minFret = n.fret;
       if (n.fret > maxFret) maxFret = n.fret;
     }
@@ -586,7 +597,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       const center = (regionTop + regionBottom) / 2;
       container.scrollTo({ top: center - container.clientHeight / 2, behavior: 'smooth' });
     }
-  }, [playingNotes, autoScroll]);
+  }, [playingNotes, autoScroll, openScroll]);
 
 
   // Ctrl+scroll zoom on fretboard
@@ -824,7 +835,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         ))}
 
         {/* Active notes glow blur */}
-        {activeNotes.map((note, i) => {
+        {dotActive.map((note, i) => {
           const isDragging = dragStartRef.current &&
             note.stringIndex === dragStartRef.current.stringIndex &&
             note.fret === dragStartRef.current.fret;
@@ -849,7 +860,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Active notes at current beat */}
-        {activeNotes.map((note, i) => {
+        {dotActive.map((note, i) => {
           const isDragging = dragStartRef.current &&
             note.stringIndex === dragStartRef.current.stringIndex &&
             note.fret === dragStartRef.current.fret;
@@ -876,7 +887,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Selected notes that are not at the playhead (setting: Fretboard > Selection) */}
-        {selectedExtraNotes.map((note, i) => {
+        {dotExtra.map((note, i) => {
           const color = getNoteColor(note);
           const left = `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`;
           return (
@@ -898,7 +909,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Selection outlines */}
-        {selectedNotes && selectedNotes.size > 0 && activeNotes.map((note, i) => {
+        {selectedNotes && selectedNotes.size > 0 && dotActive.map((note, i) => {
           const noteIdx = notes.findIndex(n =>
             n.stringIndex === note.stringIndex && n.fret === note.fret &&
             selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)
@@ -1098,7 +1109,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* Solid mask behind playing notes to hide string lines */}
-        {shownPlaying.map((note, i) => (
+        {dotPlaying.map((note, i) => (
           <div key={`mask-${i}`} style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
@@ -1114,7 +1125,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         ))}
 
         {/* Solid mask behind active notes to hide string lines */}
-        {activeNotes.map((note, i) => {
+        {dotActive.map((note, i) => {
           const isDragging = dragStartRef.current &&
             note.stringIndex === dragStartRef.current.stringIndex &&
             note.fret === dragStartRef.current.fret;
@@ -1136,7 +1147,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Playing notes glow background */}
-        {shownPlaying.map((note, i) => {
+        {dotPlaying.map((note, i) => {
           const color = getNoteColor(note.stringIndex, note.fret);
           return (
             <div key={`glow-${i}`} style={{
@@ -1157,7 +1168,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Playing notes not on the selected beat */}
-        {shownPlaying
+        {dotPlaying
           .filter(p => !activeNotes.some(a => a.stringIndex === p.stringIndex && a.fret === p.fret))
           .map((note, i) => (
             <div key={`playing-${i}`} style={{
@@ -1185,6 +1196,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           cellCenterPx={cellCenterPx}
           PADDING_LEFT={PADDING_LEFT}
           PADDING_RIGHT={PADDING_RIGHT}
+          openDots={openDots}
         />
 
         {/* Drag preview note */}
