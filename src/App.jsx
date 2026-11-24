@@ -6,6 +6,7 @@ import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
 import { groupTracks as groupTracksFn, ungroupTracks as ungroupTracksFn, normalizeGroups, tidyTrackGroups } from './utils/trackGroups';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
 import { NOTE_FADE_PRESETS } from './utils/noteFade';
+import { analyzeAudio, extractNoteEvents, buildDraftNotes, getAnalysis } from './utils/transcribe';
 import { xToBeat, defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
@@ -17,7 +18,7 @@ import { refingerNotes, refingerNotesOctave, countInPosition, bestPosition } fro
 import { detectBeats, fitTempo } from './utils/beatDetect';
 import { makeTempoMap } from './utils/tempoMap';
 import { getClips, getSyncPoints, makeWarp, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
-import { getMidiNote, closestComboForPitch, getComboForPosition } from './utils/pitchMap';
+import { getMidiNote, closestComboForPitch, getComboForPosition, midiToPitchRow, TOTAL_PITCH_ROWS } from './utils/pitchMap';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
@@ -437,6 +438,14 @@ function App() {
   const [openScroll, setOpenScroll] = useState(() => {
     try { return localStorage.getItem('guitar-roll-open-scroll') !== 'false'; } catch { return true; }
   });
+  // Transcription (draft from audio): settings, heat maps, progress
+  const [txSettings, setTxSettings] = useState(() => {
+    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true };
+    try { return { ...d, ...JSON.parse(localStorage.getItem('guitar-roll-transcribe')) }; } catch { return d; }
+  });
+  const [pitchHeats, setPitchHeats] = useState({}); // { [audioTrackId]: analysis } for heat maps being shown
+  const timelineVerticalZoomRef = useRef(1);
+  const [txBusy, setTxBusy] = useState(null);       // { label, percent } while the model runs
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
     try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
@@ -450,6 +459,7 @@ function App() {
       return Number.isFinite(saved) && saved > 0 ? saved : 1;
     } catch { return 1; }
   });
+  timelineVerticalZoomRef.current = timelineVerticalZoom;
   const [showTimelineVerticalZoomButtons, setShowTimelineVerticalZoomButtons] = useState(() => {
     try {
       const saved = localStorage.getItem('guitar-roll-timeline-vzoom-buttons');
@@ -2242,6 +2252,71 @@ setPositionModeValue(null);
     setSelectedNotes(new Set());
   }, []);
 
+  // ---- Transcription ----
+  const runAnalysis = useCallback(async (trackId, label) => {
+    const buffer = audioBuffersRef.current[trackId];
+    if (!buffer) { showToast('This audio track has no audio loaded. Use Relink audio first.'); return null; }
+    const cached = getAnalysis(buffer);
+    if (cached) return cached;
+    setTxBusy({ label, percent: 0 });
+    try {
+      return await analyzeAudio(buffer, (p) => setTxBusy({ label, percent: Math.round(p * 100) }));
+    } catch (err) {
+      console.warn('[transcribe]', err);
+      showToast('Could not analyze this audio: ' + (err.message || err));
+      return null;
+    } finally {
+      setTxBusy(null);
+    }
+  }, [showToast]);
+
+  const handleToggleHeat = useCallback(async (trackId) => {
+    if (pitchHeats[trackId]) {
+      setPitchHeats(prev => { const n = { ...prev }; delete n[trackId]; return n; });
+      return;
+    }
+    const analysis = await runAnalysis(trackId, 'Listening to the recording');
+    if (analysis) setPitchHeats(prev => ({ ...prev, [trackId]: analysis }));
+  }, [pitchHeats, runAnalysis]);
+
+  const handleTranscribe = useCallback(async (trackId) => {
+    const track = tracksRef.current.find(t => t.id === trackId);
+    if (!track) return;
+    const analysis = await runAnalysis(trackId, 'Transcribing');
+    if (!analysis) return;
+    const events = await extractNoteEvents(analysis, {
+      sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
+    });
+    const notes = buildDraftNotes(events, {
+      track, map: tempoMapRef.current.forTrack(track), barSubs: barSubsRef.current, chordMs: txSettings.chordMs,
+    });
+    if (!notes.length) { showToast('No notes found. Try the Sensitive setting (Settings > Transcription).'); return; }
+    const draft = { ...createDefaultTrack(`${track.name} (draft)`), notes };
+    saveSnapshot();
+    setTracksTracked(prev => {
+      const i = prev.findIndex(t => t.id === trackId);
+      const next = prev.slice();
+      next.splice(i >= 0 ? i + 1 : next.length, 0, draft);
+      return next;
+    });
+    switchTrack(draft.id);
+    setSelectedTrackIds(new Set([draft.id]));
+    if (txSettings.heatAfter) setPitchHeats(prev => ({ ...prev, [trackId]: analysis }));
+    // bring the draft's pitch range into view on the roll, and the playhead back to the start
+    setTimeout(() => {
+      const body = timelineBodyRef.current;
+      if (!body) return;
+      const rows = notes.map(n => midiToPitchRow(getMidiNote(n.stringIndex, n.fret))).filter(r => r >= 0).sort((a, b) => a - b);
+      if (!rows.length) return;
+      const mid = rows[Math.floor(rows.length / 2)];
+      const rowH = 20 * timelineVerticalZoomRef.current;
+      body.scrollTop = Math.max(0, (TOTAL_PITCH_ROWS - 1 - mid) * rowH - body.clientHeight / 2);
+      body.scrollLeft = 0;
+    }, 200);
+    setSelectedBeat(0);
+    showToast(`Draft: ${notes.length} notes. Check it against the recording; the faint ones are the least sure.`);
+  }, [runAnalysis, txSettings, showToast, saveSnapshot, setTracksTracked, switchTrack]);
+
   // Track management
   const handleAddTrack = useCallback(() => {
     const num = tracksRef.current.length + 1;
@@ -3051,6 +3126,9 @@ setPositionModeValue(null);
         onDeleteTrack={handleDeleteTrack}
         onDuplicateTrack={handleDuplicateTrack}
         onReorderTracks={handleReorderTracks}
+        onTranscribe={handleTranscribe}
+        onToggleHeat={handleToggleHeat}
+        heatTracks={pitchHeats}
         trackGroups={trackGroups}
         selectedTrackIds={selectedTrackIds}
         onSelectTrack={handleSelectTrack}
@@ -3270,6 +3348,7 @@ setPositionModeValue(null);
           tempoMap={tempoMap}
           onAddSyncPointAt={addSyncPointAtBeat}
           onAuditionNotes={auditionNotesAt}
+          pitchHeats={pitchHeats}
           audioTracks={tracks.filter(t => t.type === 'audio' && t.waveformPeaks).map(t => ({
             trackId: t.id,
             name: t.name,
@@ -3339,6 +3418,7 @@ setPositionModeValue(null);
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
+      {txBusy && <div className="toast" role="status">{txBusy.label}… {txBusy.percent}%</div>}
 
       {/* Settings Modal */}
       {confirmClear && (
@@ -3410,6 +3490,8 @@ setPositionModeValue(null);
           onFretboardAutoForwardChange={(v) => { setFretboardAutoForward(v); localStorage.setItem('guitar-roll-fretboard-auto-forward', String(v)); }}
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
+          txSettings={txSettings}
+          onTxSettingsChange={(patch) => setTxSettings(prev => { const n = { ...prev, ...patch }; try { localStorage.setItem('guitar-roll-transcribe', JSON.stringify(n)); } catch { /* ignore */ } return n; })}
           noteFade={noteFade}
           openDots={openDots}
           onOpenDotsChange={(v) => { setOpenDots(v); try { localStorage.setItem('guitar-roll-open-dots', String(v)); } catch { /* ignore */ } }}

@@ -3468,3 +3468,8 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* Pitch heat map behind the piano roll (Transcription) */
+.pitch-heat { position: absolute; pointer-events: none; z-index: 1; }
+.pitch-heat canvas { image-rendering: auto; }
+.timeline-note.draft-weak { opacity: 0.5; }

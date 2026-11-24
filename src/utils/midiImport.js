@@ -5,7 +5,7 @@ import { findBestVoicings } from './voiceLeading';
 // Each group is an array of { midi, ... } records sharing a start tick.
 // Mutates each note in-place, adding .stringIndex and .fret.
 // Notes that can't be placed (out of range) have stringIndex = null.
-function assignFretboardPositions(groups) {
+export function assignFretboardPositions(groups) {
   let prevVoicing = [];
   for (const group of groups) {
     const midis = group.map(n => n.midi);

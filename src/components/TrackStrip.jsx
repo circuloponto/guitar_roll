@@ -12,6 +12,7 @@ export default function TrackStrip({
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
   trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
   onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag,
+  onTranscribe, onToggleHeat, heatTracks = {},
   onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
@@ -474,6 +475,15 @@ export default function TrackStrip({
             <button className="tab-context-menu-item" onClick={() => { pickAudioFor(t.id); close(); }}>
               Import audio file…
             </button>
+            {t.type === 'audio' && t.audioFileName && !missingAudioIds?.has(t.id) && (
+              <>
+                <div className="tab-context-menu-divider" />
+                <button className="tab-context-menu-item" onClick={() => { onTranscribe(t.id); close(); }}>Transcribe to a draft track…</button>
+                <button className="tab-context-menu-item" onClick={() => { onToggleHeat(t.id); close(); }}>
+                  {heatTracks[t.id] ? 'Hide pitch heat map' : 'Show pitch heat map'}
+                </button>
+              </>
+            )}
             {t.type === 'audio' && t.audioFileName && (
               <button className="tab-context-menu-item" onClick={() => { onRemoveAudio(t.id); close(); }}>Remove audio file</button>
             )}

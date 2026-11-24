@@ -13,6 +13,7 @@ import { matchesWheelHotkey } from '../utils/hotkeys';
 import { createAutoPan } from '../utils/autoPan';
 import { onsetTimes } from '../utils/beatDetect';
 import { prepareScrub, scrubTarget, scrubStop, scrubHold } from '../utils/scrubVoice';
+import PitchHeat from './PitchHeat';
 import { clipSpans, clipBeatToTime, clipTimeToBeat, linearMap } from '../utils/audioClips';
 
 const TOTAL_FRETS_PER_STRING = NUM_FRETS + 1;
@@ -54,7 +55,7 @@ export default function Timeline({
   onResizeDuration,
   autoScroll,
   audioTracks = [],
-  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {}, tempoMap = null, onAddSyncPointAt = null, onAuditionNotes = null,
+  selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {}, tempoMap = null, onAddSyncPointAt = null, onAuditionNotes = null, pitchHeats = null,
   bpm = 120,
   timeSignature = [4, 4],
   bodyRefExternal,
@@ -2040,6 +2041,33 @@ export default function Timeline({
             />
           ))}
 
+          {/* Pitch heat maps (what the pitch model hears), behind the clips and notes */}
+          {pitchHeats && audioTracks.flatMap(at => {
+            const analysis = pitchHeats[at.trackId];
+            if (!analysis) return [];
+            const m = mapFor(at);
+            const mapSig = `${(m.knotBeats || []).join(',')}|${m.spb ?? ''}|${m.spb0 ?? ''}|${m.anchor ?? ''}`;
+            return (at.clips || []).map(clip => {
+              const lenBeats = clipTimeToBeat(clip, clip.srcEnd, m) - clip.start;
+              const startX = beatToX(clip.start, barSubdivisions, cellWidth);
+              const widthPx = Math.max(1, beatToX(clip.start + lenBeats, barSubdivisions, cellWidth) - startX);
+              return (
+                <PitchHeat
+                  key={`heat-${at.trackId}-${clip.id}`}
+                  analysis={analysis}
+                  clip={clip}
+                  map={m}
+                  startX={startX}
+                  widthPx={widthPx}
+                  totalRows={totalRows}
+                  rowHeight={rowHeight}
+                  xToBeat={(x) => xToBeat(x, barSubdivisions, cellWidth, false)}
+                  sig={`${cellWidth}|${rowHeight}|${barSubdivisions.join('.')}|${mapSig}|${clip.start}|${clip.srcStart}|${clip.srcEnd}|${swingActive ? swing : ''}`}
+                />
+              );
+            });
+          })}
+
           {/* Audio clips — DAW-style regions. Each clip draws its slice of the file in 1:1 pixel
               tiles. Width is locked to the track's originalBpm so tempo changes stretch playback
               but keep the clip aligned to the beat grid that was in effect at import.
@@ -2291,7 +2319,7 @@ export default function Timeline({
               <div
                 key={i}
                 data-note-index={i}
-                className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''} ${isGhost ? 'ghost' : ''}`}
+                className={`timeline-note ${selectedNotes.has(i) ? 'selected' : ''} ${isPlaying ? 'playing' : ''} ${isGhost ? 'ghost' : ''} ${note.conf != null && note.conf < 0.45 ? 'draft-weak' : ''}`}
                 style={{
                   left: beatToX(note.beat, barSubdivisions, cellWidth) + 1,
                   top: topPx,
