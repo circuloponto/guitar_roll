@@ -429,6 +429,9 @@ function App() {
   const [showSelectedOnFretboard, setShowSelectedOnFretboard] = useState(() => {
     try { return localStorage.getItem('guitar-roll-show-selected-fretboard') !== 'false'; } catch { return true; }
   });
+  const [showFretNumbers, setShowFretNumbers] = useState(() => {
+    try { return localStorage.getItem('guitar-roll-show-fret-numbers') !== 'false'; } catch { return true; }
+  });
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
     try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
@@ -3196,6 +3199,7 @@ setPositionModeValue(null);
           playheadBeatRef={playheadBeatRef}
           tempoMap={tempoMap}
           noteFadeFactor={NOTE_FADE_PRESETS[noteFade]}
+          showFretNumbers={showFretNumbers}
           selectedExtraNotes={showSelectedOnFretboard && selectedNotes.size > 0 && !playing
             ? [...selectedNotes].map(idx => notes[idx]).filter(n => n && !(selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)))
             : []}
@@ -3439,6 +3443,8 @@ setPositionModeValue(null);
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
           noteFade={noteFade}
+          showFretNumbers={showFretNumbers}
+          onShowFretNumbersChange={(v) => { setShowFretNumbers(v); try { localStorage.setItem('guitar-roll-show-fret-numbers', String(v)); } catch { /* ignore */ } }}
           onNoteFadeChange={(v) => { setNoteFade(v); try { localStorage.setItem('guitar-roll-note-fade', v); } catch { /* ignore */ } }}
           onShowSelectedOnFretboardChange={(v) => { setShowSelectedOnFretboard(v); try { localStorage.setItem('guitar-roll-show-selected-fretboard', String(v)); } catch { /* ignore */ } }}
           onFretboardAutoForwardExcludeAdjacentChange={(v) => { setFretboardAutoForwardExcludeAdjacent(v); localStorage.setItem('guitar-roll-fretboard-auto-forward-exclude-adjacent', String(v)); }}

@@ -1,5 +1,5 @@
 import { getMidiNote, getComboForPosition } from '../utils/pitchMap';
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { NUM_STRINGS, NUM_FRETS, FRET_DOTS, DOUBLE_DOTS, CELL_WIDTH, SUBDIVISIONS } from '../utils/constants';
 import { playNote, getNoteName } from '../utils/audio';
 import { matchesHotkey, formatHotkey } from '../utils/hotkeys';
@@ -10,7 +10,7 @@ import { beatToX as beatToXUtil } from '../utils/barLayout';
 
 // Animated note flashes during playback (see utils/noteFade.js). It redraws itself every frame while
 // playing and reads the continuous playhead from a ref, so it never waits on the app's renders.
-function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteColor, cellCenterPx }) {
+function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteColor, cellCenterPx, PADDING_LEFT, PADDING_RIGHT }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!playing) return undefined;
@@ -59,8 +59,12 @@ function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteC
 
 import { noteEnvelope } from '../utils/noteFade';
 
-const PADDING_LEFT = 12;
-const PADDING_RIGHT = 8;
+// Fixed pixel gutters either side of the strings (left: fret markers, right: fret numbers), so
+// resizing the panel never pushes the strings into the numbers. Converted to percentages inside
+// the component from the measured width.
+const LEFT_GUTTER_PX = 42;
+const RIGHT_GUTTER_PX = 44;            // room for two-digit fret numbers
+const RIGHT_GUTTER_NO_NUMBERS_PX = 16; // when the numbers are turned off
 const BASE_FRET_HEIGHT = 40; // pixels per fret cell at zoom 1
 
 // Total cells = NUM_FRETS + 1 (fret 0 is open string, frets 1..NUM_FRETS are normal)
@@ -68,7 +72,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, showFretNumbers = true, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -99,6 +103,20 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
   }, []);
   const containerRef = useRef(null);
   const scrollRef = useRef(null);
+  // Width of the fretboard in px, kept up to date so the gutters can stay a fixed size.
+  const [boxW, setBoxW] = useState(350);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const measure = () => setBoxW(prev => (Math.abs(prev - el.clientWidth) > 0.5 && el.clientWidth > 0 ? el.clientWidth : prev));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const rightGutterPx = showFretNumbers ? RIGHT_GUTTER_PX : RIGHT_GUTTER_NO_NUMBERS_PX;
+  const PADDING_LEFT = (LEFT_GUTTER_PX / boxW) * 100;
+  const PADDING_RIGHT = (rightGutterPx / boxW) * 100;
   const [hover, setHover] = useState(null);
   const lastPreviewRef = useRef(null);
   const [dragNote, setDragNote] = useState(null); // { stringIndex, fret } of note being dragged
@@ -159,8 +177,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     const y = e.clientY - rect.top;
     const w = rect.width;
 
-    const leftPx = w * PADDING_LEFT / 100;
-    const rightPx = w * PADDING_RIGHT / 100;
+    const leftPx = LEFT_GUTTER_PX;
+    const rightPx = rightGutterPx;
     const usableW = w - leftPx - rightPx;
     const stringSpacing = usableW / (NUM_STRINGS - 1);
 
@@ -172,7 +190,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     }
 
     return { stringIndex, fret };
-  }, [FRET_HEIGHT]);
+  }, [FRET_HEIGHT, rightGutterPx]);
 
   const handleMouseMove = useCallback((e) => {
     const pos = getStringAndFret(e);
@@ -256,8 +274,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     
         const selected = new Set();
         const containerW = container.clientWidth;
-        const usableW = containerW * (100 - PADDING_LEFT - PADDING_RIGHT) / 100;
-        const leftPx = containerW * PADDING_LEFT / 100;
+        const usableW = containerW - LEFT_GUTTER_PX - rightGutterPx;
+        const leftPx = LEFT_GUTTER_PX;
         activeNotes.forEach(note => {
           const noteX = leftPx + (note.stringIndex / (NUM_STRINGS - 1)) * usableW;
           const noteY = cellCenterPx(note.fret);
@@ -458,7 +476,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
       setDragNote(result);
       e.preventDefault();
     }
-  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes, notesAtCell]);
+  }, [getStringAndFret, activeNotes, durationMode, moveMode, adjacentMode, freeMode, onDurationChange, onBeatChange, fingeringMode, notes, selectedBeat, selectedNotes, setSelectedNotes, notesAtCell, rightGutterPx]);
 
   const handleMouseUp = useCallback((e) => {
     if (marqueeGestureRef.current) { marqueeGestureRef.current = false; return; }
@@ -703,11 +721,11 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const top = cellCenterPx(fret);
           return isDouble ? (
             <div key={`dot-${fret}`}>
-              <div className="fret-dot" style={{ left: '3%', top: top - 5 }} />
-              <div className="fret-dot" style={{ left: '3%', top: top + 5 }} />
+              <div className="fret-dot" style={{ left: 16, top: top - 5 }} />
+              <div className="fret-dot" style={{ left: 16, top: top + 5 }} />
             </div>
           ) : (
-            <div key={`dot-${fret}`} className="fret-dot" style={{ left: '3%', top }} />
+            <div key={`dot-${fret}`} className="fret-dot" style={{ left: 16, top }} />
           );
         })}
 
@@ -773,8 +791,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           });
         })()}
 
-        {/* Fret numbers on the right */}
-        {Array.from({ length: TOTAL_CELLS }, (_, fret) => (
+        {/* Fret numbers on the right (Settings > Fretboard) */}
+        {showFretNumbers && Array.from({ length: TOTAL_CELLS }, (_, fret) => (
           <div key={`fnum-${fret}`} style={{
             position: 'absolute',
             right: 10,
@@ -1165,6 +1183,8 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           factor={noteFadeFactor}
           getNoteColor={getNoteColor}
           cellCenterPx={cellCenterPx}
+          PADDING_LEFT={PADDING_LEFT}
+          PADDING_RIGHT={PADDING_RIGHT}
         />
 
         {/* Drag preview note */}

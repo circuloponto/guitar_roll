@@ -416,7 +416,6 @@ export default function TrackStrip({
               </Fragment>
             );
           })}
-          <button className="track-add-btn" onClick={onAddTrack} title="Add track">+ Add Track</button>
         </div>
       )}
 
