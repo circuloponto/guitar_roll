@@ -1,12 +1,16 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import { Minus, Square, ExternalLink, LayoutPanelLeft } from 'lucide-react';
 import {
-  PANEL_TITLES, loadState, saveState, clearSavedState, defaultState, buildTree, computeRects,
-  applyRatio, dropTarget, COLLAPSED_PX,
+  PANEL_TITLES, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
+  loadState, saveState, clearSavedState, defaultState, buildTree, computeRects, applyRatio, dropTarget,
+  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect,
 } from '../utils/dockLayout';
 
 const MIN_PX = 90;       // smallest a split side may be dragged to
 const GUTTER = 8;        // grab width of a resize gutter
 const DRAG_START_PX = 5; // movement before a handle press becomes a drag
+const FLOAT_Z = 30;
+const EDGES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 function useIsMobile() {
   const q = '(max-width: 768px)';
@@ -20,17 +24,34 @@ function useIsMobile() {
   return m;
 }
 
-// Lays the four panels out as resizable, re-dockable cards. Panels are always rendered
-// flat (keyed by id) and positioned from the layout tree, so moving one never remounts it.
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+// FL Studio style windows: panels resize against their neighbours (which adapt), minimise to a
+// title strip, and undock into floating windows. Panels are always rendered flat (keyed by id) and
+// positioned from the layout state, so docking, undocking and moving never remount them.
 export default function Dock({ menu, tracks, fretboard, timeline }) {
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
   const [drag, setDrag] = useState(null); // { id, x, y, hit }
+  const [box, setBox] = useState({ w: Math.max(400, window.innerWidth - 40), h: Math.max(300, window.innerHeight - 100) });
   const stRef = useRef(st);
   stRef.current = st;
 
-  const { panels, gutters } = useMemo(() => computeRects(buildTree(st, window.innerWidth - 40)), [st]);
+  // size of the dock area in px (floating windows and minimised strips are sized in px)
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const measure = () => setBox(prev => (el.clientWidth > 0 && (Math.abs(prev.w - el.clientWidth) > 0.5 || Math.abs(prev.h - el.clientHeight) > 0.5)
+      ? { w: el.clientWidth, h: el.clientHeight } : prev));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mobile]);
+
+  const tree = useMemo(() => buildTree(st), [st]);
+  const { panels, gutters } = useMemo(() => computeRects(tree, box), [tree, box]);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
   const content = { menu, tracks, fretboard, timeline };
@@ -42,17 +63,19 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     const fit = () => requestAnimationFrame(() => {
       const el = containerRef.current;
       const body = el?.querySelector('.dock-panel-tracks .dock-body');
-      if (!el || !body) return;
-      const st = stRef.current;
+      const s = stRef.current;
+      if (!el || !body || s.floating.tracks || s.minimized.tracks) return;
       const H = el.clientHeight;
-      const centerPx = st.menu === 'top' ? H * (1 - st.sizes.menuTop) : H;
+      const menuTop = s.menu === 'top' && !s.floating.menu;
+      const menuShare = menuTop ? (s.minimized.menu ? STRIP_PX / H : s.sizes.menuTop) : 0;
+      const centerPx = H * (1 - menuShare);
       if (!(centerPx > 0)) return;
       // The content's own height (scrollHeight can't go below the panel's current height, so it
       // would never let the panel shrink after collapsing).
       const natural = [...body.children].reduce((sum, c) => sum + c.getBoundingClientRect().height, 0);
       const need = natural + 16 /* handle */ + 10 /* border + padding */;
       const t = Math.max(0.06, Math.min(0.6, need / centerPx));
-      if (Math.abs(t - st.sizes.tracks) > 0.004) commit({ ...st, sizes: { ...st.sizes, tracks: t } });
+      if (Math.abs(t - s.sizes.tracks) > 0.004) commit({ ...s, sizes: { ...s.sizes, tracks: t } });
     });
     window.addEventListener('guitar-roll-fit-tracks', fit);
     return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
@@ -70,7 +93,6 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     window.addEventListener('guitar-roll-reset-layout', on);
     return () => window.removeEventListener('guitar-roll-reset-layout', on);
   }, [resetLayout]);
-
 
   // ---- resize a split by dragging its gutter ----
   const startResize = (e, g) => {
@@ -96,7 +118,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     window.addEventListener('pointerup', up);
   };
 
-  // ---- drag a panel by its handle to dock it somewhere else ----
+  // ---- drag a docked panel by its title bar to dock it somewhere else ----
   const startDrag = (e, id) => {
     if (e.button !== 0 || e.target.closest('button')) return;
     e.preventDefault();
@@ -135,6 +157,59 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     window.addEventListener('keydown', key);
   };
 
+  // ---- floating windows: move by the title bar, resize from any edge or corner ----
+  const startFloatDrag = (e, id) => {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    const start = stRef.current.floating[id];
+    if (!start) return;
+    const cr = containerRef.current.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const move = (ev) => {
+      const x = clamp(start.x + (ev.clientX - sx) / cr.width, 0.06 - start.w, 0.94);
+      const y = clamp(start.y + (ev.clientY - sy) / cr.height, 0, 0.95);
+      setSt(setFloatRect(stRef.current, id, { ...start, x, y }));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('dock-resizing');
+      saveState(stRef.current);
+    };
+    document.body.classList.add('dock-resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  const startFloatResize = (e, id, dir) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r0 = stRef.current.floating[id];
+    if (!r0) return;
+    const cr = containerRef.current.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const minW = FLOAT_MIN_W / cr.width, minH = FLOAT_MIN_H / cr.height;
+    const move = (ev) => {
+      const dx = (ev.clientX - sx) / cr.width, dy = (ev.clientY - sy) / cr.height;
+      let { x, y, w, h } = r0;
+      if (dir.includes('e')) w = clamp(r0.w + dx, minW, 1.5);
+      if (dir.includes('s')) h = clamp(r0.h + dy, minH, 1.5);
+      if (dir.includes('w')) { const nw = clamp(r0.w - dx, minW, 1.5); x = r0.x + (r0.w - nw); w = nw; }
+      if (dir.includes('n')) { const nh = clamp(r0.h - dy, minH, 1.5); y = r0.y + (r0.h - nh); h = nh; }
+      setSt(setFloatRect(stRef.current, id, { x, y: Math.max(0, y), w, h }));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('dock-resizing');
+      saveState(stRef.current);
+    };
+    document.body.classList.add('dock-resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   if (mobile) {
     return (
       <>
@@ -147,47 +222,81 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
 
   const pct = (v) => `${v * 100}%`;
   const hl = drag?.hit ? drag.hit.rect : null;
-  const collapsed = st.menu !== 'top' && st.menuCollapsed;
 
   return (
     <div className="dock" ref={containerRef}>
       {Object.keys(PANEL_TITLES).map((id) => {
-        const r = panels[id];
+        const fl = st.floating[id];
+        const minimized = !!st.minimized[id];
+        let style;
+        let vertical = false;
+        if (fl) {
+          style = {
+            left: fl.x * box.w, top: fl.y * box.h, width: fl.w * box.w,
+            height: minimized ? STRIP_PX : fl.h * box.h,
+            zIndex: FLOAT_Z + Math.max(0, st.order.indexOf(id)),
+          };
+        } else {
+          const r = panels[id];
+          if (!r) return null;
+          style = { left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) };
+          if (minimized) {
+            vertical = r.w * box.w <= STRIP_PX + 14;
+            if (vertical) { style.width = STRIP_PX; } else { style.height = STRIP_PX; }
+          }
+        }
+        const onDouble = (e) => { if (!e.target.closest('button')) commit(toggleMinimized(stRef.current, id)); };
         return (
           <div
             key={id}
-            className={`dock-panel dock-panel-${id}${drag?.id === id ? ' dragging' : ''}`}
-            style={{ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) }}
+            className={`dock-panel dock-panel-${id}${fl ? ' floating' : ''}${minimized ? ' minimized' : ''}${vertical ? ' vertical' : ''}${drag?.id === id ? ' dragging' : ''}`}
+            style={style}
+            onPointerDownCapture={fl ? () => { const n = raiseFloating(stRef.current, id); if (n !== stRef.current) commit(n); } : undefined}
           >
             <div className="dock-card">
               <div
                 className="dock-handle"
-                onPointerDown={(e) => startDrag(e, id)}
-                title={id === 'menu'
-                  ? 'Drag to the left or right edge for a side bar, or the top edge for the top bar.'
-                  : id === 'tracks'
-                    ? 'Drag above or below the fretboard and timeline.'
-                    : 'Drag onto the other half to swap the fretboard and timeline.'}
+                onPointerDown={(e) => { if (fl) startFloatDrag(e, id); else if (!minimized) startDrag(e, id); }}
+                onDoubleClick={onDouble}
+                title={fl
+                  ? 'Drag to move this window. Double-click to minimise.'
+                  : id === 'menu'
+                    ? 'Drag to the left or right edge for a side bar, or the top edge for the top bar. Double-click to minimise.'
+                    : id === 'tracks'
+                      ? 'Drag above or below the fretboard and timeline. Double-click to minimise.'
+                      : 'Drag onto the other half to swap the fretboard and timeline. Double-click to minimise.'}
               >
-                {id === 'menu' && st.menu !== 'top' && (
+                <span className="dock-grip">⠿</span>
+                <span className="dock-title">{PANEL_TITLES[id]}</span>
+                <span className="dock-btns">
+                  {id === 'menu' && !minimized && (
+                    <button className="dock-reset" onClick={resetLayout} title="Restore the default layout">
+                      Reset layout
+                    </button>
+                  )}
                   <button
-                    className="dock-reset dock-collapse"
-                    onClick={() => commit({ ...st, menuCollapsed: !st.menuCollapsed })}
-                    title={collapsed ? 'Expand menu' : 'Collapse menu'}
+                    className="dock-btn"
+                    onClick={() => commit(toggleMinimized(stRef.current, id))}
+                    title={minimized ? 'Restore' : 'Minimise'}
+                    aria-label={minimized ? 'Restore' : 'Minimise'}
                   >
-                    {(st.menu === 'left') === collapsed ? '›' : '‹'}
+                    {minimized ? <Square size={10} /> : <Minus size={11} />}
                   </button>
-                )}
-                {!(id === 'menu' && collapsed) && <span className="dock-grip">⠿</span>}
-                {!(id === 'menu' && collapsed) && <span className="dock-title">{PANEL_TITLES[id]}</span>}
-                {id === 'menu' && !collapsed && (
-                  <button className="dock-reset" onClick={resetLayout} title="Restore the default layout">
-                    Reset layout
+                  <button
+                    className="dock-btn"
+                    onClick={() => commit(fl ? dockBack(stRef.current, id) : undock(stRef.current, id, panelsRef.current[id]))}
+                    title={fl ? 'Dock back into the layout' : 'Undock into a floating window'}
+                    aria-label={fl ? 'Dock' : 'Undock'}
+                  >
+                    {fl ? <LayoutPanelLeft size={11} /> : <ExternalLink size={11} />}
                   </button>
-                )}
+                </span>
               </div>
-              <div className="dock-body" style={id === 'menu' && collapsed ? { display: 'none' } : undefined}>{content[id]}</div>
+              <div className="dock-body" style={minimized ? { display: 'none' } : undefined}>{content[id]}</div>
             </div>
+            {fl && !minimized && EDGES.map((d) => (
+              <div key={d} className={`dock-edge dock-edge-${d}`} onPointerDown={(e) => startFloatResize(e, id, d)} />
+            ))}
           </div>
         );
       })}

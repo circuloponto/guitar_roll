@@ -672,7 +672,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           </div>
         <div className="settings-section">
           <h3>Layout</h3>
-          <p className="settings-desc">Drag a panel by its title bar to move it, and resize panels from the lines between them.</p>
+          <p className="settings-desc">Drag a panel by its title bar to move it, and resize panels from the lines between them (the others adapt). Each panel's title bar has buttons to minimise it to a strip and to undock it into a floating window you can move and resize from any edge; double-click a title bar to minimise or restore it.</p>
           <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
         </div>
         <h3 className="settings-subtitle" style={{ marginTop: 24 }}>Colors</h3>

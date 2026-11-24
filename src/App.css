@@ -3479,3 +3479,43 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .toast.tx-banner button { background: transparent; border: 1px solid var(--line); border-radius: 4px; color: var(--fg); padding: 2px 10px; font-size: 12px; cursor: pointer; }
 .toast.tx-banner button:hover { background: var(--off-hi); }
 .toast.tx-error { border-color: var(--danger); color: var(--danger); bottom: 80px; }
+
+/* ==========================================================================
+   Windows: minimise, undock into floating windows, resize from any edge
+   ========================================================================== */
+.dock-btns { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.dock-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 12px; padding: 0;
+  background: transparent; color: var(--mute);
+  border: 1px solid var(--hairline); border-radius: 3px; cursor: pointer;
+}
+.dock-btn:hover { color: var(--fg); border-color: var(--mute); background: var(--off); }
+.dock-btns .dock-reset { margin-left: 0; }
+
+/* a minimised docked panel is just its title strip */
+.dock-panel.minimized .dock-card { background: var(--frame); }
+.dock-panel.minimized .dock-handle { border-bottom: none; height: 100%; min-height: 0; }
+.dock-panel.minimized.vertical .dock-handle {
+  flex-direction: column; justify-content: flex-start; align-items: center;
+  gap: 8px; padding: 6px 0; height: 100%;
+}
+.dock-panel.minimized.vertical .dock-title { writing-mode: vertical-rl; transform: rotate(180deg); }
+.dock-panel.minimized.vertical .dock-btns { margin: auto 0 0; flex-direction: column; }
+.dock-panel.minimized.vertical .dock-btn { width: 14px; height: 14px; }
+.dock-panel.minimized.vertical .dock-reset { display: none; }
+
+/* a floating window: above the layout, with a shadow and resize edges */
+.dock-panel.floating { padding: 0; box-shadow: var(--shadow-pop); border-radius: var(--r-lg); }
+.dock-panel.floating .dock-card { border-color: var(--line); background: var(--frame); }
+.dock-panel.floating .dock-handle { cursor: move; background: var(--raise); }
+.dock-panel.floating.minimized { box-shadow: var(--shadow-pop); }
+.dock-edge { position: absolute; z-index: 2; touch-action: none; }
+.dock-edge-n  { top: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.dock-edge-s  { bottom: -3px; left: 10px; right: 10px; height: 7px; cursor: ns-resize; }
+.dock-edge-e  { right: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.dock-edge-w  { left: -3px; top: 10px; bottom: 10px; width: 7px; cursor: ew-resize; }
+.dock-edge-ne { top: -4px; right: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+.dock-edge-nw { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.dock-edge-se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
+.dock-edge-sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
