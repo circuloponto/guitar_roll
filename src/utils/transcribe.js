@@ -8,6 +8,7 @@
 //    picks a straight or triplet subdivision per bar, and fingers the result on the fretboard.
 import { clipTimeToBeat, getClips } from './audioClips';
 import { assignFretboardPositions } from './midiImport';
+import { onsetTimes } from './beatDetect';
 
 const MODEL_URL = () => `${import.meta.env.BASE_URL}vendor/basic-pitch/model.json`;
 const SR = 22050;
@@ -98,6 +99,11 @@ export async function analyzeAudio(buffer, onProgress = () => {}, signal = null)
   );
   if (!result.frames.length) throw new Error('The pitch model returned nothing');
   result.seconds = buffer.duration;
+  // The moments a string is really plucked, found independently of the pitch model. Used to check
+  // the model's notes against the audio (a note should start with an attack).
+  onProgress(0.99, { stage: 'finding the attacks', backend });
+  await new Promise(r => setTimeout(r, 30)); // let the message paint before the synchronous work
+  result.attacks = onsetTimes(buffer);
   cache.set(buffer, result);
   onProgress(1, { stage: 'done', backend });
   return result;
@@ -184,7 +190,7 @@ export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, 
 // Note events from the activations: [{ start, end, midi, amp }] in seconds of the audio file.
 export async function extractNoteEvents(analysis, {
   sensitivity = 'balanced', minNoteMs = 60, harmonicFilter = true,
-  lowestMidi = 40, octaveDownFilter = true, bassStrength = 0.4,
+  lowestMidi = 40, octaveDownFilter = true, bassStrength = 0.4, attackGate = 'bass',
 } = {}) {
   await new Promise(r => setTimeout(r, 0)); // let any progress message paint first
   const preset = SENSITIVITY[sensitivity] || SENSITIVITY.balanced;
@@ -202,10 +208,33 @@ export async function extractNoteEvents(analysis, {
       amp: n.amplitude,
     }))
     .sort((a, b) => a.start - b.start || a.midi - b.midi);
-  let out = harmonicFilter ? suppressHarmonics(events) : events;
-  if (octaveDownFilter) out = suppressOctaveDown(out);
-  if (bassStrength > 0) out = suppressWeakBass(out, { ratio: bassStrength });
+  const stats = { modelNotes: events.length, overtones: 0, octaveGhosts: 0, weakBass: 0, noAttack: 0 };
+  let out = events;
+  const step = (fn, key) => { const before = out.length; out = fn(out); stats[key] = before - out.length; };
+  if (harmonicFilter) step(suppressHarmonics, 'overtones');
+  if (octaveDownFilter) step(suppressOctaveDown, 'octaveGhosts');
+  if (bassStrength > 0) step((l) => suppressWeakBass(l, { ratio: bassStrength }), 'weakBass');
+  if (attackGate !== 'off' && analysis.attacks) {
+    step((l) => requireAttack(l, analysis.attacks, { belowMidi: attackGate === 'all' ? 200 : 52 }), 'noAttack');
+  }
+  stats.attacks = analysis.attacks ? analysis.attacks.length : null;
+  stats.kept = out.length;
+  out.stats = stats;
   return out;
+}
+
+// A real note starts with a pluck. Keep a note only if an attack is detected within `tolMs` of its
+// start. By default only low notes are held to this (below E3, where the ghost notes are), because
+// hammer-ons, pull-offs and slides in the melody legitimately start without a pluck.
+export function requireAttack(events, attacks, { tolMs = 70, belowMidi = 52 } = {}) {
+  if (!attacks || !attacks.length) return events;
+  const tol = tolMs / 1000;
+  const near = (t) => {
+    let lo = 0, hi = attacks.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (attacks[mid] < t - tol) lo = mid + 1; else hi = mid; }
+    return lo < attacks.length && attacks[lo] <= t + tol;
+  };
+  return events.filter(e => e.midi >= belowMidi || near(e.start));
 }
 
 // Events grouped by pitch, sorted by start, so "is there a note at pitch P around time T" is cheap.
@@ -300,7 +329,7 @@ export function groupChords(events, chordMs = 45) {
 // Turn events into guitar-roll notes on the project grid.
 //   tracks: the audio track to read the clips from; map: tempoMap.forTrack(track) (time <-> beat)
 //   barSubs: columns per bar (the project's barSubdivisions)
-export function buildDraftNotes(events, { track, map, barSubs, chordMs = 45 }) {
+export function buildDraftNotes(events, { track, map, barSubs, chordMs = 45, maxPerAttack = 6 }) {
   const clips = getClips(track);
   if (!clips.length) return [];
   const grouped = groupChords(events, chordMs);
@@ -366,11 +395,13 @@ export function buildDraftNotes(events, { track, map, barSubs, chordMs = 45 }) {
     const g = groups[groups.length - 1];
     if (g && Math.abs(g[0].start - n.start) < 1e-6) g.push(n); else groups.push([n]);
   }
-  // A guitar has six strings: in a crowded (noisy) group keep only the six strongest notes
+  // A guitar has six strings, and one pluck rarely carries more than a few notes: in a crowded
+  // (noisy) group keep only the strongest `maxPerAttack`
+  const cap = Math.max(1, Math.min(6, maxPerAttack));
   for (const g of groups) {
-    if (g.length > 6) {
+    if (g.length > cap) {
       g.sort((a, b) => b.amp - a.amp);
-      g.length = 6;
+      g.length = cap;
     }
   }
   assignFretboardPositions(groups);

@@ -440,14 +440,15 @@ function App() {
   });
   // Transcription (draft from audio): settings, heat maps, progress
   const [txSettings, setTxSettings] = useState(() => {
-    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true, lowestMidi: 40, octaveDownFilter: true, bassStrength: 0.4 };
+    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true, lowestMidi: 40, octaveDownFilter: true, bassStrength: 0.4, attackGate: 'bass', maxPerAttack: 6 };
     try { return { ...d, ...JSON.parse(localStorage.getItem('guitar-roll-transcribe')) }; } catch { return d; }
   });
   const [pitchHeats, setPitchHeats] = useState({}); // { [audioTrackId]: analysis } for heat maps being shown
   const timelineVerticalZoomRef = useRef(1);
   const [txBusy, setTxBusy] = useState(null);
   const [txError, setTxError] = useState(null);
-  const txAbortRef = useRef(null);       // { label, percent } while the model runs
+  const txAbortRef = useRef(null);
+  const [txNote, setTxNote] = useState(null); // the sanity line shown after a draft is made       // { label, percent } while the model runs
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
     try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
@@ -2295,15 +2296,19 @@ setPositionModeValue(null);
     const analysis = await runAnalysis(trackId, 'Transcribing');
     if (!analysis) return;
     let notes;
+    let eventStats = null;
     try {
       setTxBusy({ label: 'Writing the draft', percent: 100, stage: 'placing the notes on the grid' });
       await new Promise(r => setTimeout(r, 30)); // let the message paint before the (synchronous) grid work
       const events = await extractNoteEvents(analysis, {
         sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
         lowestMidi: txSettings.lowestMidi, octaveDownFilter: txSettings.octaveDownFilter, bassStrength: txSettings.bassStrength,
+        attackGate: txSettings.attackGate,
       });
+      eventStats = events.stats;
       notes = buildDraftNotes(events, {
         track, map: tempoMapRef.current.forTrack(track), barSubs: barSubsRef.current, chordMs: txSettings.chordMs,
+        maxPerAttack: txSettings.maxPerAttack,
       });
     } catch (err) {
       console.error('[transcribe]', err);
@@ -2336,7 +2341,21 @@ setPositionModeValue(null);
       body.scrollLeft = 0;
     }, 200);
     setSelectedBeat(0);
-    showToast(`Draft: ${notes.length} notes. Check it against the recording; the faint ones are the least sure.`);
+    // Sanity check: how many notes per pluck? (a guitar has 6 strings; a melody is mostly 1 per attack)
+    const attacks = eventStats?.attacks;
+    let msg = `Draft: ${notes.length} notes. Check it against the recording; the faint ones are the least sure.`;
+    if (attacks) {
+      const per = notes.length / Math.max(1, attacks);
+      msg = `Draft: ${notes.length} notes from ${attacks} attacks (${per.toFixed(1)} per attack). `
+        + (per > 3.5 ? 'That is a lot of notes per pluck: try Strict sensitivity or fewer "notes per attack" in Settings > Transcription.'
+          : per < 0.6 ? 'Fewer notes than attacks: try the Sensitive setting.'
+          : 'Check it against the recording; the faint ones are the least sure.');
+      if (eventStats && eventStats.modelNotes > notes.length * 1.5) {
+        msg += ` (Filtered out: ${eventStats.overtones} overtones, ${eventStats.octaveGhosts} octave ghosts, ${eventStats.weakBass} weak bass, ${eventStats.noAttack} without an attack.)`;
+      }
+    }
+    setTxNote(msg);
+    setTimeout(() => setTxNote(m => (m === msg ? null : m)), 14000);
   }, [runAnalysis, txSettings, showToast, saveSnapshot, setTracksTracked, switchTrack]);
 
   // Track management
@@ -3447,6 +3466,12 @@ setPositionModeValue(null);
             {txBusy.backend === 'cpu' ? ' (no GPU in this browser: this can be slow)' : ''}
           </span>
           <button onClick={() => txAbortRef.current?.abort()}>Cancel</button>
+        </div>
+      )}
+      {txNote && (
+        <div className="toast tx-banner" role="status">
+          <span>{txNote}</span>
+          <button onClick={() => setTxNote(null)}>OK</button>
         </div>
       )}
       {txError && (

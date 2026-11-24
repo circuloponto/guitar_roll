@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { clipBeatToTime } from '../utils/audioClips';
+import { clipBeatToTime, clipTimeToBeat } from '../utils/audioClips';
 import { midiToPitchRow } from '../utils/pitchMap';
 import { MIDI_OFFSET } from '../utils/transcribe';
 
@@ -22,18 +22,18 @@ function accentRgb() {
 }
 
 export default function PitchHeat({
-  analysis, clip, map, startX, widthPx, totalRows, rowHeight, xToBeat, sig,
+  analysis, clip, map, startX, widthPx, totalRows, rowHeight, xToBeat, beatToX, sig,
 }) {
   const refs = useRef([]);
   // The map and the beat<->x functions are new objects on every render; the drawing only reruns
   // when `sig` (a string describing everything that affects the picture) changes.
   const latest = useRef(null);
-  latest.current = { clip, map, startX, widthPx, totalRows, rowHeight, xToBeat };
+  latest.current = { clip, map, startX, widthPx, totalRows, rowHeight, xToBeat, beatToX };
   const tiles = Math.max(1, Math.ceil(widthPx / TILE));
   const height = Math.round(totalRows * rowHeight);
 
   useEffect(() => {
-    const { clip, map, startX, widthPx, totalRows, rowHeight, xToBeat } = latest.current;
+    const { clip, map, startX, widthPx, totalRows, rowHeight, xToBeat, beatToX } = latest.current;
     if (!analysis || widthPx <= 0) return;
     const frames = analysis.frames;
     const nFrames = frames.length;
@@ -79,6 +79,15 @@ export default function PitchHeat({
         }
       }
       ctx.putImageData(img, 0, 0);
+      // thin white ticks where the attacks (plucks) were detected: a note should start on one
+      if (analysis.attacks && beatToX) {
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
+        for (const t of analysis.attacks) {
+          if (t < clip.srcStart || t > clip.srcEnd) continue;
+          const x = Math.round(beatToX(clipTimeToBeat(clip, t, map)) - startX - ti * TILE);
+          if (x >= 0 && x < w) ctx.fillRect(x, 0, 1, height);
+        }
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [analysis, sig, tiles, height]);

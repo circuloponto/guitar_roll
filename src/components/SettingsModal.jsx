@@ -795,6 +795,24 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               Ignore a weak note an octave below a stronger one
             </label>
           </div>
+          <span className="settings-sublabel" style={{ marginTop: 14 }}>Check the notes against the attacks</span>
+          <div className="settings-row" style={{ marginTop: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="A real note starts with a pluck. The attacks are detected separately from the pitch model. Hammer-ons and slides start without one, which is why 'all notes' can remove real notes">
+              Require an attack under a note
+              <select className="duration-select" value={tx.attackGate ?? 'bass'} onChange={(e) => onTxSettingsChange({ attackGate: e.target.value })}>
+                <option value="off">Off</option>
+                <option value="bass">Low notes only (recommended)</option>
+                <option value="all">All notes</option>
+              </select>
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="At most this many notes can start at the same attack (a guitar has six strings). The strongest are kept. Use 1 to 3 for a melody">
+              Most notes per attack
+              <input type="range" min={1} max={6} step={1} value={tx.maxPerAttack ?? 6} onChange={(e) => onTxSettingsChange({ maxPerAttack: Number(e.target.value) })} style={{ width: 120 }} />
+              <span style={{ fontSize: 12, color: 'var(--mute)', minWidth: 20 }}>{tx.maxPerAttack ?? 6}</span>
+            </label>
+          </div>
           <div className="settings-row" style={{ marginTop: 14 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
               <input type="checkbox" checked={tx.heatAfter ?? true} onChange={(e) => onTxSettingsChange({ heatAfter: e.target.checked })} />

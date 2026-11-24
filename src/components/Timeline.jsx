@@ -2062,7 +2062,8 @@ export default function Timeline({
                   totalRows={totalRows}
                   rowHeight={rowHeight}
                   xToBeat={(x) => xToBeat(x, barSubdivisions, cellWidth, false)}
-                  sig={`${cellWidth}|${rowHeight}|${barSubdivisions.join('.')}|${mapSig}|${clip.start}|${clip.srcStart}|${clip.srcEnd}|${swingActive ? swing : ''}`}
+                  beatToX={(b) => beatToX(b, barSubdivisions, cellWidth)}
+                  sig={`${analysis.attacks ? analysis.attacks.length : 0}|${cellWidth}|${rowHeight}|${barSubdivisions.join('.')}|${mapSig}|${clip.start}|${clip.srcStart}|${clip.srcEnd}|${swingActive ? swing : ''}`}
                 />
               );
             });
