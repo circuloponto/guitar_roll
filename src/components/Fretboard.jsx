@@ -8,6 +8,57 @@ import { beatToX as beatToXUtil } from '../utils/barLayout';
 
 // totalBeats passed as prop (totalBeats)
 
+// Animated note flashes during playback (see utils/noteFade.js). It redraws itself every frame while
+// playing and reads the continuous playhead from a ref, so it never waits on the app's renders.
+function FadeLayer({ notes, playing, playheadBeatRef, tempoMap, factor, getNoteColor, cellCenterPx }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!playing) return undefined;
+    let raf;
+    const tick = () => { setTick(t => (t + 1) % 1e9); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing]);
+  const beat = playheadBeatRef?.current;
+  if (!playing || beat == null || !tempoMap) return null;
+  const nowSec = tempoMap.liveSec(beat);
+  const lit = new Map(); // one flash per string/fret: the brightest
+  for (const n of notes) {
+    if (n.ghost || n.beat > beat + 1e-6) continue;
+    const dur = n.duration || 1;
+    if (n.beat + dur + 12 < beat) continue; // long gone
+    const onset = tempoMap.liveSec(n.beat);
+    const env = noteEnvelope(nowSec - onset, tempoMap.liveSec(n.beat + dur) - onset, factor);
+    if (env < 0.02) continue;
+    const key = `${n.stringIndex}-${n.fret}`;
+    const prev = lit.get(key);
+    if (!prev || env > prev.env) lit.set(key, { note: n, env });
+  }
+  const nutTop = cellCenterPx(1) - cellCenterPx(0); // one fret cell = where the nut is
+  return [...lit.values()].map(({ note, env }) => {
+    const color = getNoteColor(note);
+    const left = `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`;
+    const top = cellCenterPx(note.fret);
+    const thickness = NUM_STRINGS - note.stringIndex;
+    return (
+      <div key={`fade-${note.stringIndex}-${note.fret}`} style={{ pointerEvents: 'none' }}>
+        {note.fret === 0 && (
+          <>
+            <div style={{ position: 'absolute', left, top: 0, height: nutTop, width: Math.max(3, thickness * 1.2), background: color, opacity: env, boxShadow: `0 0 ${16 * env}px ${5 * env}px ${color}`, transform: 'translateX(-50%)', borderRadius: 2, zIndex: 2 }} />
+            <div style={{ position: 'absolute', left, top: nutTop, bottom: 0, width: Math.max(1.5, thickness * 0.5), background: color, opacity: env, boxShadow: `0 0 ${16 * env}px ${5 * env}px ${color}`, transform: 'translateX(-50%)', zIndex: 2 }} />
+          </>
+        )}
+        <div style={{ position: 'absolute', left, top, width: 38, height: 18, borderRadius: 9, background: '#000', opacity: env, transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 2 }} />
+        <div style={{ position: 'absolute', left, top, width: 60, height: 30, borderRadius: '50%', background: color, filter: 'blur(14px)', opacity: 0.8 * env, transform: 'translate(-50%, -50%)', zIndex: 5 }} />
+        <div style={{ position: 'absolute', left, top, width: 32, height: 12, borderRadius: 6, background: color, opacity: Math.min(1, env * 1.15), boxShadow: `0 0 ${10 * env}px ${3 * env}px ${color}`, transform: `translate(-50%, -50%) rotate(-50deg) scale(${0.9 + 0.2 * env})`, zIndex: 7 }} />
+      </div>
+    );
+  });
+}
+
+
+import { noteEnvelope } from '../utils/noteFade';
+
 const PADDING_LEFT = 12;
 const PADDING_RIGHT = 8;
 const BASE_FRET_HEIGHT = 40; // pixels per fret cell at zoom 1
@@ -17,7 +68,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -160,6 +211,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
     });
     return out;
   }, [notes, selectedBeat]);
+
+  // With the fade on, FadeLayer draws what is playing; the older always-on glow is for "Off".
+  const fadeOn = playing && noteFadeFactor > 0;
+  const shownPlaying = fadeOn ? [] : playingNotes;
 
   const handleMouseDown = useCallback((e) => {
     const result = getStringAndFret(e);
@@ -694,7 +749,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           const open = new Map();
           selectedExtraNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: false }); });
           activeNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: false }); });
-          playingNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: true }); });
+          shownPlaying.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: true }); });
           const nutTop = cellTopPx(1);
           return [...open.entries()].map(([si, { note, live }]) => {
             const color = getNoteColor(note);
@@ -781,7 +836,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             note.stringIndex === dragStartRef.current.stringIndex &&
             note.fret === dragStartRef.current.fret;
           if (isDragging) return null;
-          const isPlaying = playingNotes.some(
+          const isPlaying = shownPlaying.some(
             p => p.stringIndex === note.stringIndex && p.fret === note.fret
           );
           const color = getNoteColor(note.stringIndex, note.fret);
@@ -1025,7 +1080,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         )}
 
         {/* Solid mask behind playing notes to hide string lines */}
-        {playingNotes.map((note, i) => (
+        {shownPlaying.map((note, i) => (
           <div key={`mask-${i}`} style={{
             position: 'absolute',
             left: `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`,
@@ -1063,7 +1118,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Playing notes glow background */}
-        {playingNotes.map((note, i) => {
+        {shownPlaying.map((note, i) => {
           const color = getNoteColor(note.stringIndex, note.fret);
           return (
             <div key={`glow-${i}`} style={{
@@ -1084,7 +1139,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         })}
 
         {/* Playing notes not on the selected beat */}
-        {playingNotes
+        {shownPlaying
           .filter(p => !activeNotes.some(a => a.stringIndex === p.stringIndex && a.fret === p.fret))
           .map((note, i) => (
             <div key={`playing-${i}`} style={{
@@ -1101,6 +1156,16 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               zIndex: 6,
             }} />
           ))}
+
+        <FadeLayer
+          notes={notes}
+          playing={fadeOn}
+          playheadBeatRef={playheadBeatRef}
+          tempoMap={tempoMap}
+          factor={noteFadeFactor}
+          getNoteColor={getNoteColor}
+          cellCenterPx={cellCenterPx}
+        />
 
         {/* Drag preview note */}
         {dragNote && dragStartRef.current && (

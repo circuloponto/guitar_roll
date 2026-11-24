@@ -5,6 +5,7 @@ import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOu
 import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
 import { groupTracks as groupTracksFn, ungroupTracks as ungroupTracksFn, normalizeGroups, tidyTrackGroups } from './utils/trackGroups';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
+import { NOTE_FADE_PRESETS } from './utils/noteFade';
 import { xToBeat, defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
@@ -427,6 +428,10 @@ function App() {
   // Selected notes (from the timeline) also show on the fretboard, wherever the playhead is.
   const [showSelectedOnFretboard, setShowSelectedOnFretboard] = useState(() => {
     try { return localStorage.getItem('guitar-roll-show-selected-fretboard') !== 'false'; } catch { return true; }
+  });
+  // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
+  const [noteFade, setNoteFade] = useState(() => {
+    try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
   });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
@@ -3188,6 +3193,9 @@ setPositionModeValue(null);
           setSelectedBeat={setSelectedBeat}
           fretboardAutoForward={fretboardAutoForward}
           swing={swing}
+          playheadBeatRef={playheadBeatRef}
+          tempoMap={tempoMap}
+          noteFadeFactor={NOTE_FADE_PRESETS[noteFade]}
           selectedExtraNotes={showSelectedOnFretboard && selectedNotes.size > 0 && !playing
             ? [...selectedNotes].map(idx => notes[idx]).filter(n => n && !(selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)))
             : []}
@@ -3430,6 +3438,8 @@ setPositionModeValue(null);
           onFretboardAutoForwardChange={(v) => { setFretboardAutoForward(v); localStorage.setItem('guitar-roll-fretboard-auto-forward', String(v)); }}
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
+          noteFade={noteFade}
+          onNoteFadeChange={(v) => { setNoteFade(v); try { localStorage.setItem('guitar-roll-note-fade', v); } catch { /* ignore */ } }}
           onShowSelectedOnFretboardChange={(v) => { setShowSelectedOnFretboard(v); try { localStorage.setItem('guitar-roll-show-selected-fretboard', String(v)); } catch { /* ignore */ } }}
           onFretboardAutoForwardExcludeAdjacentChange={(v) => { setFretboardAutoForwardExcludeAdjacent(v); localStorage.setItem('guitar-roll-fretboard-auto-forward-exclude-adjacent', String(v)); }}
           showTimelineVerticalZoomButtons={showTimelineVerticalZoomButtons}
