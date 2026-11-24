@@ -30,28 +30,61 @@ export const SENSITIVITY = {
   sensitive: { onsetThresh: 0.35, frameThresh: 0.22, label: 'Sensitive (more notes, more mistakes)' },
 };
 
+// Mono, 22.05 kHz copy of the recording. The browser's own offline renderer does this best; some
+// browsers refuse the odd sample rate, so there is a plain JavaScript fallback (average + decimate).
 async function resampleMono(buffer) {
-  if (buffer.sampleRate === SR && buffer.numberOfChannels === 1) return buffer;
-  const length = Math.max(1, Math.ceil(buffer.duration * SR));
-  const ctx = new OfflineAudioContext(1, length, SR); // mixing down to mono happens here
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(ctx.destination);
-  src.start();
-  return ctx.startRendering();
+  if (buffer.sampleRate === SR && buffer.numberOfChannels === 1) return buffer.getChannelData(0);
+  try {
+    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const length = Math.max(1, Math.ceil(buffer.duration * SR));
+    const ctx = new Offline(1, length, SR); // mixing down to mono happens here
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start();
+    const out = await ctx.startRendering();
+    return out.getChannelData(0);
+  } catch (err) {
+    console.warn('[transcribe] offline resample failed, using the JS fallback', err);
+  }
+  const ratio = buffer.sampleRate / SR;
+  const n = Math.max(1, Math.floor(buffer.length / ratio));
+  const out = new Float32Array(n);
+  const chans = [];
+  for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.min(buffer.length, Math.floor((i + 1) * ratio)));
+    let sum = 0;
+    for (let k = a; k < b; k++) for (let c = 0; c < chans.length; c++) sum += chans[c][k];
+    out[i] = sum / ((b - a) * chans.length);
+    if (i % 200000 === 0) await new Promise(r => setTimeout(r, 0)); // keep the page responsive
+  }
+  return out;
 }
 
 export const hasAnalysis = (buffer) => !!buffer && cache.has(buffer);
 export const getAnalysis = (buffer) => (buffer ? cache.get(buffer) || null : null);
 
-// Run the model (once per recording; the result is cached). onProgress(0..1).
-export async function analyzeAudio(buffer, onProgress = () => {}) {
+// Run the model (once per recording; the result is cached).
+//   onProgress(fraction 0..1, info) with info = { stage, backend }
+//   signal: an AbortSignal; aborting stops the run at the next 2-second window
+export async function analyzeAudio(buffer, onProgress = () => {}, signal = null) {
   const hit = cache.get(buffer);
-  if (hit) { onProgress(1); return hit; }
+  if (hit) { onProgress(1, { stage: 'done' }); return hit; }
+  const stop = () => { if (signal?.aborted) throw new Error('Cancelled'); };
+  onProgress(0, { stage: 'loading the pitch model' });
   const { BasicPitch } = await import('@spotify/basic-pitch');
+  const tf = await import('@tensorflow/tfjs');
+  await tf.ready();
+  const backend = tf.getBackend();
+  stop();
   if (!modelPromise) modelPromise = Promise.resolve(new BasicPitch(MODEL_URL()));
-  const bp = await modelPromise;
+  let bp;
+  try { bp = await modelPromise; await bp.model; } catch (err) { modelPromise = null; throw new Error('Could not load the pitch model (' + (err.message || err) + ')'); }
+  stop();
+  onProgress(0, { stage: 'preparing the audio', backend });
   const mono = await resampleMono(buffer);
+  stop();
   // The model reports its output in pieces (one per 2-second window): join them up.
   const result = { frames: [], onsets: [], contours: [] };
   await bp.evaluateModel(
@@ -61,31 +94,107 @@ export async function analyzeAudio(buffer, onProgress = () => {}) {
       for (const row of onsets) result.onsets.push(row);
       for (const row of contours) result.contours.push(row);
     },
-    (p) => onProgress(Math.min(0.99, p)),
+    (p) => { stop(); onProgress(Math.min(0.99, p), { stage: 'listening', backend }); },
   );
   if (!result.frames.length) throw new Error('The pitch model returned nothing');
   result.seconds = buffer.duration;
   cache.set(buffer, result);
-  onProgress(1);
+  onProgress(1, { stage: 'done', backend });
   return result;
+}
+
+// Turn the model's activations into notes. This follows Basic Pitch's own decoder (peaks in the
+// onset curve start notes, a note lasts while its pitch stays active, then leftover energy is
+// picked up as extra notes) but runs on flat typed arrays and picks leftovers from a sorted list.
+// The library version rescans the whole recording once per leftover note, which takes minutes
+// (and freezes the page) on a long, noisy recording.
+export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, minIdx = 0, maxIdx = 87, energyTol = 11 }) {
+  const T = frames.length, C = 88;
+  if (T < 3) return [];
+  const F = new Float32Array(T * C);
+  const O = new Float32Array(T * C);
+  for (let t = 0; t < T; t++) {
+    const fr = frames[t], on = onsets[t];
+    for (let c = minIdx; c <= maxIdx; c++) { F[t * C + c] = fr[c]; O[t * C + c] = on[c]; }
+  }
+  // onsets inferred from sudden rises in the frame activations
+  let maxO = 0, maxD = 0;
+  for (let i = 0; i < O.length; i++) if (O[i] > maxO) maxO = O[i];
+  const D = new Float32Array(T * C);
+  for (let t = 2; t < T; t++) {
+    for (let c = 0; c < C; c++) {
+      const d = Math.max(0, Math.min(F[t * C + c] - F[(t - 1) * C + c], F[t * C + c] - F[(t - 2) * C + c]));
+      D[t * C + c] = d;
+      if (d > maxD) maxD = d;
+    }
+  }
+  if (maxD > 0) for (let i = 0; i < O.length; i++) { const v = (maxO * D[i]) / maxD; if (v > O[i]) O[i] = v; }
+
+  // onset peaks (strictly above both neighbours in time)
+  const peaks = [];
+  for (let t = 0; t < T; t++) {
+    for (let c = 0; c < C; c++) {
+      const v = O[t * C + c];
+      if (v <= onsetThresh) continue;
+      if (t > 0 && v <= O[(t - 1) * C + c]) continue;
+      if (t < T - 1 && v <= O[(t + 1) * C + c]) continue;
+      peaks.push([t, c]);
+    }
+  }
+  peaks.sort((a, b) => b[0] - a[0] || b[1] - a[1]); // latest first, as the original does
+
+  const R = F.slice(); // energy not yet used by a note
+  const zero = (t, c) => {
+    R[t * C + c] = 0;
+    if (c < 87) R[t * C + c + 1] = 0;
+    if (c > 0) R[t * C + c - 1] = 0;
+  };
+  const meanAmp = (a, b, c) => { let sum = 0; for (let t = a; t < b; t++) sum += F[t * C + c]; return sum / Math.max(1, b - a); };
+  const notes = [];
+  for (const [t0, c] of peaks) {
+    if (t0 >= T - 1) continue;
+    let i = t0 + 1, k = 0;
+    while (i < T - 1 && k < energyTol) { if (R[i * C + c] < frameThresh) k++; else k = 0; i++; }
+    i -= k;
+    if (i - t0 <= minLen) continue;
+    for (let j = t0; j < i; j++) zero(j, c);
+    notes.push({ startFrame: t0, durationFrames: i - t0, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(t0, i, c) });
+  }
+
+  // leftover energy: strongest cell first, grow forwards and backwards from it
+  const cand = [];
+  for (let i = 0; i < R.length; i++) if (R[i] > frameThresh) cand.push(i);
+  cand.sort((a, b) => R[b] - R[a]);
+  for (const idx of cand) {
+    if (!(R[idx] > frameThresh)) continue; // used up meanwhile
+    const iMid = Math.floor(idx / C), c = idx % C;
+    R[idx] = 0;
+    let i = iMid + 1, k = 0;
+    while (i < T - 1 && k < energyTol) { if (R[i * C + c] < frameThresh) k++; else k = 0; zero(i, c); i++; }
+    const iEnd = i - 1 - k;
+    i = iMid - 1; k = 0;
+    while (i > 0 && k < energyTol) { if (R[i * C + c] < frameThresh) k++; else k = 0; zero(i, c); i--; }
+    const iStart = i + 1 + k;
+    if (iEnd - iStart <= minLen) continue;
+    notes.push({ startFrame: iStart, durationFrames: iEnd - iStart, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(iStart, iEnd, c) });
+  }
+  return notes;
 }
 
 // Note events from the activations: [{ start, end, midi, amp }] in seconds of the audio file.
 export async function extractNoteEvents(analysis, { sensitivity = 'balanced', minNoteMs = 60, harmonicFilter = true } = {}) {
-  const { outputToNotesPoly, noteFramesToTime } = await import('@spotify/basic-pitch');
+  await new Promise(r => setTimeout(r, 0)); // let any progress message paint first
   const preset = SENSITIVITY[sensitivity] || SENSITIVITY.balanced;
   const minFrames = Math.max(2, Math.round((minNoteMs / 1000) * FPS));
-  // guitar range: E2 (82 Hz) up to E6 (1318 Hz, fret 24 on the high string)
-  const notes = outputToNotesPoly(
-    analysis.frames, analysis.onsets, preset.onsetThresh, preset.frameThresh, minFrames,
-    true, 1330, 80, true,
-  );
-  const timed = noteFramesToTime(notes);
-  const events = timed
-    .filter(n => n.pitchMidi >= 40 && n.pitchMidi <= 88)
+  // guitar range: E2 (MIDI 40) up to E6 (MIDI 88, fret 24 on the high string)
+  const notes = decodeNotes(analysis.frames, analysis.onsets, {
+    onsetThresh: preset.onsetThresh, frameThresh: preset.frameThresh, minLen: minFrames,
+    minIdx: 40 - MIDI_OFFSET, maxIdx: 88 - MIDI_OFFSET,
+  });
+  const events = notes
     .map(n => ({
-      start: n.startTimeSeconds,
-      end: n.startTimeSeconds + n.durationSeconds,
+      start: frameToTime(n.startFrame),
+      end: frameToTime(n.startFrame + n.durationFrames),
       midi: n.pitchMidi,
       amp: n.amplitude,
     }))
@@ -208,6 +317,13 @@ export function buildDraftNotes(events, { track, map, barSubs, chordMs = 45 }) {
   for (const n of snapped) {
     const g = groups[groups.length - 1];
     if (g && Math.abs(g[0].start - n.start) < 1e-6) g.push(n); else groups.push([n]);
+  }
+  // A guitar has six strings: in a crowded (noisy) group keep only the six strongest notes
+  for (const g of groups) {
+    if (g.length > 6) {
+      g.sort((a, b) => b.amp - a.amp);
+      g.length = 6;
+    }
   }
   assignFretboardPositions(groups);
 

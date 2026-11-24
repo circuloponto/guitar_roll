@@ -3473,3 +3473,9 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .pitch-heat { position: absolute; pointer-events: none; z-index: 1; }
 .pitch-heat canvas { image-rendering: auto; }
 .timeline-note.draft-weak { opacity: 0.5; }
+
+/* Transcription progress / error banner */
+.toast.tx-banner { display: flex; align-items: center; gap: 14px; max-width: min(640px, 92vw); }
+.toast.tx-banner button { background: transparent; border: 1px solid var(--line); border-radius: 4px; color: var(--fg); padding: 2px 10px; font-size: 12px; cursor: pointer; }
+.toast.tx-banner button:hover { background: var(--off-hi); }
+.toast.tx-error { border-color: var(--danger); color: var(--danger); bottom: 80px; }

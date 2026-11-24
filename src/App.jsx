@@ -445,7 +445,9 @@ function App() {
   });
   const [pitchHeats, setPitchHeats] = useState({}); // { [audioTrackId]: analysis } for heat maps being shown
   const timelineVerticalZoomRef = useRef(1);
-  const [txBusy, setTxBusy] = useState(null);       // { label, percent } while the model runs
+  const [txBusy, setTxBusy] = useState(null);
+  const [txError, setTxError] = useState(null);
+  const txAbortRef = useRef(null);       // { label, percent } while the model runs
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
     try { const v = localStorage.getItem('guitar-roll-note-fade'); return v in NOTE_FADE_PRESETS ? v : 'normal'; } catch { return 'normal'; }
@@ -2258,14 +2260,22 @@ setPositionModeValue(null);
     if (!buffer) { showToast('This audio track has no audio loaded. Use Relink audio first.'); return null; }
     const cached = getAnalysis(buffer);
     if (cached) return cached;
-    setTxBusy({ label, percent: 0 });
+    const ctrl = new AbortController();
+    txAbortRef.current = ctrl;
+    setTxError(null);
+    setTxBusy({ label, percent: 0, stage: 'starting' });
     try {
-      return await analyzeAudio(buffer, (p) => setTxBusy({ label, percent: Math.round(p * 100) }));
+      return await analyzeAudio(buffer, (p, info = {}) => setTxBusy({
+        label, percent: Math.round(p * 100), stage: info.stage, backend: info.backend,
+      }), ctrl.signal);
     } catch (err) {
-      console.warn('[transcribe]', err);
-      showToast('Could not analyze this audio: ' + (err.message || err));
+      console.error('[transcribe]', err);
+      if (err.message !== 'Cancelled') {
+        setTxError(`Could not analyze this audio: ${err.message || err}`);
+      }
       return null;
     } finally {
+      txAbortRef.current = null;
       setTxBusy(null);
     }
   }, [showToast]);
@@ -2284,13 +2294,24 @@ setPositionModeValue(null);
     if (!track) return;
     const analysis = await runAnalysis(trackId, 'Transcribing');
     if (!analysis) return;
-    const events = await extractNoteEvents(analysis, {
-      sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
-    });
-    const notes = buildDraftNotes(events, {
-      track, map: tempoMapRef.current.forTrack(track), barSubs: barSubsRef.current, chordMs: txSettings.chordMs,
-    });
-    if (!notes.length) { showToast('No notes found. Try the Sensitive setting (Settings > Transcription).'); return; }
+    let notes;
+    try {
+      setTxBusy({ label: 'Writing the draft', percent: 100, stage: 'placing the notes on the grid' });
+      await new Promise(r => setTimeout(r, 30)); // let the message paint before the (synchronous) grid work
+      const events = await extractNoteEvents(analysis, {
+        sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
+      });
+      notes = buildDraftNotes(events, {
+        track, map: tempoMapRef.current.forTrack(track), barSubs: barSubsRef.current, chordMs: txSettings.chordMs,
+      });
+    } catch (err) {
+      console.error('[transcribe]', err);
+      setTxError(`Could not build the draft: ${err.message || err}`);
+      return;
+    } finally {
+      setTxBusy(null);
+    }
+    if (!notes.length) { setTxError('The model found no notes in this recording. Try the Sensitive setting (Settings > Transcription).'); return; }
     const draft = { ...createDefaultTrack(`${track.name} (draft)`), notes };
     saveSnapshot();
     setTracksTracked(prev => {
@@ -3418,7 +3439,21 @@ setPositionModeValue(null);
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
-      {txBusy && <div className="toast" role="status">{txBusy.label}… {txBusy.percent}%</div>}
+      {txBusy && (
+        <div className="toast tx-banner" role="status">
+          <span>
+            {txBusy.label}: {txBusy.stage || 'working'}{txBusy.stage === 'listening' ? ` ${txBusy.percent}%` : '…'}
+            {txBusy.backend === 'cpu' ? ' (no GPU in this browser: this can be slow)' : ''}
+          </span>
+          <button onClick={() => txAbortRef.current?.abort()}>Cancel</button>
+        </div>
+      )}
+      {txError && (
+        <div className="toast tx-banner tx-error" role="alert">
+          <span>{txError}</span>
+          <button onClick={() => setTxError(null)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Settings Modal */}
       {confirmClear && (
