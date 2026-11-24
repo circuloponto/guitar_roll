@@ -30,6 +30,17 @@ export default function TrackStrip({
   const groupById = (id) => trackGroups.find(g => g.id === id) || null;
   const isHiddenByGroup = (track) => !!(track.groupId && groupById(track.groupId)?.collapsed);
   const isFirstOfGroup = (index) => !!tracks[index].groupId && (index === 0 || tracks[index - 1].groupId !== tracks[index].groupId);
+  const pickAudioFor = (trackId) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.wav,.mp3,.aiff,.aif,audio/*';
+    input.onchange = () => { if (input.files[0]) onLoadAudio(trackId, input.files[0]); };
+    input.click();
+  };
+  const askDelete = (t) => {
+    if ((t.notes && t.notes.length > 0) || t.audioFileName) setConfirmDelete(t);
+    else onDeleteTrack(t.id);
+  };
   const openTrackMenu = (e, track) => {
     e.preventDefault();
     e.stopPropagation();
@@ -351,12 +362,6 @@ export default function TrackStrip({
                           style={{ color: 'var(--amber)', fontSize: 11 }}
                         >Relink audio</button>
                       )}
-                      <button
-                        className="track-btn-lg"
-                        onClick={(e) => { e.stopPropagation(); onRemoveAudio(track.id); }}
-                        title="Remove audio"
-                        style={{ color: 'var(--danger)', fontSize: 11 }}
-                      >✕</button>
                       {/* Pitch: lock keeps the original pitch when tempo changes; semitones transpose */}
                       <button
                         className={`track-btn-lg ${track.keepPitch === false ? '' : 'active-accent'}`}
@@ -404,55 +409,9 @@ export default function TrackStrip({
                         >Clear sync ({track.syncPoints.length})</button>
                       )}
                     </div>
-                  ) : (
-                    <button
-                      className="track-btn-lg"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = '.wav,.mp3,.aiff,.aif';
-                        input.onchange = () => {
-                          if (input.files[0]) onLoadAudio(track.id, input.files[0]);
-                        };
-                        input.click();
-                      }}
-                      title="Load audio file"
-                      style={{ color: 'var(--accent-hi)', fontSize: 11 }}
-                    >🎵</button>
-                  )}
-
-                  <button
-                    className="track-btn-lg"
-                    onClick={(e) => { e.stopPropagation(); onDuplicateTrack(track.id); }}
-                    title="Duplicate track"
-                    style={{ color: 'var(--ok)' }}
-                  >⧉</button>
+                  ) : null}
                 </div>
 
-                <button
-                  style={{
-                    background: 'var(--danger-bg)',
-                    color: 'var(--danger)',
-                    border: '1px solid var(--danger)',
-                    borderRadius: 4,
-                    padding: '4px 8px',
-                    fontSize: 12,
-                    fontWeight: 'bold',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    marginLeft: 'auto',
-                  }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (track.notes && track.notes.length > 0) {
-                      setConfirmDelete(track);
-                    } else {
-                      onDeleteTrack(track.id);
-                    }
-                  }}
-                  title="Delete track"
-                >DEL</button>
               </div>
               </Fragment>
             );
@@ -513,6 +472,14 @@ export default function TrackStrip({
             )}
             <div className="tab-context-menu-divider" />
             <button className="tab-context-menu-item" onClick={() => { onDuplicateTrack(t.id); close(); }}>Duplicate track</button>
+            <button className="tab-context-menu-item" onClick={() => { pickAudioFor(t.id); close(); }}>
+              Import audio file…
+            </button>
+            {t.type === 'audio' && t.audioFileName && (
+              <button className="tab-context-menu-item" onClick={() => { onRemoveAudio(t.id); close(); }}>Remove audio file</button>
+            )}
+            <div className="tab-context-menu-divider" />
+            <button className="tab-context-menu-item danger" onClick={() => { askDelete(t); close(); }}>Delete track</button>
           </div>
         );
       })()}
