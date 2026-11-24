@@ -886,7 +886,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           );
         })}
 
-        {/* Selected notes that are not at the playhead (setting: Fretboard > Selection) */}
+        {/* Selected notes that are not at the playhead (setting: Fretboard > Selection); solid outline like the ones at the playhead */}
         {dotExtra.map((note, i) => {
           const color = getNoteColor(note);
           const left = `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`;
@@ -902,7 +902,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               }} />
               <div style={{
                 position: 'absolute', left, top: cellCenterPx(note.fret), width: 38, height: 18, borderRadius: 8,
-                border: '2px dashed #fff', background: 'transparent', transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 8,
+                border: '2px solid #fff', background: 'transparent', transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 8,
               }} />
             </div>
           );

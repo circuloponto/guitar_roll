@@ -1227,7 +1227,10 @@ setPositionModeValue(null);
         } else {
           setSelectedBeat(b => {
             const next = beats.filter(beat => beat > b + 0.001);
-            return next.length > 0 ? next[0] : b;
+            if (next.length > 0) return next[0];
+            // No note starts after the playhead: go to the end of the last note
+            const lastEnd = Math.max(...currentNotes.map(n => n.beat + (n.duration || 1)));
+            return lastEnd > b + 0.001 ? Math.min(lastEnd, totalBeats - 1) : b;
           });
         }
         return;
