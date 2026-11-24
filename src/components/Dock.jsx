@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } fr
 import { Minus, Square, ExternalLink, LayoutPanelLeft } from 'lucide-react';
 import {
   PANEL_TITLES, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
-  loadState, saveState, clearSavedState, defaultState, buildTree, computeRects, applyRatio, dropTarget,
+  loadState, saveState, clearSavedState, defaultState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
   toggleMinimized, undock, dockBack, raiseFloating, setFloatRect,
 } from '../utils/dockLayout';
 
@@ -50,8 +50,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     return () => ro.disconnect();
   }, [mobile]);
 
-  const tree = useMemo(() => buildTree(st), [st]);
-  const { panels, gutters } = useMemo(() => computeRects(tree, box), [tree, box]);
+  const { panels, gutters } = useMemo(() => computeRects(st.tree, box, st.minimized), [st.tree, st.minimized, box]);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
   const content = { menu, tracks, fretboard, timeline };
@@ -65,17 +64,17 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
       const body = el?.querySelector('.dock-panel-tracks .dock-body');
       const s = stRef.current;
       if (!el || !body || s.floating.tracks || s.minimized.tracks) return;
-      const H = el.clientHeight;
-      const menuTop = s.menu === 'top' && !s.floating.menu;
-      const menuShare = menuTop ? (s.minimized.menu ? STRIP_PX / H : s.sizes.menuTop) : 0;
-      const centerPx = H * (1 - menuShare);
-      if (!(centerPx > 0)) return;
       // The content's own height (scrollHeight can't go below the panel's current height, so it
       // would never let the panel shrink after collapsing).
       const natural = [...body.children].reduce((sum, c) => sum + c.getBoundingClientRect().height, 0);
       const need = natural + 16 /* handle */ + 10 /* border + padding */;
-      const t = Math.max(0.06, Math.min(0.6, need / centerPx));
-      if (Math.abs(t - s.sizes.tracks) > 0.004) commit({ ...s, sizes: { ...s.sizes, tracks: t } });
+      const par = findParent(s.tree, 'tracks');
+      if (!par || par.node.dir !== 'col') return;
+      const g = computeRects(s.tree, { w: el.clientWidth, h: el.clientHeight }, s.minimized).gutters.find(x => x.path === par.path);
+      if (!g) return;
+      const share = Math.max(0.06, Math.min(0.6, need / (g.rect.h * el.clientHeight)));
+      const t = par.isA ? share : 1 - share;
+      if (Math.abs(t - par.node.ratio) > 0.004) commit(setRatioAt(s, par.path, t));
     });
     window.addEventListener('guitar-roll-fit-tracks', fit);
     return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
@@ -104,18 +103,38 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     const lo = Math.min(0.5, MIN_PX / span);
     const move = (ev) => {
       const pos = (isRow ? ev.clientX : ev.clientY) - origin;
-      const r = Math.min(1 - lo, Math.max(lo, pos / span));
-      setSt(applyRatio(stRef.current, g.key, g.inv, r));
+      const raw = pos / span;
+      let node = stRef.current.tree;
+      for (const c of g.path) node = node && !node.id ? node[c] : null;
+      const hasEmpty = node && !node.id && (isEmptyId(node.a.id) || isEmptyId(node.b.id));
+      // dragged (almost) all the way: an empty slot closes
+      const r = hasEmpty && raw < lo * 0.5 ? 0.02 : hasEmpty && raw > 1 - lo * 0.5 ? 0.98
+        : Math.min(1 - lo, Math.max(lo, raw));
+      setSt(setRatioAt(stRef.current, g.path, r));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       document.body.classList.remove('dock-resizing');
-      saveState(stRef.current);
+      const pruned = pruneEmpty(stRef.current);
+      stRef.current = pruned;
+      setSt(pruned);
+      saveState(pruned);
     };
     document.body.classList.add('dock-resizing');
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  };
+
+  // Narrow/shorten a panel from an outer edge of the dock: the freed space becomes an empty slot.
+  const startEdgeResize = (e, id, side) => {
+    if (e.button !== 0) return;
+    const r = panelsRef.current[id];
+    const res = r && shrinkFromEdge(stRef.current, id, side);
+    if (!res) return;
+    stRef.current = res.st;
+    setSt(res.st);
+    startResize(e, { path: res.path, dir: res.dir, rect: r });
   };
 
   // ---- drag a docked panel by its title bar to dock it somewhere else ----
@@ -260,11 +279,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
                 onDoubleClick={onDouble}
                 title={fl
                   ? 'Drag to move this window. Double-click to minimise.'
-                  : id === 'menu'
-                    ? 'Drag to the left or right edge for a side bar, or the top edge for the top bar. Double-click to minimise.'
-                    : id === 'tracks'
-                      ? 'Drag above or below the fretboard and timeline. Double-click to minimise.'
-                      : 'Drag onto the other half to swap the fretboard and timeline. Double-click to minimise.'}
+                  : 'Drag onto the edge of another panel to split it, onto its middle to swap, or onto the dock border. Double-click to minimise.'}
               >
                 <span className="dock-grip">⠿</span>
                 <span className="dock-title">{PANEL_TITLES[id]}</span>
@@ -284,7 +299,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
                   </button>
                   <button
                     className="dock-btn"
-                    onClick={() => commit(fl ? dockBack(stRef.current, id) : undock(stRef.current, id, panelsRef.current[id]))}
+                    onClick={() => commit(fl ? dockBack(stRef.current, id, panelsRef.current, box) : undock(stRef.current, id, panelsRef.current[id]))}
                     title={fl ? 'Dock back into the layout' : 'Undock into a floating window'}
                     aria-label={fl ? 'Dock' : 'Undock'}
                   >
@@ -300,6 +315,29 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
           </div>
         );
       })}
+      {Object.keys(panels).filter(isEmptyId).map((id) => {
+        const r = panels[id];
+        return (
+          <div key={id} className="dock-empty" style={{ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) }}>
+            <span>Empty space: drag a panel here</span>
+          </div>
+        );
+      })}
+      {Object.keys(PANEL_TITLES).filter(id => !st.floating[id] && !st.minimized[id] && panels[id]).flatMap((id) => {
+        const r = panels[id];
+        const E = 0.0015;
+        return [
+          r.x < E && 'w', r.x + r.w > 1 - E && 'e', r.y < E && 'n', r.y + r.h > 1 - E && 's',
+        ].filter(Boolean).map((side) => (
+          <div
+            key={id + side}
+            className={`dock-bedge dock-bedge-${side}`}
+            style={{ left: pct(r.x), top: pct(r.y), width: pct(r.w), height: pct(r.h) }}
+            onPointerDown={(e) => startEdgeResize(e, id, side)}
+            title="Drag to resize; the freed space can hold another panel"
+          />
+        ));
+      })}
       {gutters.map((g) => {
         const isRow = g.dir === 'row';
         const style = isRow
@@ -307,7 +345,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
           : { top: `calc(${pct(g.rect.y + g.rect.h * g.ratio)} - ${GUTTER / 2}px)`, left: pct(g.rect.x), height: GUTTER, width: pct(g.rect.w) };
         return (
           <div
-            key={g.key}
+            key={g.path || 'root'}
             className={`dock-gutter ${isRow ? 'row' : 'col'}`}
             style={style}
             onPointerDown={(e) => startResize(e, g)}

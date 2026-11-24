@@ -3551,3 +3551,11 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 }
 .toolbar-editor-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--mute); }
 .toolbar-editor-btn:disabled { opacity: 0.3; cursor: default; }
+
+.dock-empty { position: absolute; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--border, #444); border-radius: 8px; color: var(--text-muted, #888); font-size: 12px; opacity: 0.7; pointer-events: none; box-sizing: border-box; }
+.dock-bedge { position: absolute; z-index: 4; pointer-events: none; }
+.dock-bedge::after { content: ''; position: absolute; pointer-events: auto; touch-action: none; }
+.dock-bedge-n::after, .dock-bedge-s::after { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
+.dock-bedge-n::after { top: 0; } .dock-bedge-s::after { bottom: 0; }
+.dock-bedge-e::after, .dock-bedge-w::after { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
+.dock-bedge-e::after { right: 0; } .dock-bedge-w::after { left: 0; }

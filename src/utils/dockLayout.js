@@ -1,74 +1,115 @@
-// Window layout, FL Studio style: every panel can be resized (the neighbours adapt), minimised to a
-// title strip (the others grow into the space), and undocked into a floating window that can be
-// moved and resized freely, then docked back into its slot.
+// Window layout, FL Studio style: every panel can be resized against its neighbours (which adapt),
+// minimised to a title strip, undocked into a floating window, and docked anywhere: drop a panel on
+// the edge of another one to split it, on its middle to swap, or on the outer border of the dock.
 //
-// Docked panels follow a constrained arrangement: fretboard and timeline sit side by side (only
-// their order can flip), the track strip goes above or below them, and the menu is a top bar or a
-// side bar. The arrangement is turned into a split tree ({ id } leaves, { dir, ratio, a, b }
-// splits) from whichever panels are docked, so panels can be positioned flat (no remounting).
+// Docked panels form a split tree: { id } leaves and { dir: 'row'|'col', ratio, a, b } splits (ratio
+// is the share of `a`). The tree holds exactly the docked panels; floating ones are kept apart.
 
 export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline'];
 export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline' };
-const STORAGE_KEY = 'guitar-roll-layout-v3';
-const OLD_STORAGE_KEY = 'guitar-roll-layout-v2';
+const STORAGE_KEY = 'guitar-roll-layout-v4';
+const V3_KEY = 'guitar-roll-layout-v3';
+const V2_KEY = 'guitar-roll-layout-v2';
 export const STRIP_PX = 26;          // a minimised panel is just its title strip
 export const FLOAT_MIN_W = 220;      // smallest floating window, in px
 export const FLOAT_MIN_H = 110;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const leaf = (id) => ({ id });
+// An empty slot is a leaf whose id starts with '_': the space left when a panel is narrowed. A panel
+// can be dropped into it.
+export const isEmptyId = (id) => typeof id === 'string' && id.startsWith('_');
+let emptyCounter = 0;
+const newEmpty = () => leaf(`_e${Date.now().toString(36)}${emptyCounter++}`);
+const split = (dir, ratio, a, b) => ({ dir, ratio, a, b });
 
 export function defaultState(w = 1400, h = 900) {
+  const menuH = clamp(140 / h, 0.05, 0.3);
+  const tracksH = clamp(146 / (h - 140), 0.05, 0.35);
+  const fretW = clamp(380 / w, 0.15, 0.6);
   return {
-    menu: 'top',            // 'top' | 'left' | 'right'
-    tracks: 'top',          // 'top' | 'bottom'
-    fretFirst: true,        // fretboard left of the timeline
-    sizes: {
-      menuTop: clamp(140 / h, 0.05, 0.3),    // share of height
-      menuSide: clamp(280 / w, 0.1, 0.45),   // share of width
-      tracks: clamp(146 / (h - 140), 0.05, 0.35),
-      fret: clamp(380 / w, 0.15, 0.6),
-    },
+    tree: split('col', menuH, leaf('menu'),
+      split('col', tracksH, leaf('tracks'), split('row', fretW, leaf('fretboard'), leaf('timeline')))),
     minimized: {},          // { [id]: true }
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
   };
 }
 
-const okFrac = (v) => Number.isFinite(v) && v > 0.02 && v < 0.9;
 const okRect = (r) => r && [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0.05 && r.h > 0.03;
+const okRatio = (v) => Number.isFinite(v) && v > 0.01 && v < 0.99;
 
-function readState(raw, d) {
-  const s = JSON.parse(raw);
-  if (!s || !['top', 'left', 'right'].includes(s.menu) || !['top', 'bottom'].includes(s.tracks)
-    || typeof s.fretFirst !== 'boolean' || !s.sizes) return null;
-  const minimized = {};
-  const floating = {};
+function collectIds(n, out = []) {
+  if (!n) return out;
+  if (n.id) out.push(n.id); else { collectIds(n.a, out); collectIds(n.b, out); }
+  return out;
+}
+
+// copy only the valid structure of a tree (null if malformed)
+function cleanTree(n) {
+  if (!n) return null;
+  if (n.id) return PANEL_IDS.includes(n.id) || (isEmptyId(n.id) && /^_e[a-z0-9]+$/.test(n.id)) ? leaf(n.id) : null;
+  if (!['row', 'col'].includes(n.dir) || !okRatio(n.ratio)) return null;
+  const a = cleanTree(n.a), b = cleanTree(n.b);
+  return a && b ? split(n.dir, n.ratio, a, b) : null;
+}
+
+function finish(s, tree) {
+  const minimized = {}, floating = {};
   PANEL_IDS.forEach((id) => {
     if (s.minimized?.[id]) minimized[id] = true;
     if (okRect(s.floating?.[id])) floating[id] = { ...s.floating[id] };
   });
-  if (s.menuCollapsed && s.menu !== 'top') minimized.menu = true; // the old "collapse the side bar"
-  return {
-    menu: s.menu, tracks: s.tracks, fretFirst: s.fretFirst,
-    sizes: {
-      menuTop: okFrac(s.sizes.menuTop) ? s.sizes.menuTop : d.sizes.menuTop,
-      menuSide: okFrac(s.sizes.menuSide) ? s.sizes.menuSide : d.sizes.menuSide,
-      tracks: okFrac(s.sizes.tracks) ? s.sizes.tracks : d.sizes.tracks,
-      fret: okFrac(s.sizes.fret) ? s.sizes.fret : d.sizes.fret,
-    },
-    minimized, floating,
-    order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]),
-  };
+  const ids = collectIds(tree).filter(i => !isEmptyId(i));
+  const expected = PANEL_IDS.filter(id => !floating[id]);
+  const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
+  if (!ok) return null;
+  return { tree, minimized, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
+}
+
+// the old fixed arrangement (v2/v3) as a tree
+function legacyTree(s, d) {
+  const fl = s.floating || {};
+  const docked = (id) => !(s.floating?.[id] && okRect(fl[id]));
+  const z = s.sizes || {};
+  const frac = (v, dv) => (Number.isFinite(v) && v > 0.02 && v < 0.9 ? v : dv);
+  const sz = { menuTop: frac(z.menuTop, 0.15), menuSide: frac(z.menuSide, 0.2), tracks: frac(z.tracks, 0.15), fret: frac(z.fret, 0.3) };
+  void d;
+  let main = null;
+  const f = docked('fretboard'), t = docked('timeline');
+  if (f && t) main = s.fretFirst ? split('row', sz.fret, leaf('fretboard'), leaf('timeline')) : split('row', 1 - sz.fret, leaf('timeline'), leaf('fretboard'));
+  else if (f) main = leaf('fretboard'); else if (t) main = leaf('timeline');
+  let center = main;
+  if (docked('tracks')) {
+    if (!main) center = leaf('tracks');
+    else center = s.tracks === 'top' ? split('col', sz.tracks, leaf('tracks'), main) : split('col', 1 - sz.tracks, main, leaf('tracks'));
+  }
+  if (!docked('menu')) return center;
+  if (!center) return leaf('menu');
+  if (s.menu === 'top') return split('col', sz.menuTop, leaf('menu'), center);
+  return s.menu === 'left' ? split('row', sz.menuSide, leaf('menu'), center) : split('row', 1 - sz.menuSide, center, leaf('menu'));
 }
 
 export function loadState(w, h) {
   const d = defaultState(w, h);
-  for (const key of [STORAGE_KEY, OLD_STORAGE_KEY]) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      const r = s && finish(s, cleanTree(s.tree));
+      if (r) return r;
+    }
+  } catch { /* ignore */ }
+  for (const key of [V3_KEY, V2_KEY]) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
-      const s = readState(raw, d);
-      if (s) return s;
+      const s = JSON.parse(raw);
+      if (!s || !['top', 'left', 'right'].includes(s.menu) || !['top', 'bottom'].includes(s.tracks) || typeof s.fretFirst !== 'boolean') continue;
+      const mini = { ...(s.minimized || {}) };
+      if (s.menuCollapsed && s.menu !== 'top') mini.menu = true;
+      const r = finish({ ...s, minimized: mini }, legacyTree(s, d));
+      if (r) return r;
     } catch { /* ignore */ }
   }
   return d;
@@ -78,68 +119,109 @@ export function saveState(s) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 export function clearSavedState() {
-  try { localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(OLD_STORAGE_KEY); } catch { /* ignore */ }
+  try { [STORAGE_KEY, V3_KEY, V2_KEY].forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
 }
 
 export const isFloating = (st, id) => !!st.floating[id];
 
-// Tree of the DOCKED panels (floating ones leave the tree and the others take their space).
-// Split nodes carry `key` (which size they edit) and `inv` (ratio is the share of the second
-// child, so a pointer ratio must be flipped before storing). Returns null if nothing is docked.
-export function buildTree(st) {
-  const docked = (id) => !st.floating[id];
-  const leaf = (id) => ({ id, min: !!st.minimized[id] });
-  const { sizes } = st;
+// ---- tree helpers ----
+const allMinimized = (n, mini) => (n.id ? !!mini[n.id] : allMinimized(n.a, mini) && allMinimized(n.b, mini));
 
-  let main = null;
-  const f = docked('fretboard'), t = docked('timeline');
-  if (f && t) {
-    main = {
-      dir: 'row', key: 'fret', inv: !st.fretFirst,
-      ratio: st.fretFirst ? sizes.fret : 1 - sizes.fret,
-      a: leaf(st.fretFirst ? 'fretboard' : 'timeline'),
-      b: leaf(st.fretFirst ? 'timeline' : 'fretboard'),
-    };
-  } else if (f) main = leaf('fretboard');
-  else if (t) main = leaf('timeline');
-
-  let center = main;
-  if (docked('tracks')) {
-    const tr = leaf('tracks');
-    if (!main) center = tr;
-    else if (st.tracks === 'top') center = { dir: 'col', key: 'tracks', inv: false, ratio: sizes.tracks, a: tr, b: main };
-    else center = { dir: 'col', key: 'tracks', inv: true, ratio: 1 - sizes.tracks, a: main, b: tr };
-  }
-
-  if (!docked('menu')) return center;
-  const me = leaf('menu');
-  if (!center) return me;
-  if (st.menu === 'top') return { dir: 'col', key: 'menuTop', inv: false, ratio: sizes.menuTop, a: me, b: center };
-  return st.menu === 'left'
-    ? { dir: 'row', key: 'menuSide', inv: false, ratio: sizes.menuSide, a: me, b: center }
-    : { dir: 'row', key: 'menuSide', inv: true, ratio: 1 - sizes.menuSide, a: center, b: me };
+export function removeLeaf(n, id) {
+  if (!n) return null;
+  if (n.id) return n.id === id ? null : n;
+  const a = removeLeaf(n.a, id), b = removeLeaf(n.b, id);
+  if (!a) return b;
+  if (!b) return a;
+  return a === n.a && b === n.b ? n : { ...n, a, b };
 }
 
-const allMinimized = (n) => (n.id ? !!n.min : allMinimized(n.a) && allMinimized(n.b));
+function insertBeside(n, targetId, id, side) {
+  if (n.id) {
+    if (n.id !== targetId) return n;
+    const dir = side === 'n' || side === 's' ? 'col' : 'row';
+    return side === 'n' || side === 'w' ? split(dir, 0.5, leaf(id), n) : split(dir, 0.5, n, leaf(id));
+  }
+  const a = insertBeside(n.a, targetId, id, side), b = insertBeside(n.b, targetId, id, side);
+  return a === n.a && b === n.b ? n : { ...n, a, b };
+}
+
+function replaceLeaf(n, targetId, id) {
+  if (!n) return n;
+  if (n.id) return n.id === targetId ? leaf(id) : n;
+  return { ...n, a: replaceLeaf(n.a, targetId, id), b: replaceLeaf(n.b, targetId, id) };
+}
+
+function swapLeaves(n, x, y) {
+  if (n.id) return n.id === x ? leaf(y) : n.id === y ? leaf(x) : n;
+  return { ...n, a: swapLeaves(n.a, x, y), b: swapLeaves(n.b, x, y) };
+}
+
+export function setRatioAt(st, path, ratio) {
+  const go = (n, i) => {
+    if (i === path.length) return { ...n, ratio };
+    return path[i] === 'a' ? { ...n, a: go(n.a, i + 1) } : { ...n, b: go(n.b, i + 1) };
+  };
+  return st.tree ? { ...st, tree: go(st.tree, 0) } : st;
+}
+
+export function findPath(n, id, path = '') {
+  if (!n) return null;
+  if (n.id) return n.id === id ? path : null;
+  const a = findPath(n.a, id, path + 'a');
+  return a !== null ? a : findPath(n.b, id, path + 'b');
+}
+
+// Narrow a panel from one of its outer edges: its slot becomes [panel | empty slot]. Returns the new
+// state and the path of the new split.
+export function shrinkFromEdge(st, id, side) {
+  const path = findPath(st.tree, id);
+  if (path === null) return null;
+  const dir = side === 'n' || side === 's' ? 'col' : 'row';
+  const first = side === 'n' || side === 'w';
+  const node = first ? split(dir, 0.97, newEmpty(), leaf(id)) : split(dir, 0.97, leaf(id), newEmpty());
+  // for 'first' sides the empty slot is `a`, so a ratio near 0 is "all panel"
+  if (first) node.ratio = 0.03;
+  const go = (n, i) => {
+    if (i === path.length) return node;
+    return path[i] === 'a' ? { ...n, a: go(n.a, i + 1) } : { ...n, b: go(n.b, i + 1) };
+  };
+  return { st: { ...st, tree: go(st.tree, 0) }, path, dir };
+}
+
+// Remove empty slots that were dragged (almost) shut.
+export function pruneEmpty(st) {
+  const go = (n) => {
+    if (n.id) return n;
+    const a = go(n.a), b = go(n.b);
+    if (a.id && isEmptyId(a.id) && n.ratio < 0.04) return b;
+    if (b.id && isEmptyId(b.id) && n.ratio > 0.96) return a;
+    return { ...n, a, b };
+  };
+  return st.tree ? { ...st, tree: go(st.tree) } : st;
+}
+
+export function findParent(n, id, path = '') {
+  if (!n || n.id) return null;
+  if (n.a.id === id) return { path, node: n, isA: true };
+  if (n.b.id === id) return { path, node: n, isA: false };
+  return findParent(n.a, id, path + 'a') || findParent(n.b, id, path + 'b');
+}
 
 // Rects are fractions of the whole dock area; `size` is its size in px (a minimised panel is a
 // fixed-size strip, so the strip's share depends on it). Returns { panels, gutters }.
-export function computeRects(node, size = { w: 1400, h: 900 }, rect = { x: 0, y: 0, w: 1, h: 1 }, out = { panels: {}, gutters: [] }) {
+export function computeRects(node, size = { w: 1400, h: 900 }, mini = {}, rect = { x: 0, y: 0, w: 1, h: 1 }, path = '', out = { panels: {}, gutters: [] }) {
   if (!node) return out;
   if (node.id) { out.panels[node.id] = rect; return out; }
   const { dir } = node;
-  const aMin = allMinimized(node.a), bMin = allMinimized(node.b);
+  const aMin = allMinimized(node.a, mini), bMin = allMinimized(node.b, mini);
   let ratio = node.ratio;
   let fixed = false;
-  if (aMin !== bMin) {
-    // one side is only a title strip: it keeps its strip size and the other side gets the rest
+  if (aMin || bMin) {
     const dim = dir === 'row' ? rect.w * size.w : rect.h * size.h;
     const strip = Math.min(0.5, STRIP_PX / Math.max(1, dim));
-    ratio = aMin ? strip : 1 - strip;
-    fixed = true;
-  } else if (aMin && bMin) {
-    const dim = dir === 'row' ? rect.w * size.w : rect.h * size.h;
-    ratio = Math.min(0.5, STRIP_PX / Math.max(1, dim));
+    if (aMin && bMin) ratio = strip;
+    else ratio = aMin ? strip : 1 - strip;
     fixed = true;
   }
   let ra, rb;
@@ -150,53 +232,51 @@ export function computeRects(node, size = { w: 1400, h: 900 }, rect = { x: 0, y:
     ra = { x: rect.x, y: rect.y, w: rect.w, h: rect.h * ratio };
     rb = { x: rect.x, y: rect.y + ra.h, w: rect.w, h: rect.h - ra.h };
   }
-  if (!fixed) out.gutters.push({ key: node.key, inv: node.inv, dir, rect, ratio });
-  computeRects(node.a, size, ra, out);
-  computeRects(node.b, size, rb, out);
+  if (!fixed) out.gutters.push({ path, dir, rect, ratio });
+  computeRects(node.a, size, mini, ra, path + 'a', out);
+  computeRects(node.b, size, mini, rb, path + 'b', out);
   return out;
 }
 
 // Where would dropping the dragged panel at pointer (fx, fy: fractions of the dock area) put it?
-// Returns { apply(state) -> state, rect } or null. Only docked panels are drop targets.
+// Returns { apply(state) -> state, rect } or null. Edge of another panel: split it; its middle:
+// swap; the outer border of the dock: a new full-width/height panel on that side.
 export function dropTarget(dragId, st, panels, fx, fy) {
-  if (dragId === 'menu') {
-    if (fx < 0.18) return { rect: { x: 0, y: 0, w: 0.18, h: 1 }, apply: (s) => ({ ...s, menu: 'left' }) };
-    if (fx > 0.82) return { rect: { x: 0.82, y: 0, w: 0.18, h: 1 }, apply: (s) => ({ ...s, menu: 'right' }) };
-    if (fy < 0.15) return { rect: { x: 0, y: 0, w: 1, h: 0.15 }, apply: (s) => ({ ...s, menu: 'top' }) };
-    return null;
+  if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return null;
+  const others = Object.keys(panels).filter(id => id !== dragId);
+  const hasPanel = others.some(id => !isEmptyId(id));
+  if (!hasPanel && !others.length) return null;
+  const root = (side, rect) => ({
+    rect,
+    apply: (s) => {
+      const t = removeLeaf(s.tree, dragId);
+      const dir = side === 'n' || side === 's' ? 'col' : 'row';
+      const tree = !t ? leaf(dragId)
+        : side === 'n' || side === 'w' ? split(dir, 0.2, leaf(dragId), t) : split(dir, 0.8, t, leaf(dragId));
+      return { ...s, tree };
+    },
+  });
+  const B = 0.03;
+  if (fx < B) return root('w', { x: 0, y: 0, w: 0.2, h: 1 });
+  if (fx > 1 - B) return root('e', { x: 0.8, y: 0, w: 0.2, h: 1 });
+  if (fy < B) return root('n', { x: 0, y: 0, w: 1, h: 0.2 });
+  if (fy > 1 - B) return root('s', { x: 0, y: 0.8, w: 1, h: 0.2 });
+  const target = others.find((id) => {
+    const r = panels[id];
+    return fx >= r.x && fx <= r.x + r.w && fy >= r.y && fy <= r.y + r.h;
+  });
+  if (!target) return null;
+  const r = panels[target];
+  if (isEmptyId(target)) return { rect: r, apply: (s) => ({ ...s, tree: replaceLeaf(removeLeaf(s.tree, dragId), target, dragId) }) };
+  const u = (fx - r.x) / r.w, v = (fy - r.y) / r.h;
+  const dists = { w: u, e: 1 - u, n: v, s: 1 - v };
+  const side = Object.keys(dists).reduce((a, b) => (dists[a] <= dists[b] ? a : b));
+  if (dists[side] > 0.3) {
+    return { rect: r, apply: (s) => ({ ...s, tree: swapLeaves(s.tree, dragId, target) }) };
   }
-  const f = panels.fretboard, t = panels.timeline;
-  if (dragId === 'tracks') {
-    const rows = [f, t].filter(Boolean);
-    if (!rows.length) return null;
-    const row = {
-      x: Math.min(...rows.map(r => r.x)), y: rows[0].y,
-      w: Math.max(...rows.map(r => r.x + r.w)) - Math.min(...rows.map(r => r.x)), h: rows[0].h,
-    };
-    if (fx < row.x || fx > row.x + row.w) return null;
-    const mid = row.y + row.h / 2;
-    return fy < mid
-      ? { rect: { ...row, h: row.h / 2 }, apply: (s) => ({ ...s, tracks: 'top' }) }
-      : { rect: { ...row, y: mid, h: row.h / 2 }, apply: (s) => ({ ...s, tracks: 'bottom' }) };
-  }
-  // fretboard / timeline: flip the order by dropping on the left or right half of the pair
-  if (!f || !t) return null;
-  const row = {
-    x: Math.min(f.x, t.x), y: f.y,
-    w: Math.max(f.x + f.w, t.x + t.w) - Math.min(f.x, t.x), h: f.h,
-  };
-  if (fx < row.x || fx > row.x + row.w || fy < row.y || fy > row.y + row.h) return null;
-  const left = fx < row.x + row.w / 2;
-  const fretLeft = dragId === 'fretboard' ? left : !left;
-  return {
-    rect: left ? { ...row, w: row.w / 2 } : { ...row, x: row.x + row.w / 2, w: row.w / 2 },
-    apply: (s) => ({ ...s, fretFirst: fretLeft }),
-  };
-}
-
-export function applyRatio(st, key, inv, ratio) {
-  const v = inv ? 1 - ratio : ratio;
-  return { ...st, sizes: { ...st.sizes, [key]: v } };
+  const rect = side === 'w' ? { ...r, w: r.w / 2 } : side === 'e' ? { ...r, x: r.x + r.w / 2, w: r.w / 2 }
+    : side === 'n' ? { ...r, h: r.h / 2 } : { ...r, y: r.y + r.h / 2, h: r.h / 2 };
+  return { rect, apply: (s) => ({ ...s, tree: insertBeside(removeLeaf(s.tree, dragId), target, dragId, side) }) };
 }
 
 // ---- window actions (each returns a new state) ----
@@ -216,15 +296,32 @@ export function undock(st, id, from) {
   };
   const minimized = { ...st.minimized };
   delete minimized[id]; // a floating window opens at full size
-  return { ...st, floating: { ...st.floating, [id]: rect }, minimized, order: [...st.order.filter(x => x !== id), id] };
+  return {
+    ...st, tree: removeLeaf(st.tree, id), floating: { ...st.floating, [id]: rect }, minimized,
+    order: [...st.order.filter(x => x !== id), id],
+  };
 }
 
-export function dockBack(st, id) {
+// Dock back: split the biggest docked panel along its longer side (you can drag it from there).
+export function dockBack(st, id, panels = {}, size = { w: 1400, h: 900 }) {
   const floating = { ...st.floating };
   delete floating[id];
   const minimized = { ...st.minimized };
   delete minimized[id];
-  return { ...st, floating, minimized, order: st.order.filter(x => x !== id) };
+  let tree;
+  const all = collectIds(st.tree);
+  const ids = all.filter(i => !isEmptyId(i));
+  const emptySlot = all.find(isEmptyId);
+  if (emptySlot) tree = replaceLeaf(st.tree, emptySlot, id);
+  else if (!st.tree || !ids.length) tree = leaf(id);
+  else {
+    const area = (pid) => { const r = panels[pid]; return r ? r.w * size.w * r.h * size.h : 0; };
+    const big = ids.filter(p => !st.minimized[p]).sort((a, b) => area(b) - area(a))[0] || ids[0];
+    const r = panels[big];
+    const wide = r ? r.w * size.w >= r.h * size.h : true;
+    tree = insertBeside(st.tree, big, id, wide ? 'e' : 's');
+  }
+  return { ...st, tree, floating, minimized, order: st.order.filter(x => x !== id) };
 }
 
 export function raiseFloating(st, id) {
