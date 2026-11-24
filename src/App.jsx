@@ -1412,8 +1412,8 @@ setPositionModeValue(null);
             const leftNote = { ...note, duration: leftDur };
             const rightNote = { ...note, beat: beat, duration: rightDur };
             newNotes.push(leftNote, rightNote);
-            newSelected.add(newNotes.length - 2);
-            newSelected.add(newNotes.length - 1);
+            // Select only the shorter piece (the right one when they are equal)
+            newSelected.add(leftDur < rightDur - 1e-9 ? newNotes.length - 2 : newNotes.length - 1);
           } else {
             newNotes.push(note);
           }
