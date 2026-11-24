@@ -11,7 +11,7 @@ import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
 import { putAudioFile, getAudioFile, deleteAudioFile } from './utils/audioStore';
 import { parseMidi, midiToGuitarNotes } from './utils/midiImport';
-import { stateFromUrl, writeStateToUrl, saveChordLibrary, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
+import { stateFromUrl, writeStateToUrl, getSessionState, saveAutosave, loadAutosave, listColorSchemes, loadSessionSchemeState, saveSessionSchemeState } from './utils/storage';
 import { loadHotkeys, matchesHotkey, formatHotkey, REFERENCE_ACTIONS } from './utils/hotkeys';
 import { refingerNotes, refingerNotesOctave, countInPosition, bestPosition } from './utils/position';
 import { detectBeats, fitTempo } from './utils/beatDetect';
@@ -23,7 +23,6 @@ import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
-import ChordPalette from './components/ChordPalette';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
 import { Metronome } from 'lucide-react';
@@ -466,7 +465,6 @@ function App() {
   const hotkeysRef = useRef(hotkeys);
   hotkeysRef.current = hotkeys;
   const [hoveredNote, setHoveredNote] = useState(null); // { stringIndex, fret }
-  const [chordRoot, setChordRoot] = useState(null); // { stringIndex, fret } — locked by click on piano key
   const [showCheatSheet, setShowCheatSheet] = useState(false);
   const [showSubdivDial, setShowSubdivDial] = useState(false);
   const subdivDialRef = useRef(null);
@@ -477,8 +475,6 @@ function App() {
   const [showMultDial, setShowMultDial] = useState(false);
   const multDialRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
-  const [chordPreview, setChordPreview] = useState(null);
-  const [chordPaletteOpen, setChordPaletteOpen] = useState(false);
   const [showVoiceLeading, setShowVoiceLeading] = useState(false);
   const [voicingPreview, setVoicingPreview] = useState(null); // [{ stringIndex, fret }] for fretboard highlight
   const [confirmClear, setConfirmClear] = useState(false);
@@ -715,9 +711,6 @@ function App() {
         saveCustomPreset(id, preset);
       });
       setInstrumentList(getAllInstruments());
-    }
-    if (data.chordLibrary) {
-      saveChordLibrary(data.chordLibrary);
     }
   }, [setTracksTracked, markAudioMissing, setTrackGroups]);
 
@@ -2249,23 +2242,6 @@ setPositionModeValue(null);
     setSelectedNotes(new Set());
   }, []);
 
-  const handleStampChord = useCallback((chordNotes) => {
-    const beat = selectedBeat;
-    const newNotes = chordNotes.map(cn => ({
-      stringIndex: cn.stringIndex,
-      fret: cn.fret,
-      beat: beat + (cn.beatOffset || 0),
-      duration: cn.duration || noteDuration,
-      velocity: cn.velocity ?? defaultVelocity,
-    }));
-    setNotes(prev => {
-      // Remove existing notes at same string+beat positions
-      const removeKeys = new Set(newNotes.map(n => `${n.stringIndex}_${n.beat}`));
-      const filtered = prev.filter(n => !removeKeys.has(`${n.stringIndex}_${n.beat}`));
-      return [...filtered, ...newNotes];
-    });
-  }, [selectedBeat, noteDuration, defaultVelocity]);
-
   // Track management
   const handleAddTrack = useCallback(() => {
     const num = tracksRef.current.length + 1;
@@ -3265,8 +3241,6 @@ setPositionModeValue(null);
           getNoteColor={getNoteColor}
           hoveredNote={hoveredNote}
           setHoveredNote={setHoveredNote}
-          chordRoot={chordRoot}
-          setChordRoot={setChordRoot}
           verticalScroll={verticalScroll}
           setVerticalScroll={setVerticalScroll}
           machineGunMode={machineGunMode}
@@ -3283,7 +3257,6 @@ setPositionModeValue(null);
           hoverPreviewNotes={hoverPreview.timelineNotes}
           hoverVolume={hoverPreview.volume}
           tupletLines={tupletLines}
-          chordPreview={chordPreview}
           onTimelineHover={(pos) => setHoveredNote(pos)}
           autoScroll={autoScroll}
           markers={markers}
@@ -3321,22 +3294,6 @@ setPositionModeValue(null);
           swungDisplay={swungDisplay}
           activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
         />
-        <div className={`chord-sidebar ${chordPaletteOpen ? 'open' : ''}`}>
-          <button className="chord-sidebar-toggle" onClick={() => setChordPaletteOpen(o => !o)}>
-            {chordPaletteOpen ? '>' : '<'}
-          </button>
-          {chordPaletteOpen && (
-            <ChordPalette
-              notes={notes}
-              selectedNotes={selectedNotes}
-              selectedBeat={selectedBeat}
-              chordRoot={chordRoot}
-              noteDuration={effectiveNoteLength}
-              onStampChord={handleStampChord}
-              onPreviewChange={setChordPreview}
-            />
-          )}
-        </div>
       </div>
       )}
       />

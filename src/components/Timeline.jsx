@@ -32,7 +32,6 @@ export default function Timeline({
   loopStart, loopEnd, setLoopStart, setLoopEnd, loop, setLoop,
   selectedNotes, setSelectedNotes, stringColors, getNoteColor,
   hoveredNote, setHoveredNote,
-  chordRoot, setChordRoot,
   verticalScroll, setVerticalScroll,
   machineGunMode = false,
   defaultVelocity = 0.8,
@@ -53,7 +52,6 @@ export default function Timeline({
   onUpdateMarker,
   onDeleteMarker,
   onResizeDuration,
-  chordPreview,
   autoScroll,
   audioTracks = [],
   selectedClips = new Set(), setSelectedClips = () => {}, onUpdateClips = () => {}, onUpdateSyncPoints = () => {}, tempoMap = null, onAddSyncPointAt = null, onAuditionNotes = null,
@@ -1837,15 +1835,13 @@ export default function Timeline({
             {pianoKeys.map((key) => {
               const isHovered = hoveredNote &&
                 noteToPitchRow(hoveredNote.stringIndex, hoveredNote.fret) === key.pitchRow;
-              const isChordRoot = chordRoot &&
-                noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === key.pitchRow;
               const combos = pitchRowCombos(key.pitchRow);
               // Pick the combo with lowest fret (first position playing)
               const repCombo = combos.reduce((best, c) => (!best || c.fret < best.fret) ? c : best, null);
               return (
                 <div
                   key={key.midi}
-                  className={`piano-key ${key.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''} ${isChordRoot ? 'chord-root' : ''}`}
+                  className={`piano-key ${key.isBlack ? 'black' : 'white'} ${isHovered ? 'hovered' : ''}`}
                   style={{
                     position: 'absolute',
                     top: key.top,
@@ -1859,16 +1855,6 @@ export default function Timeline({
                     if (repCombo) {
                       setHoveredNote({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
                       if (hoverPreviewPiano) playNote(repCombo.stringIndex, repCombo.fret, 0.15, hoverVolume);
-                    }
-                  }}
-                  onClick={() => {
-                    if (repCombo && setChordRoot) {
-                      // Toggle: click same key to deselect
-                      if (chordRoot && noteToPitchRow(chordRoot.stringIndex, chordRoot.fret) === key.pitchRow) {
-                        setChordRoot(null);
-                      } else {
-                        setChordRoot({ stringIndex: repCombo.stringIndex, fret: repCombo.fret });
-                      }
                     }
                   }}
                 >
@@ -2233,20 +2219,6 @@ export default function Timeline({
               }}
             />
           )}
-
-          {/* Chord preview (blinking) */}
-          {chordPreview && selectedBeat !== null && !playing && chordPreview.map((cn, i) => (
-            <div
-              key={`cp-${i}`}
-              className="chord-preview-note"
-              style={{
-                left: beatToX(selectedBeat + (cn.beatOffset || 0), barSubdivisions, cellWidth),
-                top: rowTopPx(cn.stringIndex, cn.fret),
-                width: durationToWidth(selectedBeat + (cn.beatOffset || 0), cn.duration || noteDuration, barSubdivisions, cellWidth),
-                height: rowHeight,
-              }}
-            />
-          ))}
 
           {/* Background track notes (dimmed, non-interactive) */}
           {backgroundNotes.map((note, i) => {
