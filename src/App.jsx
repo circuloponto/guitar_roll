@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, Fragment } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
 import { playNote, playNoteAtTime, playClickAtTime, getAudioContext, getMasterOut, getNoteName, INSTRUMENTS, getAllInstruments, setInstrument, getInstrument, saveCustomPreset, loadUltrabox } from './utils/audio';
@@ -28,7 +28,8 @@ import TrackStrip from './components/TrackStrip';
 import SynthEditor from './components/SynthEditor';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
-import { Metronome } from 'lucide-react';
+import { Metronome, Undo2, Redo2 } from 'lucide-react';
+import { TOOLBAR_ITEMS, TOOLBAR_SIZES, loadToolbar, saveToolbar, defaultToolbar } from './utils/toolbarConfig';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
 import { makeSongId, makeGroupId, nextTabName, GROUP_COLOURS, moveSong as moveSongList, moveGroup as moveGroupList, assignSongToGroup as assignSongList } from './utils/songs';
@@ -491,6 +492,19 @@ function App() {
   const [showMultDial, setShowMultDial] = useState(false);
   const multDialRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
+  // Toolbar customisation: which controls show, their order and size (like FL Studio's toolbar)
+  const [toolbarCfg, setToolbarCfg] = useState(loadToolbar);
+  const [tbMenu, setTbMenu] = useState(null); // right-click menu on the toolbar
+  const changeToolbar = useCallback((patch) => setToolbarCfg(prev => { const n = { ...prev, ...patch }; saveToolbar(n); return n; }), []);
+  useEffect(() => {
+    if (!tbMenu) return undefined;
+    const close = () => setTbMenu(null);
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', key);
+    window.addEventListener('blur', close);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', key); window.removeEventListener('blur', close); };
+  }, [tbMenu]);
   const [showVoiceLeading, setShowVoiceLeading] = useState(false);
   const [voicingPreview, setVoicingPreview] = useState(null); // [{ stringIndex, fret }] for fretboard highlight
   const [confirmClear, setConfirmClear] = useState(false);
@@ -2943,24 +2957,26 @@ setPositionModeValue(null);
     setMarkers(prev => prev.filter(m => m.id !== id));
   }, []);
 
-  return (
-    <div className="app">
-      <Dock
-      menu={(
-      <div className="toolbar">
-        <input
+  // Every toolbar control, by id; which ones show, and in what order, is the toolbar config.
+  const toolbarNodes = {
+    name: (
+<input
           className="project-name"
           value={projectName}
           onChange={(e) => setProjectName(e.target.value)}
           spellCheck={false}
         />
-        <button
+    ),
+    play: (
+<button
           className={`play-btn ${playing ? 'playing' : ''}`}
           onClick={handlePlay}
         >
           {playing ? '⏹ Stop' : '▶ Play'}
         </button>
-        <button
+    ),
+    loop: (
+<button
           className={`tool-btn ${loop ? 'active' : ''}`}
           onClick={toggleLoop}
           title="Loop region: when on, drag the time strip to set, resize or move the loop"
@@ -2968,14 +2984,18 @@ setPositionModeValue(null);
         >
           <CycleIcon size={18} />
         </button>
-        <button
+    ),
+    octaveFit: (
+<button
           className={`tool-btn ${octaveFit ? 'active' : ''}`}
           onClick={() => setOctaveFit(v => { const n = !v; try { localStorage.setItem('guitar-roll-octave-fit', n ? '1' : '0'); } catch {} return n; })}
           title="Octave fit: when you choose a position (P) with notes selected, shift them up or down by whole octaves so they fit it. Changes pitch."
         >
           Octave fit
         </button>
-        <button
+    ),
+    metronome: (
+<button
           className={`tool-btn ${metronome ? 'active' : ''}`}
           onClick={() => setMetronome(m => !m)}
           title="Metronome"
@@ -2983,7 +3003,10 @@ setPositionModeValue(null);
         >
           <Metronome size={18} />
         </button>
-        <span className="toolbar-label">Inst:</span>
+    ),
+    instrument: (
+<>
+<span className="toolbar-label">Inst:</span>
         <select
           className="duration-select"
           value={activeTrack?.instrument || instrument}
@@ -3009,7 +3032,10 @@ setPositionModeValue(null);
             </optgroup>
           ))}
         </select>
-        <button
+</>
+    ),
+    new: (
+<button
           className="tool-btn"
           onClick={() => {
             if (!confirm('Start a new session? Unsaved changes will be lost.')) return;
@@ -3031,7 +3057,9 @@ setPositionModeValue(null);
         >
           New
         </button>
-        <button
+    ),
+    importMidi: (
+<button
           className="tool-btn"
           onClick={() => {
             const input = document.createElement('input');
@@ -3046,15 +3074,22 @@ setPositionModeValue(null);
         >
           Import MIDI
         </button>
-        <button
+    ),
+    settings: (
+<button
           className="tool-btn"
           onClick={() => { setSettingsTab(null); setShowSettings(true); }}
           title="Settings"
         >
           Settings
         </button>
-        <span className="toolbar-separator" />
-        <span className="toolbar-label">Time:</span>
+    ),
+    sep1: (
+<span className="toolbar-separator" />
+    ),
+    timeSig: (
+<>
+<span className="toolbar-label">Time:</span>
         <select
           className="duration-select"
           value={`${timeSignature[0]}/${timeSignature[1]}`}
@@ -3095,7 +3130,11 @@ setPositionModeValue(null);
           <option value="9/8">9/8</option>
           <option value="12/8">12/8</option>
         </select>
-        <span className="toolbar-label">BPM:</span>
+</>
+    ),
+    bpm: (
+<>
+<span className="toolbar-label">BPM:</span>
         <NumberInput
           className="bpm-input"
           value={bpm}
@@ -3103,7 +3142,11 @@ setPositionModeValue(null);
           max={300}
           onChange={setBpm}
         />
-        <span className="toolbar-label">Swing %:</span>
+</>
+    ),
+    swing: (
+<>
+<span className="toolbar-label">Swing %:</span>
         <NumberInput
           className="bpm-input"
           value={Math.round(ratioToAmount(swing / 100) * 100)}
@@ -3112,14 +3155,21 @@ setPositionModeValue(null);
           step={1}
           onChange={(amt) => setSwing(amountToRatio(amt / 100) * 100)}
         />
-        <button className="tool-btn" onClick={() => {
+</>
+    ),
+    clear: (
+<button className="tool-btn" onClick={() => {
           if (notes.length > 0) setConfirmClear(true);
           else handleClear();
         }}>
           Clear
         </button>
-        <span className="toolbar-separator" />
-        <div className="rhythm-cluster">
+    ),
+    sep2: (
+<span className="toolbar-separator" />
+    ),
+    rhythm: (
+<div className="rhythm-cluster">
           <button
             type="button"
             className="rhythm-unit-btn"
@@ -3217,6 +3267,30 @@ setPositionModeValue(null);
             )}
           </div>
         </div>
+    ),
+    undo: (
+      <button className="tool-btn" onClick={undo} title="Undo (Ctrl+Z)" aria-label="Undo"><Undo2 size={18} /></button>
+    ),
+    redo: (
+      <button className="tool-btn" onClick={redo} title="Redo (Ctrl+Y)" aria-label="Redo"><Redo2 size={18} /></button>
+    ),
+  };
+
+  return (
+    <div className="app">
+      <Dock
+      menu={(
+      <div
+        className={`toolbar toolbar-${toolbarCfg.size}`}
+        onContextMenu={(e) => {
+          if (e.target.closest('input, select, textarea')) return;
+          e.preventDefault();
+          setTbMenu({ x: e.clientX, y: e.clientY });
+        }}
+      >
+        {toolbarCfg.order.filter(id => !toolbarCfg.hidden[id]).map(id => (
+          <Fragment key={id}>{toolbarNodes[id]}</Fragment>
+        ))}
       </div>
       )}
       tracks={(
@@ -3542,6 +3616,30 @@ setPositionModeValue(null);
         </div>
       )}
 
+      {tbMenu && (
+        <div
+          className="tab-context-menu"
+          style={{ left: Math.min(tbMenu.x, window.innerWidth - 240), top: Math.min(tbMenu.y, window.innerHeight - 560) }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="tab-context-menu-title">Toolbar</div>
+          {TOOLBAR_ITEMS.filter(i => !i.id.startsWith('sep')).map(i => (
+            <button
+              key={i.id}
+              className={`tab-context-menu-item${toolbarCfg.hidden[i.id] ? '' : ' checked'}`}
+              onClick={() => changeToolbar({ hidden: { ...toolbarCfg.hidden, [i.id]: !toolbarCfg.hidden[i.id] } })}
+            >{i.label}</button>
+          ))}
+          <div className="tab-context-menu-divider" />
+          <div className="tab-context-menu-label">Size</div>
+          {Object.entries(TOOLBAR_SIZES).map(([id, label]) => (
+            <button key={id} className={`tab-context-menu-item${toolbarCfg.size === id ? ' checked' : ''}`} onClick={() => changeToolbar({ size: id })}>{label}</button>
+          ))}
+          <div className="tab-context-menu-divider" />
+          <button className="tab-context-menu-item" onClick={() => { setTbMenu(null); setSettingsTab('toolbar'); setShowSettings(true); }}>Customize toolbar…</button>
+          <button className="tab-context-menu-item" onClick={() => { const d = defaultToolbar(); saveToolbar(d); setToolbarCfg(d); setTbMenu(null); }}>Reset toolbar</button>
+        </div>
+      )}
       {toast && <div className="toast" role="status">{toast}</div>}
       {txBusy && (
         <div className="toast tx-banner" role="status">
@@ -3636,6 +3734,9 @@ setPositionModeValue(null);
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
           txSettings={txSettings}
+          toolbarCfg={toolbarCfg}
+          onToolbarChange={changeToolbar}
+          onToolbarReset={() => { const d = defaultToolbar(); saveToolbar(d); setToolbarCfg(d); }}
           learned={learned}
           onForgetLearning={() => { forgetLearning(); setLearned(null); }}
           onRetrain={(target) => setLearned(retrain(target))}

@@ -3519,3 +3519,35 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .dock-edge-nw { top: -4px; left: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
 .dock-edge-se { bottom: -4px; right: -4px; width: 14px; height: 14px; cursor: nwse-resize; }
 .dock-edge-sw { bottom: -4px; left: -4px; width: 14px; height: 14px; cursor: nesw-resize; }
+
+/* ==========================================================================
+   Customisable toolbar: size presets and the editor in Settings > Toolbar
+   ========================================================================== */
+.toolbar { --tb-h: 32px; }
+.toolbar.toolbar-compact { --tb-h: 26px; gap: 5px; padding-top: 6px; padding-bottom: 6px; min-height: 0; }
+.toolbar.toolbar-large { --tb-h: 42px; gap: 10px; }
+.toolbar .tool-btn, .toolbar .play-btn,
+.toolbar select, .toolbar input[type='number'], .toolbar input[type='text']:not(.project-name),
+.toolbar .bpm-input, .toolbar .duration-select, .toolbar .tuplet-input { height: var(--tb-h); }
+.toolbar.toolbar-compact .tool-btn, .toolbar.toolbar-compact .play-btn { padding: 0 9px; font-size: 11px; }
+.toolbar.toolbar-compact .toolbar-label { font-size: 9px; }
+.toolbar.toolbar-large .tool-btn, .toolbar.toolbar-large .play-btn { padding: 0 18px; font-size: 14px; }
+.toolbar.toolbar-large .toolbar-label { font-size: 12px; }
+.toolbar.toolbar-large .project-name { font-size: 14px; }
+.toolbar.toolbar-large svg { width: 22px; height: 22px; }
+.toolbar.toolbar-compact svg { width: 15px; height: 15px; }
+
+.toolbar-editor { display: flex; flex-direction: column; gap: 3px; max-width: 420px; }
+.toolbar-editor-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  background: var(--raise); border: 1px solid var(--hairline); border-radius: 6px;
+}
+.toolbar-editor-row.off { opacity: 0.55; }
+.toolbar-editor-grip { color: var(--mute); cursor: grab; user-select: none; }
+.toolbar-editor-name { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--soft); cursor: pointer; }
+.toolbar-editor-btn {
+  width: 22px; height: 20px; padding: 0; background: transparent; color: var(--mute);
+  border: 1px solid var(--hairline); border-radius: 4px; cursor: pointer; font-size: 12px;
+}
+.toolbar-editor-btn:hover:not(:disabled) { color: var(--fg); border-color: var(--mute); }
+.toolbar-editor-btn:disabled { opacity: 0.3; cursor: default; }

@@ -8,6 +8,7 @@ import {
 } from '../utils/storage';
 import SynthEditor from './SynthEditor';
 import { SENSITIVITY } from '../utils/transcribe';
+import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
@@ -108,7 +109,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
@@ -641,6 +642,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
 
   const TABS = [
     { id: 'look', label: 'Look & Feel' },
+    { id: 'toolbar', label: 'Toolbar' },
     { id: 'playback', label: 'Playback' },
     { id: 'synth', label: 'Synth' },
     { id: 'transcription', label: 'Transcription' },
@@ -727,6 +729,60 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
             </div>
           </div>
     </>);
+  } else if (activeTab === 'toolbar') {
+    const cfg = toolbarCfg || { order: [], hidden: {}, size: 'normal' };
+    const labelOf = (id) => TOOLBAR_ITEMS.find(i => i.id === id)?.label || id;
+    const move = (from, to) => {
+      if (from === to || to < 0 || to >= cfg.order.length) return;
+      const order = [...cfg.order];
+      const [m] = order.splice(from, 1);
+      order.splice(to, 0, m);
+      onToolbarChange({ order });
+    };
+    pane = (
+      <>
+        <div className="settings-section">
+          <h3>Toolbar</h3>
+          <p className="settings-desc">
+            Choose which controls appear in the toolbar, put them in the order you like (drag a row, or use the arrows),
+            and pick its size. You can also right-click the toolbar itself to switch controls on and off.
+          </p>
+          <div className="settings-row">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }}>
+              Size
+              <select className="duration-select" value={cfg.size} onChange={(e) => onToolbarChange({ size: e.target.value })}>
+                {Object.entries(TOOLBAR_SIZES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </label>
+            <button className="settings-btn" onClick={onToolbarReset}>Reset toolbar</button>
+          </div>
+          <div className="toolbar-editor" style={{ marginTop: 10 }}>
+            {cfg.order.map((id, idx) => (
+              <div
+                key={id}
+                className={`toolbar-editor-row${cfg.hidden[id] ? ' off' : ''}`}
+                draggable
+                onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(idx)); } catch { /* ignore */ } window.__tbDrag = idx; }}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                onDrop={(e) => { e.preventDefault(); const from = window.__tbDrag; window.__tbDrag = null; if (from != null) move(from, idx); }}
+              >
+                <span className="toolbar-editor-grip" title="Drag to reorder">⠿</span>
+                <label className="toolbar-editor-name">
+                  <input
+                    type="checkbox"
+                    checked={!cfg.hidden[id]}
+                    onChange={(e) => onToolbarChange({ hidden: { ...cfg.hidden, [id]: !e.target.checked } })}
+                  />
+                  {labelOf(id)}
+                </label>
+                <button className="toolbar-editor-btn" onClick={() => move(idx, idx - 1)} disabled={idx === 0} aria-label="Move up">↑</button>
+                <button className="toolbar-editor-btn" onClick={() => move(idx, idx + 1)} disabled={idx === cfg.order.length - 1} aria-label="Move down">↓</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    );
   } else if (activeTab === 'transcription') {
     const tx = txSettings || {};
     pane = (
