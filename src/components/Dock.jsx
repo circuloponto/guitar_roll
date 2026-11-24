@@ -47,7 +47,10 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
       const H = el.clientHeight;
       const centerPx = st.menu === 'top' ? H * (1 - st.sizes.menuTop) : H;
       if (!(centerPx > 0)) return;
-      const need = body.scrollHeight + 16 /* handle */ + 10 /* border + padding */;
+      // The content's own height (scrollHeight can't go below the panel's current height, so it
+      // would never let the panel shrink after collapsing).
+      const natural = [...body.children].reduce((sum, c) => sum + c.getBoundingClientRect().height, 0);
+      const need = natural + 16 /* handle */ + 10 /* border + padding */;
       const t = Math.max(0.06, Math.min(0.6, need / centerPx));
       if (Math.abs(t - st.sizes.tracks) > 0.004) commit({ ...st, sizes: { ...st.sizes, tracks: t } });
     });
