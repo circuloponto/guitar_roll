@@ -440,7 +440,7 @@ function App() {
   });
   // Transcription (draft from audio): settings, heat maps, progress
   const [txSettings, setTxSettings] = useState(() => {
-    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true };
+    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true, lowestMidi: 40, octaveDownFilter: true, bassStrength: 0.4 };
     try { return { ...d, ...JSON.parse(localStorage.getItem('guitar-roll-transcribe')) }; } catch { return d; }
   });
   const [pitchHeats, setPitchHeats] = useState({}); // { [audioTrackId]: analysis } for heat maps being shown
@@ -2300,6 +2300,7 @@ setPositionModeValue(null);
       await new Promise(r => setTimeout(r, 30)); // let the message paint before the (synchronous) grid work
       const events = await extractNoteEvents(analysis, {
         sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
+        lowestMidi: txSettings.lowestMidi, octaveDownFilter: txSettings.octaveDownFilter, bassStrength: txSettings.bassStrength,
       });
       notes = buildDraftNotes(events, {
         track, map: tempoMapRef.current.forTrack(track), barSubs: barSubsRef.current, chordMs: txSettings.chordMs,

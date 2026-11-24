@@ -182,14 +182,17 @@ export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, 
 }
 
 // Note events from the activations: [{ start, end, midi, amp }] in seconds of the audio file.
-export async function extractNoteEvents(analysis, { sensitivity = 'balanced', minNoteMs = 60, harmonicFilter = true } = {}) {
+export async function extractNoteEvents(analysis, {
+  sensitivity = 'balanced', minNoteMs = 60, harmonicFilter = true,
+  lowestMidi = 40, octaveDownFilter = true, bassStrength = 0.4,
+} = {}) {
   await new Promise(r => setTimeout(r, 0)); // let any progress message paint first
   const preset = SENSITIVITY[sensitivity] || SENSITIVITY.balanced;
   const minFrames = Math.max(2, Math.round((minNoteMs / 1000) * FPS));
   // guitar range: E2 (MIDI 40) up to E6 (MIDI 88, fret 24 on the high string)
   const notes = decodeNotes(analysis.frames, analysis.onsets, {
     onsetThresh: preset.onsetThresh, frameThresh: preset.frameThresh, minLen: minFrames,
-    minIdx: 40 - MIDI_OFFSET, maxIdx: 88 - MIDI_OFFSET,
+    minIdx: Math.max(40, lowestMidi) - MIDI_OFFSET, maxIdx: 88 - MIDI_OFFSET,
   });
   const events = notes
     .map(n => ({
@@ -199,7 +202,52 @@ export async function extractNoteEvents(analysis, { sensitivity = 'balanced', mi
       amp: n.amplitude,
     }))
     .sort((a, b) => a.start - b.start || a.midi - b.midi);
-  return harmonicFilter ? suppressHarmonics(events) : events;
+  let out = harmonicFilter ? suppressHarmonics(events) : events;
+  if (octaveDownFilter) out = suppressOctaveDown(out);
+  if (bassStrength > 0) out = suppressWeakBass(out, { ratio: bassStrength });
+  return out;
+}
+
+// Events grouped by pitch, sorted by start, so "is there a note at pitch P around time T" is cheap.
+function indexByPitch(events) {
+  const by = new Map();
+  for (const e of events) { if (!by.has(e.midi)) by.set(e.midi, []); by.get(e.midi).push(e); }
+  for (const list of by.values()) list.sort((a, b) => a.start - b.start);
+  return by;
+}
+function nearbyAt(by, midi, e, windowSec) {
+  const list = by.get(midi);
+  if (!list) return [];
+  let lo = 0, hi = list.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (list[mid].start < e.start - windowSec) lo = mid + 1; else hi = mid; }
+  const out = [];
+  for (let i = lo; i < list.length && list[i].start <= e.start + windowSec; i++) out.push(list[i]);
+  return out;
+}
+
+// "Octave-down ghosts": the model sometimes adds the pitch an octave (or two) BELOW a real note.
+// Drop a low note when the same pitch class sounds higher at the same moment and clearly stronger.
+// A deliberate octave pair has two notes of similar strength, so those stay.
+export function suppressOctaveDown(events, { windowSec = 0.08, ratio = 0.75 } = {}) {
+  const by = indexByPitch(events);
+  return events.filter(e => {
+    for (const up of [12, 24]) {
+      for (const f of nearbyAt(by, e.midi + up, e, windowSec)) {
+        if (f.end < e.start || f.start > e.end) continue;
+        if (e.amp < f.amp * ratio) return false;
+      }
+    }
+    return true;
+  });
+}
+
+// Rumble, hum and ringing open strings are faint but low: below E3, a note must be at least
+// `ratio` as strong as the typical note of the recording.
+export function suppressWeakBass(events, { belowMidi = 52, ratio = 0.4 } = {}) {
+  if (!events.length) return events;
+  const amps = events.map(e => e.amp).sort((a, b) => a - b);
+  const typical = amps[Math.floor(amps.length / 2)];
+  return events.filter(e => e.midi >= belowMidi || e.amp >= typical * ratio);
 }
 
 // Overtones of a plucked string show up as weaker notes above the real one (octave, octave+fifth,

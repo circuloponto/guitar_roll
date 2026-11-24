@@ -767,7 +767,35 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               Ignore overtones (weak notes an octave or more above a stronger note)
             </label>
           </div>
+          <span className="settings-sublabel" style={{ marginTop: 12 }}>Too many bass notes?</span>
+          <div className="settings-row" style={{ marginTop: 4 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="Notes below this are ignored">
+              Lowest note
+              <select className="duration-select" value={tx.lowestMidi ?? 40} onChange={(e) => onTxSettingsChange({ lowestMidi: Number(e.target.value) })}>
+                <option value={40}>E2 (open low E)</option>
+                <option value={43}>G2</option>
+                <option value={45}>A2 (open A string)</option>
+                <option value={47}>B2</option>
+                <option value={50}>D3 (open D string)</option>
+                <option value={52}>E3</option>
+                <option value={55}>G3 (open G string)</option>
+              </select>
+            </label>
+          </div>
           <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="Below E3 a note must be at least this strong compared with the typical note. 0 = off">
+              Bass strength needed
+              <input type="range" min={0} max={100} step={5} value={Math.round((tx.bassStrength ?? 0.4) * 100)} onChange={(e) => onTxSettingsChange({ bassStrength: Number(e.target.value) / 100 })} style={{ width: 140 }} />
+              <span style={{ fontSize: 12, color: 'var(--mute)', minWidth: 48 }}>{Math.round((tx.bassStrength ?? 0.4) * 100)}%</span>
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }} title="The model sometimes adds the pitch an octave below a real note. Deliberate octave pairs of equal strength are kept either way">
+              <input type="checkbox" checked={tx.octaveDownFilter ?? true} onChange={(e) => onTxSettingsChange({ octaveDownFilter: e.target.checked })} />
+              Ignore a weak note an octave below a stronger one
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 14 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
               <input type="checkbox" checked={tx.heatAfter ?? true} onChange={(e) => onTxSettingsChange({ heatAfter: e.target.checked })} />
               Show the pitch heat map behind the roll after transcribing
