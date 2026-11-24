@@ -17,7 +17,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -692,6 +692,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
         {/* An open string that is sounding (note at the playhead, or playing) glows in its scheme color */}
         {(() => {
           const open = new Map();
+          selectedExtraNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: false }); });
           activeNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: false }); });
           playingNotes.forEach(n => { if (n.fret === 0) open.set(n.stringIndex, { note: n, live: true }); });
           const nutTop = cellTopPx(1);
@@ -798,6 +799,28 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
               pointerEvents: 'none',
               zIndex: 7,
             }} />
+          );
+        })}
+
+        {/* Selected notes that are not at the playhead (setting: Fretboard > Selection) */}
+        {selectedExtraNotes.map((note, i) => {
+          const color = getNoteColor(note);
+          const left = `${PADDING_LEFT + (note.stringIndex / (NUM_STRINGS - 1)) * (100 - PADDING_LEFT - PADDING_RIGHT)}%`;
+          return (
+            <div key={`selx-${i}`} style={{ pointerEvents: 'none' }}>
+              <div style={{
+                position: 'absolute', left, top: cellCenterPx(note.fret), width: 34, height: 16, borderRadius: 8,
+                background: '#000', transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 2,
+              }} />
+              <div style={{
+                position: 'absolute', left, top: cellCenterPx(note.fret), width: 32, height: 12, borderRadius: 6,
+                background: color, opacity: 0.85, transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 6,
+              }} />
+              <div style={{
+                position: 'absolute', left, top: cellCenterPx(note.fret), width: 38, height: 18, borderRadius: 8,
+                border: '2px dashed #fff', background: 'transparent', transform: 'translate(-50%, -50%) rotate(-50deg)', zIndex: 8,
+              }} />
+            </div>
           );
         })}
 

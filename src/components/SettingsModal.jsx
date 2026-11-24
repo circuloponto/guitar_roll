@@ -107,7 +107,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, initialTab, synthInstrument, onSynthInstrumentChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
@@ -762,6 +762,18 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                   {label}
                 </label>
               ))}
+            </div>
+
+            <span className="settings-sublabel">Selection</span>
+            <div className="settings-row">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showSelectedOnFretboard ?? true}
+                  onChange={(e) => onShowSelectedOnFretboardChange(e.target.checked)}
+                />
+                Show selected notes on the fretboard
+              </label>
             </div>
 
             <span className="settings-sublabel">Input behavior</span>

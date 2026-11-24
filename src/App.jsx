@@ -424,6 +424,10 @@ function App() {
       return saved === null ? true : saved === 'true';
     } catch { return true; }
   });
+  // Selected notes (from the timeline) also show on the fretboard, wherever the playhead is.
+  const [showSelectedOnFretboard, setShowSelectedOnFretboard] = useState(() => {
+    try { return localStorage.getItem('guitar-roll-show-selected-fretboard') !== 'false'; } catch { return true; }
+  });
   const [fingeringMode, setFingeringMode] = useState(false);
   const fingeringModeRef = useRef(false);
   const [timelineZoom, setTimelineZoom] = useState(1);
@@ -3184,6 +3188,9 @@ setPositionModeValue(null);
           setSelectedBeat={setSelectedBeat}
           fretboardAutoForward={fretboardAutoForward}
           swing={swing}
+          selectedExtraNotes={showSelectedOnFretboard && selectedNotes.size > 0 && !playing
+            ? [...selectedNotes].map(idx => notes[idx]).filter(n => n && !(selectedBeat >= n.beat && selectedBeat < n.beat + (n.duration || 1)))
+            : []}
           swungDisplay={swungDisplay}
           activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
         />
@@ -3422,6 +3429,8 @@ setPositionModeValue(null);
           fretboardAutoForward={fretboardAutoForward}
           onFretboardAutoForwardChange={(v) => { setFretboardAutoForward(v); localStorage.setItem('guitar-roll-fretboard-auto-forward', String(v)); }}
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
+          showSelectedOnFretboard={showSelectedOnFretboard}
+          onShowSelectedOnFretboardChange={(v) => { setShowSelectedOnFretboard(v); try { localStorage.setItem('guitar-roll-show-selected-fretboard', String(v)); } catch { /* ignore */ } }}
           onFretboardAutoForwardExcludeAdjacentChange={(v) => { setFretboardAutoForwardExcludeAdjacent(v); localStorage.setItem('guitar-roll-fretboard-auto-forward-exclude-adjacent', String(v)); }}
           showTimelineVerticalZoomButtons={showTimelineVerticalZoomButtons}
           onShowTimelineVerticalZoomButtonsChange={(v) => {
