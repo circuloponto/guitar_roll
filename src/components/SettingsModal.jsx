@@ -108,7 +108,7 @@ function getSessionSchemes(appState, savedSchemes) {
   });
 }
 
-export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, txSettings, onTxSettingsChange, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
+export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab, synthInstrument, onSynthInstrumentChange }) {
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
@@ -813,6 +813,48 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
               <span style={{ fontSize: 12, color: 'var(--mute)', minWidth: 20 }}>{tx.maxPerAttack ?? 6}</span>
             </label>
           </div>
+          <span className="settings-sublabel" style={{ marginTop: 14 }}>What it has learned from you</span>
+          <p className="settings-desc" style={{ marginTop: 4 }}>
+            Write a stretch of a recording by hand, then right-click the audio track and choose "Teach it from my notes…".
+            It compares its own findings with yours and learns which of its notes to trust, so later drafts have fewer
+            false notes. It prefers missing a note to inventing one. Everything stays in this browser.
+          </p>
+          <div className="settings-row">
+            <span style={{ fontSize: 13, color: 'var(--soft)' }}>
+              {learned
+                ? `Taught with ${learned.samples} candidates (${learned.positives} real). On those it keeps ${Math.round(learned.recall * 100)}% of the real notes and ${Math.round(learned.precision * 100)}% of what it keeps is right.`
+                : 'Not taught yet.'}
+            </span>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={tx.useLearned ?? true} onChange={(e) => onTxSettingsChange({ useLearned: e.target.checked })} />
+              Use what it learned when transcribing
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="How sure it must be before a note is kept. Higher = fewer notes, fewer mistakes">
+              Aim for
+              <select className="duration-select" value={tx.targetPrecision ?? 0.85} onChange={(e) => { const v = Number(e.target.value); onTxSettingsChange({ targetPrecision: v }); onRetrain(v); }}>
+                <option value={0.75}>75% of its notes right (more notes)</option>
+                <option value={0.85}>85% right</option>
+                <option value={0.92}>92% right</option>
+                <option value={0.97}>97% right (only the surest)</option>
+              </select>
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)' }} title="Nudge how strict it is, without retraining">
+              Fine tune
+              <span style={{ fontSize: 11, color: 'var(--mute)' }}>more notes</span>
+              <input type="range" min={-20} max={20} step={2} value={Math.round((tx.learnStrictness ?? 0) * 100)} onChange={(e) => onTxSettingsChange({ learnStrictness: Number(e.target.value) / 100 })} style={{ width: 120 }} />
+              <span style={{ fontSize: 11, color: 'var(--mute)' }}>fewer notes</span>
+            </label>
+          </div>
+          <div className="settings-row" style={{ marginTop: 8 }}>
+            <button className="settings-btn" onClick={() => { if (window.confirm('Forget everything it has learned from your notes?')) onForgetLearning(); }} disabled={!learned}>Forget what it learned</button>
+          </div>
+
           <div className="settings-row" style={{ marginTop: 14 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--soft)', cursor: 'pointer' }}>
               <input type="checkbox" checked={tx.heatAfter ?? true} onChange={(e) => onTxSettingsChange({ heatAfter: e.target.checked })} />

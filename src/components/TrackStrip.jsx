@@ -12,7 +12,7 @@ export default function TrackStrip({
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
   trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
   onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag,
-  onTranscribe, onToggleHeat, heatTracks = {},
+  onTranscribe, onLearn, onToggleHeat, heatTracks = {},
   onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
@@ -479,6 +479,7 @@ export default function TrackStrip({
               <>
                 <div className="tab-context-menu-divider" />
                 <button className="tab-context-menu-item" onClick={() => { onTranscribe(t.id); close(); }}>Transcribe to a draft track…</button>
+                <button className="tab-context-menu-item" onClick={() => { onLearn(t.id); close(); }} title="Compare the analysis with the notes you wrote by hand on a notes track, and learn which of its notes to trust">Teach it from my notes…</button>
                 <button className="tab-context-menu-item" onClick={() => { onToggleHeat(t.id); close(); }}>
                   {heatTracks[t.id] ? 'Hide pitch heat map' : 'Show pitch heat map'}
                 </button>

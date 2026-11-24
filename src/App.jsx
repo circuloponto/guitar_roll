@@ -6,7 +6,9 @@ import { isUltrabox, ultraboxReady, prewarmNotes } from './utils/ultrabox';
 import { groupTracks as groupTracksFn, ungroupTracks as ungroupTracksFn, normalizeGroups, tidyTrackGroups } from './utils/trackGroups';
 import { NUM_BARS, SUBDIVISIONS, BPM as DEFAULT_BPM, CELL_WIDTH } from './utils/constants';
 import { NOTE_FADE_PRESETS } from './utils/noteFade';
-import { analyzeAudio, extractNoteEvents, buildDraftNotes, getAnalysis } from './utils/transcribe';
+import { analyzeAudio, extractNoteEvents, buildDraftNotes, getAnalysis, rawCandidates } from './utils/transcribe';
+import { computeFeatures, matchToTruth, loadSamples, saveSamples, loadLearned, retrain, forgetLearning } from './utils/transcribeLearn';
+import { clipEndBeat as clipEndBeatFn } from './utils/audioClips';
 import { xToBeat, defaultBarSubdivisions, totalColumns, beatToBar, beatToTime, colDurationAtBeat, remapNotes, barStartBeats, applySwingBeat, amountToRatio, ratioToAmount } from './utils/barLayout';
 import { loadAudioFile, computeWaveformPeaks } from './utils/audioFile';
 import { ensureReady as ensureStretchReady, createStretchNode, setStretchTempo, scheduleStretchTempo, resetStretch } from './utils/rubberbandStretch';
@@ -440,7 +442,7 @@ function App() {
   });
   // Transcription (draft from audio): settings, heat maps, progress
   const [txSettings, setTxSettings] = useState(() => {
-    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true, lowestMidi: 40, octaveDownFilter: true, bassStrength: 0.4, attackGate: 'bass', maxPerAttack: 6 };
+    const d = { sensitivity: 'balanced', minNoteMs: 60, chordMs: 45, harmonicFilter: true, heatAfter: true, lowestMidi: 40, octaveDownFilter: true, bassStrength: 0.4, attackGate: 'bass', maxPerAttack: 6, useLearned: true, learnStrictness: 0, targetPrecision: 0.85 };
     try { return { ...d, ...JSON.parse(localStorage.getItem('guitar-roll-transcribe')) }; } catch { return d; }
   });
   const [pitchHeats, setPitchHeats] = useState({}); // { [audioTrackId]: analysis } for heat maps being shown
@@ -448,6 +450,7 @@ function App() {
   const [txBusy, setTxBusy] = useState(null);
   const [txError, setTxError] = useState(null);
   const txAbortRef = useRef(null);
+  const [learned, setLearned] = useState(() => loadLearned()); // what the transcriber has been taught
   const [txNote, setTxNote] = useState(null); // the sanity line shown after a draft is made       // { label, percent } while the model runs
   // Playback visuals: how long notes take to fade out on the fretboard (off | short | normal | long)
   const [noteFade, setNoteFade] = useState(() => {
@@ -2304,6 +2307,7 @@ setPositionModeValue(null);
         sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
         lowestMidi: txSettings.lowestMidi, octaveDownFilter: txSettings.octaveDownFilter, bassStrength: txSettings.bassStrength,
         attackGate: txSettings.attackGate,
+        learned: txSettings.useLearned ? learned : null, learnStrictness: txSettings.learnStrictness,
       });
       eventStats = events.stats;
       notes = buildDraftNotes(events, {
@@ -2356,7 +2360,86 @@ setPositionModeValue(null);
     }
     setTxNote(msg);
     setTimeout(() => setTxNote(m => (m === msg ? null : m)), 14000);
-  }, [runAnalysis, txSettings, showToast, saveSnapshot, setTracksTracked, switchTrack]);
+  }, [runAnalysis, txSettings, learned, showToast, saveSnapshot, setTracksTracked, switchTrack]);
+
+  // ---- Teaching the transcriber from the notes you wrote by hand ----
+  const handleLearn = useCallback(async (audioTrackId) => {
+    const audio = tracksRef.current.find(t => t.id === audioTrackId);
+    const active = tracksRef.current.find(t => t.id === activeTrackIdRef.current);
+    const mine = (active && active.type !== 'audio' && active.notes.length ? active
+      : tracksRef.current.find(t => t.type !== 'audio' && t.notes.length > 0));
+    if (!audio || !mine) { showToast('Write some notes by hand on a notes track first, then teach from the audio track.'); return; }
+    const map = tempoMapRef.current.forTrack(audio);
+    const clips = getClips(audio);
+    // the stretch you transcribed: the loop region if loop is on, otherwise from your first to your last note
+    let b0 = Math.min(...mine.notes.map(n => n.beat)) - 0.5;
+    let b1 = Math.max(...mine.notes.map(n => n.beat + (n.duration || 1))) + 0.5;
+    if (loopRef.current) { b0 = loopStartRef.current; b1 = loopEndRef.current; }
+    const inRegion = mine.notes.filter(n => n.beat >= b0 - 1e-6 && n.beat < b1);
+    if (inRegion.length < 3) { showToast('Need at least 3 of your notes in the region (turn Loop on to choose the region).'); return; }
+    const clipAt = (beat) => clips.find(c => beat >= c.start - 1e-6 && beat <= clipEndBeatFn(c, map) + 1e-6);
+    const toTime = (beat) => { const c = clipAt(beat); return c ? clipBeatToTime(c, beat, map) : null; };
+    const t0 = toTime(Math.max(b0, clips[0]?.start ?? 0));
+    const t1 = toTime(Math.min(b1, Math.max(...clips.map(c => clipEndBeatFn(c, map)))));
+    if (t0 == null || t1 == null) { showToast('That part of the notes is outside the audio.'); return; }
+    const truth = inRegion.map(n => ({ start: toTime(n.beat), midi: getMidiNote(n.stringIndex, n.fret) })).filter(t => t.start != null);
+    if (!window.confirm(
+      `Teach from "${mine.name}" (${truth.length} notes, ${t0.toFixed(1)}s to ${t1.toFixed(1)}s of the recording)?\n\n`
+      + 'These notes are taken as the COMPLETE and correct transcription of that stretch. Everything the analysis finds there that you did not write counts as a mistake to avoid.',
+    )) return;
+    const analysis = await runAnalysis(audioTrackId, 'Listening to the recording');
+    if (!analysis) return;
+    try {
+      setTxBusy({ label: 'Learning', percent: 100, stage: 'comparing with your notes' });
+      await new Promise(r => setTimeout(r, 30));
+      const events = (await rawCandidates(analysis)).filter(e => e.start >= t0 - 0.05 && e.start <= t1 + 0.05);
+      const cands = computeFeatures(events, analysis.attacks);
+      const { labels, missed } = matchToTruth(cands, truth);
+      // how the current settings would have done here (before learning)
+      const plain = await extractNoteEvents(analysis, {
+        sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
+        lowestMidi: txSettings.lowestMidi, octaveDownFilter: txSettings.octaveDownFilter, bassStrength: txSettings.bassStrength,
+        attackGate: txSettings.attackGate,
+      });
+      const inReg = (list) => list.filter(e => e.start >= t0 - 0.05 && e.start <= t1 + 0.05);
+      const score = (list) => {
+        const l = inReg(list).map(ev => ({ ev }));
+        const m = matchToTruth(l, truth);
+        const tp = m.labels.reduce((a, v) => a + v, 0);
+        return { precision: l.length ? tp / l.length : 1, recall: truth.length ? tp / truth.length : 0, count: l.length };
+      };
+      const before = score(plain);
+      // store the examples (replace an earlier lesson from the same stretch), then learn
+      const src = `${audioTrackId}|${t0.toFixed(1)}|${t1.toFixed(1)}`;
+      const samples = loadSamples().filter(s => s.src !== src);
+      cands.forEach((c, i) => samples.push({ x: c.x.map(v => Math.round(v * 1000) / 1000), y: labels[i], src }));
+      saveSamples(samples);
+      const newLearned = retrain(txSettings.targetPrecision);
+      setLearned(newLearned);
+      const positives = labels.reduce((a, v) => a + v, 0);
+      let msg = `Learned from ${truth.length} of your notes: the analysis found ${cands.length} candidates there, ${positives} matched yours and ${cands.length - positives} were false. `;
+      if (newLearned) {
+        const after = score(await extractNoteEvents(analysis, {
+          sensitivity: txSettings.sensitivity, minNoteMs: txSettings.minNoteMs, harmonicFilter: txSettings.harmonicFilter,
+          lowestMidi: txSettings.lowestMidi, octaveDownFilter: txSettings.octaveDownFilter, bassStrength: txSettings.bassStrength,
+          attackGate: txSettings.attackGate, learned: newLearned, learnStrictness: txSettings.learnStrictness,
+        }));
+        msg += `On this stretch: before ${Math.round(before.precision * 100)}% of its notes were right (${Math.round(before.recall * 100)}% of yours found); `
+          + `now ${Math.round(after.precision * 100)}% right (${Math.round(after.recall * 100)}% found). `
+          + `It has now seen ${newLearned.samples} candidates (${newLearned.positives} real). More examples, from different recordings, make it better.`;
+      } else {
+        msg += `That is ${samples.length} examples so far; it needs about 20 candidates with at least 5 real ones, from a few stretches, before it starts filtering.`;
+      }
+      if (missed) msg += ` (${missed} of your notes were not found at all.)`;
+      setTxNote(msg);
+      setTimeout(() => setTxNote(m => (m === msg ? null : m)), 30000);
+    } catch (err) {
+      console.error('[learn]', err);
+      setTxError(`Could not learn from this: ${err.message || err}`);
+    } finally {
+      setTxBusy(null);
+    }
+  }, [runAnalysis, txSettings, showToast]);
 
   // Track management
   const handleAddTrack = useCallback(() => {
@@ -3168,6 +3251,7 @@ setPositionModeValue(null);
         onDuplicateTrack={handleDuplicateTrack}
         onReorderTracks={handleReorderTracks}
         onTranscribe={handleTranscribe}
+        onLearn={handleLearn}
         onToggleHeat={handleToggleHeat}
         heatTracks={pitchHeats}
         trackGroups={trackGroups}
@@ -3552,6 +3636,9 @@ setPositionModeValue(null);
           fretboardAutoForwardExcludeAdjacent={fretboardAutoForwardExcludeAdjacent}
           showSelectedOnFretboard={showSelectedOnFretboard}
           txSettings={txSettings}
+          learned={learned}
+          onForgetLearning={() => { forgetLearning(); setLearned(null); }}
+          onRetrain={(target) => setLearned(retrain(target))}
           onTxSettingsChange={(patch) => setTxSettings(prev => { const n = { ...prev, ...patch }; try { localStorage.setItem('guitar-roll-transcribe', JSON.stringify(n)); } catch { /* ignore */ } return n; })}
           noteFade={noteFade}
           openDots={openDots}

@@ -9,6 +9,7 @@
 import { clipTimeToBeat, getClips } from './audioClips';
 import { assignFretboardPositions } from './midiImport';
 import { onsetTimes } from './beatDetect';
+import { computeFeatures, applyLearned } from './transcribeLearn';
 
 const MODEL_URL = () => `${import.meta.env.BASE_URL}vendor/basic-pitch/model.json`;
 const SR = 22050;
@@ -164,7 +165,7 @@ export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, 
     i -= k;
     if (i - t0 <= minLen) continue;
     for (let j = t0; j < i; j++) zero(j, c);
-    notes.push({ startFrame: t0, durationFrames: i - t0, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(t0, i, c) });
+    notes.push({ startFrame: t0, durationFrames: i - t0, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(t0, i, c), onset: O[t0 * C + c] });
   }
 
   // leftover energy: strongest cell first, grow forwards and backwards from it
@@ -182,7 +183,7 @@ export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, 
     while (i > 0 && k < energyTol) { if (R[i * C + c] < frameThresh) k++; else k = 0; zero(i, c); i--; }
     const iStart = i + 1 + k;
     if (iEnd - iStart <= minLen) continue;
-    notes.push({ startFrame: iStart, durationFrames: iEnd - iStart, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(iStart, iEnd, c) });
+    notes.push({ startFrame: iStart, durationFrames: iEnd - iStart, pitchMidi: c + MIDI_OFFSET, amplitude: meanAmp(iStart, iEnd, c), onset: O[iStart * C + c] });
   }
   return notes;
 }
@@ -191,6 +192,7 @@ export function decodeNotes(frames, onsets, { onsetThresh, frameThresh, minLen, 
 export async function extractNoteEvents(analysis, {
   sensitivity = 'balanced', minNoteMs = 60, harmonicFilter = true,
   lowestMidi = 40, octaveDownFilter = true, bassStrength = 0.4, attackGate = 'bass',
+  learned = null, learnStrictness = 0,
 } = {}) {
   await new Promise(r => setTimeout(r, 0)); // let any progress message paint first
   const preset = SENSITIVITY[sensitivity] || SENSITIVITY.balanced;
@@ -206,10 +208,17 @@ export async function extractNoteEvents(analysis, {
       end: frameToTime(n.startFrame + n.durationFrames),
       midi: n.pitchMidi,
       amp: n.amplitude,
+      onset: n.onset,
     }))
     .sort((a, b) => a.start - b.start || a.midi - b.midi);
   const stats = { modelNotes: events.length, overtones: 0, octaveGhosts: 0, weakBass: 0, noAttack: 0 };
   let out = events;
+  if (learned) {
+    // what you taught it: keep only the candidates it believes are real notes
+    const before = out.length;
+    out = applyLearned(computeFeatures(out, analysis.attacks), learned, learnStrictness);
+    stats.learned = before - out.length;
+  }
   const step = (fn, key) => { const before = out.length; out = fn(out); stats[key] = before - out.length; };
   if (harmonicFilter) step(suppressHarmonics, 'overtones');
   if (octaveDownFilter) step(suppressOctaveDown, 'octaveGhosts');
@@ -420,4 +429,14 @@ export function buildDraftNotes(events, { track, map, barSubs, chordMs = 45, max
         conf: Math.round(conf * 100) / 100, // how sure the model was (dims weak notes on the roll)
       };
     });
+}
+
+
+// Every candidate the model finds, with no filtering: the raw material for learning (sensitive
+// thresholds so that false notes are also seen and can be labelled as such).
+export async function rawCandidates(analysis, { lowestMidi = 40 } = {}) {
+  return extractNoteEvents(analysis, {
+    sensitivity: 'sensitive', minNoteMs: 40, harmonicFilter: false, lowestMidi,
+    octaveDownFilter: false, bassStrength: 0, attackGate: 'off',
+  });
 }
