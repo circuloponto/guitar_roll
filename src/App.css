@@ -2966,7 +2966,7 @@ button:disabled { cursor: not-allowed; }
   bottom: 0;
 }
 /* pins of an audio track seen from another track: markers only, never intercept the mouse */
-.sync-pin.passive { pointer-events: none; opacity: 0.7; border-left-width: 1px; border-left-style: dashed; }
+.sync-pin.passive { pointer-events: none; opacity: 1; }
 .sync-pin.passive::after { display: none; }
 
 /* delete button on the collapsed track tabs */

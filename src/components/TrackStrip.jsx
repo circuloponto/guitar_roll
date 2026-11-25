@@ -13,7 +13,7 @@ export default function TrackStrip({
   trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
   onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag, onTrackGroupSet,
   onTranscribe, onLearn, onToggleHeat, heatTracks = {},
-  onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
+  onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -379,6 +379,26 @@ export default function TrackStrip({
                           title="The audio file isn't in this browser. Pick it again to relink it: sync points and edits are kept."
                           style={{ color: 'var(--amber)', fontSize: 11 }}
                         >Relink audio</button>
+                      )}
+                      {/* Match tempo: the BPM moves the grid, the song keeps its own speed (like Logic) */}
+                      <button
+                        className={`track-btn-lg ${track.followTempo ? 'active-accent' : ''}`}
+                        onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { followTempo: !track.followTempo }); }}
+                        title={track.followTempo
+                          ? 'Matching tempo: changing the BPM moves the grid, the song plays at its own speed. Click to lock (the BPM then speeds the song up and down with the notes).'
+                          : 'Click to match tempo: change the BPM until the song lines up with the grid (the song keeps its own speed).'}
+                        style={{ fontSize: 11 }}
+                      >{track.followTempo ? 'Matching tempo' : 'Match tempo'}</button>
+                      {track.followTempo && (
+                        <>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onDetectTempo && onDetectTempo(track.id); }} title="Detect the song's tempo and put its first beat on the grid" style={{ fontSize: 11 }}>Detect</button>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onNudgeBpm && onNudgeBpm(-1); }} title="BPM −1">−1</button>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onNudgeBpm && onNudgeBpm(-0.1); }} title="BPM −0.1">−.1</button>
+                          <span className="track-slider-label" style={{ minWidth: 52, textAlign: 'center' }} title="Project tempo">{bpm} BPM</span>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onNudgeBpm && onNudgeBpm(0.1); }} title="BPM +0.1">+.1</button>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onNudgeBpm && onNudgeBpm(1); }} title="BPM +1">+1</button>
+                          <button className="track-btn-lg" onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { followTempo: false }); }} title="Lock this tempo: the song stays attached to the grid" style={{ fontSize: 11 }}>Lock</button>
+                        </>
                       )}
                       {/* Pitch: lock keeps the original pitch when tempo changes; semitones transpose */}
                       <button

@@ -10,7 +10,7 @@ const HIT = 6;          // px grab distance
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
   tracks, activeTrackId, tempoMap, timeSignature = [4, 4], selectedBeat, currentBeat, playing, getBuffer,
-  onSetPin, onRemovePin, onSelectBeat,
+  onSetPin, onRemovePin, onSelectBeat, onUndo, onRedo,
 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
@@ -22,8 +22,10 @@ export default function SyncEditor({
 
   const audio = useMemo(() => {
     const list = tracks.filter(t => t.type === 'audio' && getClips(t).length > 0);
+    // the recording that owns the tempo map is the one whose sync points the timeline shows
+    if (tempoMap && tempoMap.active) { const ref = list.find(t => t.id === tempoMap.refId); if (ref) return ref; }
     return list.find(t => t.id === activeTrackId) || list[0] || null;
-  }, [tracks, activeTrackId]);
+  }, [tracks, activeTrackId, tempoMap]);
   const noteTrack = useMemo(() => {
     const list = tracks.filter(t => t.type !== 'audio');
     return list.find(t => t.id === activeTrackId && t.notes.length) || list.find(t => t.notes.length) || list[0] || null;
@@ -32,7 +34,14 @@ export default function SyncEditor({
   const duration = buffer ? buffer.duration : (audio?.audioDuration || 0);
   const clip = audio ? getClips(audio)[0] : null;
   const m = audio && tempoMap ? tempoMap.forTrack(audio) : null;
-  const pins = audio ? getSyncPoints(audio) : [];
+  const allPins = audio ? getSyncPoints(audio) : [];
+  // Only the part of the recording that is still on the track is shown: trimming or cropping the clip
+  // on the audio track (removing an intro, say) trims it here too.
+  const spans = useMemo(() => (audio ? getClips(audio).map(c => [c.srcStart, c.srcEnd]) : []), [audio]);
+  const tMin = spans.length ? Math.min(...spans.map(x => x[0])) : 0;
+  const tMax = spans.length ? Math.max(...spans.map(x => x[1])) : duration;
+  const inSpan = useCallback((t) => spans.some(([a, b]) => t >= a - 1e-6 && t <= b + 1e-6), [spans]);
+  const pins = useMemo(() => allPins.filter(p => inSpan(p.time)), [allPins, inSpan]);
 
   const beatTime = useCallback((b) => (clip && m ? clipBeatToTime(clip, b, m) : 0), [clip, m]);
   const timeBeat = useCallback((t) => (clip && m ? clipTimeToBeat(clip, t, m) : 0), [clip, m]);
@@ -47,8 +56,8 @@ export default function SyncEditor({
       if (!by.has(key)) by.set(key, { beat: n.beat, notes: [] });
       by.get(key).notes.push(n);
     });
-    return [...by.values()].map(s => ({ ...s, time: beatTime(s.beat) })).sort((a, b) => a.beat - b.beat);
-  }, [noteTrack, clip, m, beatTime]);
+    return [...by.values()].map(s => ({ ...s, time: beatTime(s.beat) })).filter(s => inSpan(s.time)).sort((a, b) => a.beat - b.beat);
+  }, [noteTrack, clip, m, beatTime, inSpan]);
 
   const pinTime = useCallback((p) => p.time, []);
   const onsets = useMemo(() => {
@@ -65,6 +74,14 @@ export default function SyncEditor({
     setSize({ w: Math.max(100, el.clientWidth), h: Math.max(80, el.clientHeight) });
     return () => ro.disconnect();
   }, []);
+
+  const spanKey = `${audio?.id}|${tMin.toFixed(3)}|${tMax.toFixed(3)}`;
+  const lastSpan = useRef(null);
+  useEffect(() => {
+    if (lastSpan.current === spanKey) return;
+    lastSpan.current = spanKey;
+    setView(v => ({ ...v, t0: tMin }));
+  }, [spanKey, tMin]);
 
   const tx = useCallback((t) => (t - view.t0) * view.pps, [view]);
   const xt = useCallback((x) => view.t0 + x / view.pps, [view]);
@@ -89,14 +106,19 @@ export default function SyncEditor({
       g.fillText('Load an audio track to line your notes up with the recording.', 16, 32);
       return;
     }
-    const laneTop = HEAD_H + 4, laneH = size.h - laneTop - 6;
+    // the notation sits in a band above the waveform; the waveform has the rest
+    const bandTop = HEAD_H + 4;
+    const bandH = Math.max(80, Math.min(size.h * 0.5, 190));
+    const laneTop = bandTop + bandH + 4, laneH = Math.max(30, size.h - laneTop - 6);
     const mid = laneTop + laneH / 2;
+    g.fillStyle = col('--raise', '#15151b'); g.globalAlpha = 0.5; g.fillRect(0, bandTop, size.w, bandH); g.globalAlpha = 1;
+    g.strokeStyle = hair; g.beginPath(); g.moveTo(0, laneTop - 2.5); g.lineTo(size.w, laneTop - 2.5); g.stroke();
     // ruler
     g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, 0, size.w, HEAD_H);
     const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(s => s * view.pps >= 60) || 60;
     g.font = '10px monospace'; g.textBaseline = 'middle';
-    for (let t = Math.ceil(view.t0 / step) * step; tx(t) < size.w; t += step) {
-      const x = tx(t);
+    for (let rt = Math.ceil((view.t0 - tMin) / step) * step; tx(tMin + rt) < size.w; rt += step) {
+      const t = rt; const x = tx(tMin + rt);
       g.strokeStyle = hair; g.beginPath(); g.moveTo(x + 0.5, HEAD_H - 5); g.lineTo(x + 0.5, size.h); g.stroke();
       g.fillStyle = mute; g.fillText(`${Math.floor(t / 60)}:${(t % 60).toFixed(step < 1 ? 1 : 0).padStart(step < 1 ? 4 : 2, '0')}`, x + 3, HEAD_H / 2);
     }
@@ -104,6 +126,7 @@ export default function SyncEditor({
     const d = buffer.getChannelData(0), sr = buffer.sampleRate;
     g.fillStyle = soft; g.globalAlpha = 0.55;
     for (let x = 0; x < size.w; x++) {
+      if (!inSpan(xt(x))) continue;
       const a = Math.floor(xt(x) * sr), b = Math.floor(xt(x + 1) * sr);
       if (b < 0 || a >= d.length) continue;
       const stride = Math.max(1, Math.floor((b - a) / 200));
@@ -115,7 +138,7 @@ export default function SyncEditor({
     g.globalAlpha = 1;
     // attacks (faint ticks at the top)
     g.strokeStyle = mute; g.globalAlpha = 0.35;
-    onsets.forEach((o) => { const x = tx(o); if (x >= 0 && x <= size.w) { g.beginPath(); g.moveTo(x + 0.5, laneTop); g.lineTo(x + 0.5, laneTop + 6); g.stroke(); } });
+    onsets.filter(inSpan).forEach((o) => { const x = tx(o); if (x >= 0 && x <= size.w) { g.beginPath(); g.moveTo(x + 0.5, laneTop); g.lineTo(x + 0.5, laneTop + 6); g.stroke(); } });
     g.globalAlpha = 1;
     // sync points
     pins.forEach((p) => {
@@ -124,13 +147,17 @@ export default function SyncEditor({
       g.strokeStyle = amber; g.lineWidth = hover?.kind === 'pin' && hover.id === p.id ? 3 : 2;
       g.beginPath(); g.moveTo(x + 0.5, HEAD_H); g.lineTo(x + 0.5, size.h); g.stroke(); g.lineWidth = 1;
       g.fillStyle = amber; g.fillRect(x - 3, HEAD_H, 7, 5);
+      // the grid beat this point sits on (quarter notes, from 1), to match the pin on the timeline
+      const gb = ((anchor ?? 0) + p.beat) * 4 / (timeSignature[1] || 4) + 1;
+      g.font = '10px monospace'; g.textBaseline = 'top';
+      g.fillText(String(Math.round(gb * 100) / 100), x + 5, HEAD_H + 1);
     });
     // notation: every note is a head (hollow for half notes and longer, filled otherwise) on a stem,
     // with flags, and beams between neighbouring short notes
     const den = timeSignature[1] || 4;
     const allPitch = noteTrack ? noteTrack.notes.map(n => n.stringIndex * 24 + n.fret) : [0, 1];
     const pLo = Math.min(...allPitch), pHi = Math.max(...allPitch, pLo + 1);
-    const headY = (n) => laneTop + 34 + (1 - ((n.stringIndex * 24 + n.fret) - pLo) / (pHi - pLo)) * Math.max(10, laneH - 70);
+    const headY = (n) => bandTop + 40 + (1 - ((n.stringIndex * 24 + n.fret) - pLo) / (pHi - pLo)) * Math.max(8, bandH - 56);
     const STEM = 30;
     const laid = stems.map((st) => {
       const x = tx(st.time);
@@ -256,11 +283,11 @@ export default function SyncEditor({
       setView((v) => {
         const pps = Math.min(2000, Math.max(4, v.pps * f));
         const t = v.t0 + x / v.pps;
-        return { pps, t0: Math.max(-1, t - x / pps) };
+        return { pps, t0: Math.max(tMin - 1, t - x / pps) };
       });
     } else {
       const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      setView(v => ({ ...v, t0: Math.max(-1, Math.min(duration, v.t0 + dx / v.pps)) }));
+      setView(v => ({ ...v, t0: Math.max(tMin - 1, Math.min(tMax, v.t0 + dx / v.pps)) }));
     }
   };
   // non-passive wheel so the page does not scroll
@@ -272,7 +299,7 @@ export default function SyncEditor({
   });
 
   const zoom = (f) => setView(v => ({ ...v, pps: Math.min(2000, Math.max(4, v.pps * f)) }));
-  const fit = () => setView({ t0: 0, pps: Math.max(4, (size.w - 8) / Math.max(1, duration)) });
+  const fit = () => setView({ t0: tMin, pps: Math.max(4, (size.w - 8) / Math.max(0.5, tMax - tMin)) });
 
   return (
     <div className="sync-editor">
@@ -280,6 +307,8 @@ export default function SyncEditor({
         <span className="sync-title">{audio ? audio.name : 'No audio track'}</span>
         <span className="sync-info">{pins.length} sync point{pins.length === 1 ? '' : 's'}</span>
         <span className="ub-spacer" />
+        <button className="settings-btn-sm" onClick={onUndo} title="Undo (Ctrl+Z)" aria-label="Undo sync edit">↶ Undo</button>
+        <button className="settings-btn-sm" onClick={onRedo} title="Redo (Ctrl+Y)" aria-label="Redo sync edit">↷ Redo</button>
         <label className="ub-check" title="Pull dragged stems onto the recording's attacks (hold Alt to switch off)">
           <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} /> Snap to attacks
         </label>

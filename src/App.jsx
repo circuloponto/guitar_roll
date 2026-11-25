@@ -318,6 +318,13 @@ function App() {
   const audioRateOf = (track) => (tempoMapRef.current.active
     ? tempoMapRef.current.mult
     : bpmRef.current / (track.originalBpm || bpmRef.current));
+  // "Match tempo" (like importing a song in Logic and changing the project tempo until it fits): the
+  // recording plays at its own speed and the BPM moves the grid instead, so the audio grows or
+  // shrinks against the bars. It is the same as keeping the track's own tempo equal to the BPM.
+  useEffect(() => {
+    if (!tracks.some(t => t.type === 'audio' && t.followTempo && t.originalBpm !== bpm)) return;
+    setTracksTracked(prev => prev.map(t => (t.type === 'audio' && t.followTempo && t.originalBpm !== bpm ? { ...t, originalBpm: bpm } : t)));
+  }, [bpm, tracks, setTracksTracked]);
   // The timeline always reaches the end of the audio clips (import, move, tempo changes).
   useEffect(() => {
     let end = 0;
@@ -1031,6 +1038,42 @@ function App() {
     addSyncPointAtBeat(trackId, clip, beat);
   }, [showToast, addSyncPointAtBeat]);
 
+  // Match tempo helpers: nudge the BPM, lock the match, or detect the recording's tempo and put its
+  // first beat on a grid line.
+  const nudgeBpm = useCallback((delta) => {
+    setBpm(b => Math.min(300, Math.max(30, Math.round((b + delta) * 100) / 100)));
+  }, []);
+  const detectTempoOf = useCallback((trackId) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    const buffer = audioBuffersRef.current[trackId];
+    if (!t || !buffer) return;
+    showToast('Detecting the tempo…');
+    setTimeout(() => {
+      const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+      let beats = [];
+      try { beats = detectBeats(buffer, spb); } catch (err) { console.warn('beat detection failed', err); }
+      const fit = beats.length >= 4 ? fitTempo(beats) : null;
+      if (!fit) { showToast('Could not find a steady beat in this audio'); return; }
+      const detected = Math.round(60 / fit.period * (4 / timeSigRef.current[1]) * 10) / 10;
+      saveSnapshot();
+      setTracksTracked(prev => prev.map(x => {
+        if (x.id !== trackId) return x;
+        const clips = getClips(x);
+        const c0 = clips.reduce((a, c) => (c.start < a.start ? c : a), clips[0]);
+        // put the first detected beat of the kept audio on a whole grid beat
+        const rel = (fit.t0 - (c0?.srcStart || 0)) / fit.period;
+        const newStart = ((-rel % 1) + 1) % 1;
+        const shift = newStart - c0.start;
+        return {
+          ...x, originalBpm: detected, followTempo: true,
+          clips: clips.map(c => ({ ...c, start: Math.max(0, c.start + shift) })),
+        };
+      }));
+      setBpm(detected);
+      showToast(`Detected ${detected} BPM. Nudge it until the beats sit on the grid, then lock.`);
+    }, 30);
+  }, [showToast, saveSnapshot, setTracksTracked]);
+
   // Auto sync: detect the beats of the recording, take its steady tempo as the project tempo and
   // pin only the leftover drift, so the grid (and your notes) follow the audio. Undoable.
   const autoSyncPoints = useCallback((trackId) => {
@@ -1077,7 +1120,7 @@ function App() {
       const syncAnchor = c0.start - c0.srcStart / spb;
       saveSnapshot();
       setTracksTracked(prev => prev.map(x => x.id === trackId
-        ? { ...x, originalBpm: detectedBpm, syncPoints: pins, syncAnchor }
+        ? { ...x, originalBpm: detectedBpm, followTempo: false, syncPoints: pins, syncAnchor }
         : (x.type === 'audio' ? { ...x, syncPoints: [] } : x)));
       setBpm(detectedBpm);
       showToast(`Detected ${detectedBpm} BPM · ${maxDrift > 0.025 ? `${pins.length} sync points follow the tempo drift` : 'steady tempo, no drift to follow'}`);
@@ -2937,6 +2980,7 @@ setPositionModeValue(null);
         audioOffset: 0,
         clips: [newClip(0, 0, buffer.duration)],
         originalBpm: bpmRef.current,
+        followTempo: true, // change the BPM until the song lines up with the grid, then lock it
         notes: [],
         waveformPeaks: Array.from(peaks),
       };
@@ -3471,6 +3515,9 @@ setPositionModeValue(null);
         onAddSyncPoint={addSyncPointAtPlayhead}
         onAutoSync={autoSyncPoints}
         onClearSyncPoints={clearSyncPoints}
+        onNudgeBpm={nudgeBpm}
+        onDetectTempo={detectTempoOf}
+        bpm={bpm}
         onSetAudioOptions={(trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t))}
         onToggleVisible={handleToggleVisible}
         onSetBgOpacity={handleSetBgOpacity}
@@ -3537,6 +3584,8 @@ setPositionModeValue(null);
           onSetPin={setPinForBeat}
           onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
           onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
+          onUndo={undo}
+          onRedo={redo}
         />
       )}
       fretboard={(
