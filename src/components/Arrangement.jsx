@@ -9,7 +9,7 @@ import { TRACK_GROUP_COLOURS } from '../utils/trackGroups';
 
 const ROW_MIN = 20, ROW_MAX = 180, ROW_DEFAULT = 46;
 const ROW_KEY = 'guitar-roll-arrangement-row-height';
-const GROUP_H = 24;
+const GROUP_H = 44;
 const RULER_H = 22;
 const OPEN = [40, 45, 50, 55, 59, 64];
 
@@ -22,7 +22,7 @@ export default function Arrangement({
   // everything the Tracks window can do (the same handlers it gets)
   selectedTrackIds = new Set(), onSelectTrack, onToggleMute, onToggleSolo, onSetVolume, onToggleVisible, onSetBgOpacity,
   onSetTrackScheme, sessionSchemes, onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
-  onToggleTrackGroup, onTrackGroupFlag, onRenameTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup, onGroupTracks, onUngroupTracks,
+  onToggleTrackGroup, onTrackGroupFlag, onTrackGroupSet, onRenameTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup, onGroupTracks, onUngroupTracks,
   onTranscribe, onLearn, onToggleHeat, heatTracks, onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions,
   onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   extraTop = null, extraBottom = null,
@@ -99,7 +99,11 @@ export default function Arrangement({
     tracks.forEach((track, index) => {
       const grp = track.groupId ? groupById(track.groupId) : null;
       const first = grp && (index === 0 || tracks[index - 1].groupId !== track.groupId);
-      if (first) { out.push({ kind: 'group', grp, y, h: GROUP_H, members: tracks.filter(t => t.groupId === grp.id) }); y += GROUP_H; }
+      if (first) {
+        const gh = grp.collapsed ? Math.max(GROUP_H, Math.round(rowH * 0.8)) : GROUP_H;
+        out.push({ kind: 'group', grp, y, h: gh, members: tracks.filter(t => t.groupId === grp.id) });
+        y += gh;
+      }
       if (grp && grp.collapsed) return;
       out.push({ kind: 'track', track, index, y, h: rowH });
       y += rowH;
@@ -185,10 +189,7 @@ export default function Arrangement({
       g.fillRect(x0, 0, Math.max(1, x1 - x0), H); g.globalAlpha = 1;
     }
     // each track's content
-    rows.list.forEach((r) => {
-      if (r.kind !== 'track') return;
-      const { track, index } = r;
-      const colour = colourOf(track, index);
+    const drawTrack = (track, y0, h0, colour) => {
       const dim = track.muted ? 0.35 : 1;
       if (track.type === 'audio') {
         const peaks = track.waveformPeaks;
@@ -198,14 +199,14 @@ export default function Arrangement({
           const xs = X(clip.start), xe = X(clipEndBeat(clip, m));
           if (xe < 0 || xs > size.w || xe - xs < 1) return;
           g.fillStyle = colour; g.globalAlpha = 0.18 * dim;
-          g.fillRect(xs, r.y + 3, xe - xs, r.h - 7); g.globalAlpha = 0.9 * dim;
+          g.fillRect(xs, y0 + 3, xe - xs, h0 - 7); g.globalAlpha = 0.9 * dim;
           const a = Math.max(0, Math.floor(xs)), b = Math.min(size.w, Math.ceil(xe));
-          const mid = r.y + r.h / 2;
+          const mid = y0 + h0 / 2;
           for (let px = a; px < b; px++) {
             const frac = (px - xs) / (xe - xs);
             const t = clip.srcStart + frac * (clip.srcEnd - clip.srcStart);
             const p = peaks[Math.min(peaks.length - 1, Math.max(0, Math.floor((t / track.audioDuration) * peaks.length)))] || 0;
-            const hh = Math.max(0.5, p * (r.h / 2 - 5));
+            const hh = Math.max(0.5, p * (h0 / 2 - 5));
             g.fillRect(px, mid - hh, 1, hh * 2);
           }
           g.globalAlpha = 1;
@@ -219,10 +220,15 @@ export default function Arrangement({
       track.notes.forEach((n, k) => {
         const x0 = X(n.beat), x1 = X(n.beat + n.duration);
         if (x1 < 0 || x0 > size.w) return;
-        const y = r.y + 7 + (1 - (pitches[k] - lo) / (hi - lo)) * (r.h - 17);
+        const y = y0 + 7 + (1 - (pitches[k] - lo) / (hi - lo)) * (h0 - 17);
         g.fillRect(x0, y, Math.max(2, x1 - x0 - 1), 4);
       });
       g.globalAlpha = 1;
+    };
+    rows.list.forEach((r) => {
+      if (r.kind === 'track') drawTrack(r.track, r.y, r.h, colourOf(r.track, r.index));
+      // a collapsed group shows all its tracks laid over one another, like Ableton
+      else if (r.grp.collapsed) r.members.forEach((m) => drawTrack(m, r.y, r.h, r.grp.colour));
     });
     // playhead
     const px = X(headBeat);
@@ -284,11 +290,30 @@ export default function Arrangement({
               key={`g-${r.grp.id}`} className="arr-group" style={{ height: r.h, '--c': r.grp.colour }}
               onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ kind: 'group', id: r.grp.id, x: e.clientX, y: e.clientY }); }}
             >
+              <div className="arr-g1">
               <button className="arr-caret" onClick={() => onToggleTrackGroup(r.grp.id)} title={r.grp.collapsed ? 'Expand group' : 'Collapse group'}>{r.grp.collapsed ? '▸' : '▾'}</button>
-              <span className="arr-gname">{r.grp.name}</span>
+              <span
+                className="arr-gname" title="Double-click to rename"
+                onDoubleClick={() => { const n = window.prompt('Group name', r.grp.name); if (n && n.trim()) onRenameTrackGroup(r.grp.id, n.trim()); }}
+              >{r.grp.name}</span>
               <span className="arr-gcount">{r.members.length}</span>
+              <button className="arr-btn arr-ungroup" onClick={() => onRemoveTrackGroup(r.grp.id)} title="Ungroup these tracks (Ctrl+Shift+G)">✕</button>
+              </div>
+              <div className="arr-g2">
               <button className={`arr-btn ${r.members.every(t => t.muted) ? 'on-red' : ''}`} onClick={() => onTrackGroupFlag(r.grp.id, 'muted')} title="Mute the whole group">M</button>
               <button className={`arr-btn ${r.members.every(t => t.solo) ? 'on-yellow' : ''}`} onClick={() => onTrackGroupFlag(r.grp.id, 'solo')} title="Solo the whole group">S</button>
+              <button className="arr-btn" onClick={() => onTrackGroupSet(r.grp.id, 'visible', r.members.every(t => t.visible === false))}
+                title={r.members.every(t => t.visible === false) ? 'Show the whole group' : 'Hide the whole group'}>
+                {r.members.every(t => t.visible === false) ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+              <input type="range" className="arr-vol" min={0} max={100} value={Math.round(Math.max(...r.members.map(t => t.volume)) * 100)}
+                onChange={(e) => onTrackGroupSet(r.grp.id, 'volume', Number(e.target.value) / 100)}
+                title="Volume of the whole group (the balance between its tracks is kept)" />
+              <input type="range" className="arr-vol arr-vol-op" min={5} max={100}
+                value={Math.round(r.members.reduce((x, t) => x + (t.bgOpacity ?? 0.2), 0) / r.members.length * 100)}
+                onChange={(e) => onTrackGroupSet(r.grp.id, 'bgOpacity', Number(e.target.value) / 100)}
+                title="Opacity of the whole group's notes in the background" />
+              </div>
             </div>
           ) : (
             <div
@@ -311,6 +336,13 @@ export default function Arrangement({
                 onDragStart={(e) => { setDragIndex(r.index); e.dataTransfer.effectAllowed = 'move'; const row = e.currentTarget.closest('.arr-head'); if (row) e.dataTransfer.setDragImage(row, 12, 12); }}
                 onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
               >⠿</span>
+              <input
+                type="checkbox" className="arr-check"
+                checked={selectedTrackIds.has(r.track.id) && selectedTrackIds.size > 1}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => onSelectTrack(r.track.id, 'toggle')}
+                title="Tick several tracks, then press Group (or Ctrl/⌘+click, Shift+click)"
+              />
               <span className="arr-dot" />
               {editingId === r.track.id ? (
                 <input
@@ -337,7 +369,19 @@ export default function Arrangement({
               />
             </div>
           )))}
-          <button className="arr-add" onClick={onAddTrack} title="Add a track">+ Track</button>
+          <div className="arr-adds">
+            <button className="arr-add" onClick={onAddTrack} title="Add a track">+ Track</button>
+            <button
+              className="arr-add" disabled={selectedTrackIds.size < 2} onClick={() => onGroupTracks()}
+              title={selectedTrackIds.size < 2 ? 'Select two or more tracks first: Ctrl/Cmd or Shift + click their headers' : 'Group the selected tracks (Ctrl+G)'}
+            >Group{selectedTrackIds.size > 1 ? ` ${selectedTrackIds.size} tracks` : ''}</button>
+            {trackGroups.length > 0 && (
+              <button
+                className="arr-add" onClick={() => { const anyOpen = trackGroups.some(g => !g.collapsed); trackGroups.forEach(g => { if (!g.collapsed === anyOpen) onToggleTrackGroup(g.id); }); }}
+                title="Collapse or expand all groups"
+              >{trackGroups.some(g => !g.collapsed) ? 'Collapse groups' : 'Expand groups'}</button>
+            )}
+          </div>
         </div>
         <div className="arr-lanes" ref={lanesRef}>
           <canvas ref={canvasRef} className="arr-canvas" style={{ width: size.w, height: Math.max(rows.total, 1) }} onPointerDown={onLaneDown} />

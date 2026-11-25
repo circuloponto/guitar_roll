@@ -357,3 +357,13 @@ export function openPanel(st, id, panels, size) {
   delete closed[id];
   return dockBack({ ...st, closed }, id, panels, size);
 }
+
+// ---- sharing layouts ----
+// The saved layout as an object (or null), a checked copy of an imported one, and a way to store it.
+export function readSavedState() {
+  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+export function validateState(obj) {
+  try { return obj && typeof obj === 'object' ? finish(obj, cleanTree(obj.tree)) : null; } catch { return null; }
+}
+export function writeSavedState(st) { saveState(st); }

@@ -8,6 +8,7 @@ import {
 } from '../utils/storage';
 import { SENSITIVITY } from '../utils/transcribe';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
+import { readSavedState, validateState, writeSavedState } from '../utils/dockLayout';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
@@ -109,6 +110,50 @@ function getSessionSchemes(appState, savedSchemes) {
 }
 
 export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab }) {
+  // ---- share / import window layouts ----
+  const [layoutMsg, setLayoutMsg] = useState(null);
+  const [layoutPasteOpen, setLayoutPasteOpen] = useState(false);
+  const [layoutText, setLayoutText] = useState('');
+  const buildLayoutBundle = () => ({
+    format: 'guitar-roll-layout', version: 1,
+    dock: readSavedState(),
+    toolbar: toolbarCfg || null,
+    arrangementRowHeight: (() => { try { return Number(localStorage.getItem('guitar-roll-arrangement-row-height')) || null; } catch { return null; } })(),
+  });
+  const exportLayout = async (how) => {
+    const bundle = buildLayoutBundle();
+    if (!bundle.dock) { setLayoutMsg({ ok: false, text: 'Nothing to export yet: move or resize a window first.' }); return; }
+    const text = JSON.stringify(bundle, null, 2);
+    if (how === 'copy') {
+      try { await navigator.clipboard.writeText(text); setLayoutMsg({ ok: true, text: 'Layout copied. Paste it to someone, or into "Paste layout text" on another computer.' }); }
+      catch { setLayoutMsg({ ok: false, text: 'The browser would not let me copy. Use "Export layout…" instead.' }); }
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'guitar-roll-layout.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    setLayoutMsg({ ok: true, text: 'Layout saved as guitar-roll-layout.json.' });
+  };
+  const applyLayoutText = (text) => {
+    let obj;
+    try { obj = JSON.parse(text); } catch { setLayoutMsg({ ok: false, text: 'That is not a layout file (it could not be read).' }); return; }
+    if (!obj || obj.format !== 'guitar-roll-layout') { setLayoutMsg({ ok: false, text: 'That is not a Guitar Roll layout.' }); return; }
+    const dock = validateState(obj.dock);
+    if (!dock) { setLayoutMsg({ ok: false, text: 'The window layout in that file is not valid.' }); return; }
+    writeSavedState(dock);
+    window.dispatchEvent(new Event('guitar-roll-reload-layout'));
+    if (obj.toolbar && Array.isArray(obj.toolbar.order) && onToolbarChange) onToolbarChange(obj.toolbar);
+    if (obj.arrangementRowHeight) { try { localStorage.setItem('guitar-roll-arrangement-row-height', String(obj.arrangementRowHeight)); } catch { /* ignore */ } }
+    setLayoutMsg({ ok: true, text: 'Layout applied.' });
+  };
+  const importLayoutFile = () => {
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = async () => { if (input.files[0]) applyLayoutText(await input.files[0].text()); };
+    input.click();
+  };
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
   const [colorsView, setColorsView] = useState('list');   // list | edit
@@ -674,6 +719,27 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           <h3>Layout</h3>
           <p className="settings-desc">Drag a panel by its title bar to move it, and resize panels from the lines between them (the others adapt). Each panel's title bar has buttons to minimise it to a strip and to undock it into a floating window you can move and resize from any edge; double-click a title bar to minimise or restore it.</p>
           <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
+        </div>
+        <div className="settings-section">
+          <h3>Share a layout</h3>
+          <p className="settings-desc">Save how your windows and toolbar are arranged as a file (or a piece of text) to share, and load a layout someone else made. Importing replaces your current window layout and toolbar.</p>
+          <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="settings-btn" onClick={() => exportLayout('file')}>Export layout…</button>
+            <button className="settings-btn" onClick={() => exportLayout('copy')}>Copy layout as text</button>
+            <button className="settings-btn" onClick={importLayoutFile}>Import layout…</button>
+            <button className="settings-btn" onClick={() => setLayoutPasteOpen(o => !o)}>Paste layout text…</button>
+          </div>
+          {layoutPasteOpen && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <textarea
+                className="settings-input" rows={5} value={layoutText} placeholder="Paste a layout here"
+                onChange={(e) => setLayoutText(e.target.value)} onKeyDown={(e) => e.stopPropagation()}
+                style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
+              />
+              <button className="settings-btn" style={{ alignSelf: 'flex-start' }} onClick={() => applyLayoutText(layoutText)} disabled={!layoutText.trim()}>Apply pasted layout</button>
+            </div>
+          )}
+          {layoutMsg && <p className="settings-desc" style={{ marginTop: 8, color: layoutMsg.ok ? 'var(--ok)' : 'var(--danger)' }}>{layoutMsg.text}</p>}
         </div>
         <h3 className="settings-subtitle" style={{ marginTop: 24 }}>Colors</h3>
         {renderSchemesView()}

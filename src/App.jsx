@@ -2793,7 +2793,8 @@ setPositionModeValue(null);
   const handleSelectTrack = useCallback((trackId, mode = 'single') => {
     if (mode === 'toggle') {
       setSelectedTrackIds(prev => {
-        const next = new Set(prev.size ? prev : [activeTrackIdRef.current]);
+        // the selection is stale when it does not contain the active track (e.g. after adding audio): start from the active one
+        const next = new Set(prev.has(activeTrackIdRef.current) ? prev : [activeTrackIdRef.current]);
         if (next.has(trackId)) next.delete(trackId); else next.add(trackId);
         return next;
       });

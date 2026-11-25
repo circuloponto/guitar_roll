@@ -122,6 +122,16 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     setSt(defaultState(el?.clientWidth, el?.clientHeight));
   }, []);
 
+  // an imported layout was stored: load it
+  useEffect(() => {
+    const on = () => {
+      const el = containerRef.current;
+      setSt(loadState(el?.clientWidth || window.innerWidth - 40, el?.clientHeight || window.innerHeight - 40));
+    };
+    window.addEventListener('guitar-roll-reload-layout', on);
+    return () => window.removeEventListener('guitar-roll-reload-layout', on);
+  }, []);
+
   // "Reset layout" from Settings > Look & Feel
   useEffect(() => {
     const on = () => resetLayout();
