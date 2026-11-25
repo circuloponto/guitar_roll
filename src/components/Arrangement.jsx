@@ -336,13 +336,6 @@ export default function Arrangement({
                 onDragStart={(e) => { setDragIndex(r.index); e.dataTransfer.effectAllowed = 'move'; const row = e.currentTarget.closest('.arr-head'); if (row) e.dataTransfer.setDragImage(row, 12, 12); }}
                 onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
               >⠿</span>
-              <input
-                type="checkbox" className="arr-check"
-                checked={selectedTrackIds.has(r.track.id) && selectedTrackIds.size > 1}
-                onClick={(e) => e.stopPropagation()}
-                onChange={() => onSelectTrack(r.track.id, 'toggle')}
-                title="Tick several tracks, then press Group (or Ctrl/⌘+click, Shift+click)"
-              />
               <span className="arr-dot" />
               {editingId === r.track.id ? (
                 <input
