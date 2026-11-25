@@ -29,7 +29,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // FL Studio style windows: panels resize against their neighbours (which adapt), minimise to a
 // title strip, and undock into floating windows. Panels are always rendered flat (keyed by id) and
 // positioned from the layout state, so docking, undocking and moving never remount them.
-export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangement }) {
+export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangement, mobile: mobileBar }) {
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
@@ -96,6 +96,12 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('guitar-roll-panels', { detail: { closed: st.closed } }));
   }, [st.closed]);
+  // the toolbar asks which windows are closed when it starts (the Dock's first announcement comes before it listens)
+  useEffect(() => {
+    const on = () => window.dispatchEvent(new CustomEvent('guitar-roll-panels', { detail: { closed: stRef.current.closed } }));
+    window.addEventListener('guitar-roll-panels-request', on);
+    return () => window.removeEventListener('guitar-roll-panels-request', on);
+  }, []);
 
   // Make the Tracks window this tall (a share of the dock area), e.g. when the Synth tab opens.
   useEffect(() => {
@@ -280,6 +286,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
       <>
         {menu}
         {tracks}
+        {mobileBar}
         <div className="main-area">{fretboard}{timeline}</div>
       </>
     );

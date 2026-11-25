@@ -1696,6 +1696,13 @@ export default function Timeline({
               className={`loop-region-header${loop ? '' : ' inactive'}`}
               style={{ left: loopLeftPx, width: loopWidthPx }}
             />}
+            {/* Sections: each marker starts a named span that runs to the next marker */}
+            {[...markers].sort((x, y) => x.beat - y.beat).map((m, i, arr) => {
+              const end = i + 1 < arr.length ? arr[i + 1].beat : totalCols;
+              const left = beatToX(m.beat, barSubdivisions, cellWidth);
+              const width = beatToX(end, barSubdivisions, cellWidth) - left;
+              return <div key={`sec-${m.id}`} className="timeline-section" style={{ left, width: Math.max(2, width - 1), background: m.color || '#b24fcc' }} title={m.name} />;
+            })}
             {/* Markers */}
             {markers.map(marker => (
               <div

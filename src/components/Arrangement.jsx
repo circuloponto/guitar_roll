@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Volume2, VolumeX, MoreHorizontal } from 'lucide-react';
 import ConfirmDialog from './ConfirmDialog';
 import { TrackControls, TrackMenu } from './TrackParts';
 import { beatToX, xToBeat, gridTotalWidth, barStartBeats } from '../utils/barLayout';
 import { getClips, clipEndBeat } from '../utils/audioClips';
-import { CELL_WIDTH } from '../utils/constants';
+import { CELL_WIDTH, SUBDIVISIONS } from '../utils/constants';
 import { TRACK_GROUP_COLOURS } from '../utils/trackGroups';
 
 const ROW_MIN = 20, ROW_MAX = 180, ROW_DEFAULT = 46;
 const ROW_KEY = 'guitar-roll-arrangement-row-height';
 const GROUP_H = 44;
 const RULER_H = 22;
+const SECTION_H = 22;
+const TOP_H = RULER_H + SECTION_H;
 const OPEN = [40, 45, 50, 55, 59, 64];
 
 // Arrangement: one horizontal lane per track, like Ableton's arrangement view. The header on the
@@ -25,26 +27,39 @@ export default function Arrangement({
   onToggleTrackGroup, onTrackGroupFlag, onTrackGroupSet, onRenameTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup, onGroupTracks, onUngroupTracks,
   onTranscribe, onLearn, onToggleHeat, heatTracks, onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions,
   onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
-  extraTop = null, extraBottom = null,
+  markers = [], onUpdateMarker, onAddMarker, onDeleteMarker, selectedSectionId = null, onSelectSection,
+  sectionActions = null,
+  songPlan = { order: [], mode: false }, onSongPlanChange,
 }) {
   const lanesRef = useRef(null);
   const canvasRef = useRef(null);
   const rulerRef = useRef(null);
   const scrollRef = useRef(null);
   const [size, setSize] = useState({ w: 600, h: 200 });
-  const [scrollLeft, setScrollLeft] = useState(0);
+  const [scrollX, setScrollX] = useState(0);   // the Arrangement's own horizontal scroll (px)
+  const [arrCell, setArrCell] = useState(4);     // and its own zoom: px per grid column
+  const autoFitRef = useRef(true);                // keeps showing the whole song until you zoom or scroll yourself
+  const [tlView, setTlView] = useState({ sl: 0, cw: 0 }); // what the Timeline is showing
   const [ctxMenu, setCtxMenu] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState('');
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
-  const [inspOpen, setInspOpen] = useState(() => { try { return localStorage.getItem('guitar-roll-arrangement-inspector') !== '0'; } catch { return true; } });
-  const toggleInsp = () => setInspOpen((o) => { try { localStorage.setItem('guitar-roll-arrangement-inspector', o ? '0' : '1'); } catch { /* ignore */ } return !o; });
+  const [opts, setOpts] = useState(null); // the options popover of a track: { id, x, y }
   const clickMode = (e) => (e.ctrlKey || e.metaKey ? 'toggle' : e.shiftKey ? 'range' : 'single');
   const commitRename = () => { if (editingId && editName.trim()) onRenameTrack(editingId, editName.trim()); setEditingId(null); };
   const askDelete = (t) => { if ((t.notes && t.notes.length > 0) || t.audioFileName) setConfirmDelete(t); else onDeleteTrack(t.id); };
-  const activeTrack = tracks.find(t => t.id === activeTrackId) || null;
+  const [orderDrag, setOrderDrag] = useState(null);
+  const optsTrack = opts ? tracks.find(t => t.id === opts.id) : null;
+  useEffect(() => {
+    if (!opts) return undefined;
+    const close = (e) => { if (!e.target.closest?.('.arr-opts')) setOpts(null); };
+    const key = (e) => { if (e.key === 'Escape') setOpts(null); };
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', key); };
+  }, [opts]);
   const [rowH, setRowH] = useState(() => {
     try { const v = Number(localStorage.getItem(ROW_KEY)); return v >= ROW_MIN && v <= ROW_MAX ? v : ROW_DEFAULT; } catch { return ROW_DEFAULT; }
   });
@@ -55,26 +70,26 @@ export default function Arrangement({
       return v;
     });
   }, []);
-  // horizontal zoom is the Timeline's (they share the grid): ask it to zoom around the playhead
-  const zoomH = (dir) => window.dispatchEvent(new CustomEvent('timeline-zoom', { detail: { dir } }));
-  const cellWidth = CELL_WIDTH * timelineZoom;
+  const cellWidth = arrCell;
+  const scrollLeft = scrollX;
+  const tlCell = CELL_WIDTH * timelineZoom;
   const totalCols = barSubdivisions.reduce((a, b) => a + b, 0);
   const regionSet = loop || loopStart > 0 || loopEnd < totalCols; // an inactive region stays visible, greyed
 
-  // follow the Timeline's horizontal scroll
+  // watch the Timeline's scroll and size: the dashed box marks that range
   useEffect(() => {
-    let el = null;
-    let raf = 0;
-    let tries = 0;
-    const on = () => setScrollLeft(el.scrollLeft);
+    let el = null, ro = null, raf = 0, tries = 0;
+    const on = () => setTlView({ sl: el.scrollLeft, cw: el.clientWidth });
     const attach = () => {
       el = bodyRef?.current;
       if (!el) { if (tries++ < 600) raf = requestAnimationFrame(attach); return; }
       on();
       el.addEventListener('scroll', on, { passive: true });
+      ro = new ResizeObserver(on);
+      ro.observe(el);
     };
     attach();
-    return () => { cancelAnimationFrame(raf); if (el) el.removeEventListener('scroll', on); };
+    return () => { cancelAnimationFrame(raf); if (el) el.removeEventListener('scroll', on); if (ro) ro.disconnect(); };
   }, [bodyRef]);
 
   useEffect(() => {
@@ -119,6 +134,50 @@ export default function Arrangement({
     const avail = (lanesRef.current?.clientHeight || size.h) - groups * GROUP_H - 2;
     changeRowH(avail / tracksShown);
   };
+  // the song's end: the last note or audio clip
+  const extent = useMemo(() => {
+    let e = 0;
+    tracks.forEach((t) => {
+      if (t.type === 'audio') {
+        const m = tempoMap ? tempoMap.forTrack(t) : null;
+        if (m) getClips(t).forEach((c) => { e = Math.max(e, clipEndBeat(c, m)); });
+      } else t.notes.forEach((n) => { e = Math.max(e, n.beat + n.duration); });
+    });
+    return e;
+  }, [tracks, tempoMap]);
+  const songBars = useMemo(() => {
+    const starts = barStartBeats(barSubdivisions);
+    let n = 1;
+    for (let i = 0; i < starts.length; i++) if (starts[i] < extent - 1e-6) n = i + 1;
+    return Math.max(n, 2);
+  }, [extent, barSubdivisions]);
+  const sections = useMemo(() => {
+    const ms = [...markers].sort((a, b) => a.beat - b.beat);
+    const starts = barStartBeats(barSubdivisions);
+    const songEnd = starts[songBars] ?? barSubdivisions.reduce((a, b) => a + b, 0);
+    return ms.map((m, i) => ({
+      id: m.id, name: m.name, color: m.color, start: m.beat,
+      end: i + 1 < ms.length ? ms[i + 1].beat : Math.max(songEnd, m.beat + 1),
+    }));
+  }, [markers, barSubdivisions, songBars]);
+  const fitSong = useCallback(() => {
+    autoFitRef.current = true;
+    setArrCell(Math.min(60, Math.max(0.4, (size.w - 12) / (SUBDIVISIONS * songBars))));
+    setScrollX(0);
+  }, [size.w, songBars]);
+  useEffect(() => { if (autoFitRef.current) fitSong(); }, [fitSong]);
+  const zoomArr = useCallback((f, anchorX = size.w / 2) => {
+    autoFitRef.current = false;
+    const next = Math.min(80, Math.max(0.4, arrCell * f));
+    const k = next / arrCell;
+    setScrollX(Math.max(0, (scrollX + anchorX) * k - anchorX));
+    setArrCell(next);
+  }, [arrCell, scrollX, size.w]);
+  const tlBeats = tlView.cw > 0 ? {
+    b0: xToBeat(tlView.sl, barSubdivisions, tlCell, false),
+    b1: xToBeat(tlView.sl + tlView.cw, barSubdivisions, tlCell, false),
+  } : null;
+  const scrollTimelineTo = (beat) => { if (bodyRef?.current) bodyRef.current.scrollLeft = Math.max(0, beatToX(beat, barSubdivisions, tlCell)); };
   const gridW = gridTotalWidth(barSubdivisions, cellWidth);
   const headBeat = playing && currentBeat != null ? currentBeat : selectedBeat;
   const X = useCallback((b) => beatToX(b, barSubdivisions, cellWidth) - scrollLeft, [barSubdivisions, cellWidth, scrollLeft]);
@@ -128,12 +187,12 @@ export default function Arrangement({
     const cv = rulerRef.current;
     if (!cv) return;
     const dpr = window.devicePixelRatio || 1;
-    cv.width = Math.floor(size.w * dpr); cv.height = Math.floor(RULER_H * dpr);
+    cv.width = Math.floor(size.w * dpr); cv.height = Math.floor(TOP_H * dpr);
     const g = cv.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = getComputedStyle(cv);
     const col = (n, d) => css.getPropertyValue(n).trim() || d;
-    g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, 0, size.w, RULER_H);
+    g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, 0, size.w, TOP_H);
     g.font = '10px monospace'; g.textBaseline = 'middle';
     const starts = barStartBeats(barSubdivisions);
     starts.forEach((b, i) => {
@@ -148,7 +207,27 @@ export default function Arrangement({
       g.fillRect(x0, RULER_H - 5, Math.max(1, x1 - x0), 5);
       g.globalAlpha = 1;
     }
-  }, [size, X, barSubdivisions, loop, loopStart, loopEnd, regionSet]);
+    // sections: each marker starts a named span that runs to the next marker
+    g.font = 'bold 10px sans-serif'; g.textBaseline = 'middle';
+    g.strokeStyle = col('--hairline', '#2a2a33'); g.beginPath(); g.moveTo(0, RULER_H + 0.5); g.lineTo(size.w, RULER_H + 0.5); g.stroke();
+    sections.forEach((sec) => {
+      const sx0 = X(sec.start), sx1 = X(sec.end);
+      if (sx1 < 0 || sx0 > size.w) return;
+      const on = sec.id === selectedSectionId;
+      g.fillStyle = sec.color || '#b24fcc'; g.globalAlpha = on ? 0.6 : 0.32;
+      g.fillRect(sx0 + 1, RULER_H + 2, Math.max(2, sx1 - sx0 - 2), SECTION_H - 4); g.globalAlpha = 1;
+      g.fillStyle = sec.color || '#b24fcc'; g.fillRect(sx0 + 1, RULER_H + 2, 3, SECTION_H - 4);
+      if (on) { g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.strokeRect(sx0 + 1.5, RULER_H + 2.5, Math.max(2, sx1 - sx0 - 3), SECTION_H - 5); g.lineWidth = 1; }
+      g.save(); g.beginPath(); g.rect(sx0 + 6, RULER_H, Math.max(0, sx1 - sx0 - 8), SECTION_H); g.clip();
+      g.fillStyle = col('--fg', '#eee'); g.fillText(sec.name, sx0 + 8, RULER_H + SECTION_H / 2 + 0.5);
+      g.restore();
+    });
+    if (tlBeats) {
+      const bx0 = X(tlBeats.b0), bx1 = X(tlBeats.b1);
+      g.fillStyle = col('--accent', '#8a4fff'); g.globalAlpha = 0.28; g.fillRect(bx0, 0, Math.max(2, bx1 - bx0), RULER_H); g.globalAlpha = 1;
+      g.strokeStyle = col('--accent-hi', '#b06cff'); g.lineWidth = 1.5; g.strokeRect(bx0 + 0.5, 1, Math.max(2, bx1 - bx0), RULER_H - 2); g.lineWidth = 1;
+    }
+  }, [size, X, barSubdivisions, loop, loopStart, loopEnd, regionSet, tlBeats?.b0, tlBeats?.b1, sections, selectedSectionId]);
 
   // lanes
   useEffect(() => {
@@ -230,35 +309,142 @@ export default function Arrangement({
       // a collapsed group shows all its tracks laid over one another, like Ableton
       else if (r.grp.collapsed) r.members.forEach((m) => drawTrack(m, r.y, r.h, r.grp.colour));
     });
+    // the part of the song the Timeline is showing
+    if (tlBeats) {
+      const bx0 = X(tlBeats.b0), bx1 = X(tlBeats.b1);
+      g.fillStyle = accent; g.globalAlpha = 0.08; g.fillRect(bx0, 0, Math.max(2, bx1 - bx0), H); g.globalAlpha = 1;
+      g.strokeStyle = accent; g.setLineDash([5, 4]); g.lineWidth = 1;
+      g.strokeRect(bx0 + 0.5, 0.5, Math.max(2, bx1 - bx0), Math.max(1, H - 1)); g.setLineDash([]);
+    }
     // playhead
     const px = X(headBeat);
     if (px >= 0 && px <= size.w) { g.strokeStyle = '#fff'; g.beginPath(); g.moveTo(px + 0.5, 0); g.lineTo(px + 0.5, H); g.stroke(); }
-  }, [size, rows, X, barSubdivisions, tempoMap, loop, loopStart, loopEnd, regionSet, headBeat, activeTrackId, tracks, trackGroups]);
+  }, [size, rows, X, tlBeats?.b0, tlBeats?.b1, barSubdivisions, tempoMap, loop, loopStart, loopEnd, regionSet, headBeat, activeTrackId, tracks, trackGroups]);
 
-  const onLaneDown = (e) => {
-    const r = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - r.left, y = e.clientY - r.top;
-    const row = rows.list.find(q => y >= q.y && y < q.y + q.h);
-    if (row && row.kind === 'track') onSelectTrack(row.track.id, clickMode(e));
-    onSelectBeat(Math.max(0, xToBeat(x + scrollLeft, barSubdivisions, cellWidth, false)));
+  // Pointer on the lanes or the ruler. Inside the dashed box a drag scrolls the Timeline; outside it a
+  // drag pans this view; a plain click on a lane selects the track and places the playhead, and a
+  // click on the ruler jumps the Timeline there.
+  const snapBeat = (beat, alt) => {
+    if (alt) return Math.max(0, Math.round(beat));
+    const starts = barStartBeats(barSubdivisions);
+    let best = 0;
+    for (const b of starts) if (Math.abs(b - beat) < Math.abs(best - beat)) best = b;
+    return best;
   };
-  // wheel: Ctrl+wheel zooms horizontally (the Timeline), Ctrl+Shift+wheel changes the track height,
-  // horizontal wheel moves the Timeline too
+  const sectionAt = (x) => {
+    const hit = sections.find(sec => x >= X(sec.start) - 1 && x < X(sec.end));
+    return hit || null;
+  };
+  const startPointer = (e, fromRuler) => {
+    if (e.button !== 0) return;
+    const el = fromRuler ? rulerRef.current : canvasRef.current;
+    const rect = el.getBoundingClientRect();
+    const x0 = e.clientX - rect.left, y0 = e.clientY - rect.top;
+    if (fromRuler && y0 >= RULER_H) {
+      // the sections band: click selects, the left edge drags the marker
+      const sec = sectionAt(x0);
+      if (!sec) return;
+      if (onSelectSection) onSelectSection(sec.id);
+      const onEdge = Math.abs(x0 - X(sec.start)) <= 6;
+      if (!onEdge) {
+        // drag the body: move the whole section (needs the section actions)
+        if (sectionActions?.move) {
+          let dropBeat = null;
+          const mv = (ev) => { dropBeat = snapBeat(xToBeat(ev.clientX - rect.left + scrollX, barSubdivisions, cellWidth, false), ev.altKey); };
+          const up = (ev) => {
+            window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
+            if (dropBeat != null && Math.abs(ev.clientX - e.clientX) > 4) sectionActions.move(sec.id, dropBeat);
+          };
+          window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+        }
+        return;
+      }
+      const move = (ev) => {
+        const b = snapBeat(xToBeat(ev.clientX - rect.left + scrollX, barSubdivisions, cellWidth, false), ev.altKey);
+        if (b !== sec.start && onUpdateMarker) onUpdateMarker(sec.id, { beat: b });
+      };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+      return;
+    }
+    const inBox = tlBeats && x0 >= X(tlBeats.b0) - 2 && x0 <= X(tlBeats.b1) + 2;
+    const span = tlBeats ? tlBeats.b1 - tlBeats.b0 : 0;
+    const startBeat0 = tlBeats ? tlBeats.b0 : 0;
+    const startScrollX = scrollX;
+    let moved = false;
+    const move = (ev) => {
+      const dx = ev.clientX - e.clientX;
+      if (!moved && Math.abs(dx) < 3 && Math.abs(ev.clientY - e.clientY) < 3) return;
+      moved = true;
+      if (inBox || fromRuler) {
+        const b = xToBeat(Math.max(0, beatToX(startBeat0, barSubdivisions, cellWidth) + (fromRuler && !inBox ? x0 + scrollX - beatToX(startBeat0 + span / 2, barSubdivisions, cellWidth) : 0) + dx), barSubdivisions, cellWidth, false);
+        scrollTimelineTo(Math.max(0, b));
+      } else {
+        autoFitRef.current = false;
+        setScrollX(Math.max(0, startScrollX - dx));
+      }
+    };
+    const up = (ev) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (moved) return;
+      const beat = Math.max(0, xToBeat(x0 + scrollX, barSubdivisions, cellWidth, false));
+      if (fromRuler) { scrollTimelineTo(Math.max(0, beat - span / 2)); return; }
+      const row = rows.list.find(q => y0 >= q.y && y0 < q.y + q.h);
+      if (row && row.kind === 'track') onSelectTrack(row.track.id, clickMode(ev));
+      onSelectBeat(beat);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  const onTopDoubleClick = (e) => {
+    const r = rulerRef.current.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (y < RULER_H) return;
+    const sec = sectionAt(x);
+    if (sec) {
+      const n = window.prompt('Section name', sec.name);
+      if (n && n.trim() && onUpdateMarker) onUpdateMarker(sec.id, { name: n.trim() });
+    } else if (onAddMarker) {
+      onAddMarker(snapBeat(xToBeat(x + scrollX, barSubdivisions, cellWidth, false), e.altKey), 'Section');
+    }
+  };
+  const [secMenu, setSecMenu] = useState(null);
+  const onTopContextMenu = (e) => {
+    const r = rulerRef.current.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    if (y < RULER_H) return;
+    e.preventDefault();
+    const sec = sectionAt(x);
+    if (sec) { if (onSelectSection) onSelectSection(sec.id); setSecMenu({ id: sec.id, at: snapBeat(xToBeat(x + scrollX, barSubdivisions, cellWidth, false), e.altKey), x: e.clientX, y: e.clientY }); }
+    else setSecMenu({ add: snapBeat(xToBeat(x + scrollX, barSubdivisions, cellWidth, false), e.altKey), x: e.clientX, y: e.clientY });
+  };
+  useEffect(() => {
+    if (!secMenu) return undefined;
+    const close = () => setSecMenu(null);
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close); window.addEventListener('keydown', key);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', key); };
+  }, [secMenu]);
+
+  // wheel: Ctrl+wheel zooms this view, Ctrl+Shift+wheel changes the track height, sideways wheel pans
   const lastZoomAt = useRef(0);
   const onWheel = (e) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault();
       if (e.shiftKey) { changeRowH(h => h * (1 - e.deltaY * 0.005)); return; }
       const now = performance.now();
-      if (now - lastZoomAt.current < 60) return;
+      if (now - lastZoomAt.current < 40) return;
       lastZoomAt.current = now;
-      zoomH(e.deltaY < 0 ? 1 : -1);
+      const r = lanesRef.current.getBoundingClientRect();
+      zoomArr(Math.exp(-e.deltaY * 0.01), e.clientX - r.left);
       return;
     }
     const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
-    if (!dx || !bodyRef?.current) return;
+    if (!dx) return;
     e.preventDefault();
-    bodyRef.current.scrollLeft += dx;
+    autoFitRef.current = false;
+    setScrollX(x => Math.max(0, x + dx));
   };
   useEffect(() => {
     const el = lanesRef.current;
@@ -270,19 +456,54 @@ export default function Arrangement({
 
   return (
     <div className="arr">
-      {extraTop}
-      <div className="arr-top" style={{ height: RULER_H }}>
+      <div className="arr-top" style={{ height: TOP_H }}>
         <div className="arr-head-spacer arr-zoombar">
           <span title="Zoom in time (Ctrl + scroll)">⇔</span>
-          <button className="arr-btn" onClick={() => zoomH(-1)} title="Zoom out in time (Ctrl + scroll)">−</button>
-          <button className="arr-btn" onClick={() => zoomH(1)} title="Zoom in on time (Ctrl + scroll)">+</button>
+          <button className="arr-btn" onClick={() => zoomArr(1 / 1.3)} title="Zoom out (Ctrl + scroll)">−</button>
+          <button className="arr-btn" onClick={() => zoomArr(1.3)} title="Zoom in (Ctrl + scroll)">+</button>
+          <button className="arr-btn arr-fit" onClick={fitSong} title="Fit the whole song in the window">Song</button>
           <span title="Track height (Ctrl + Shift + scroll)">⇕</span>
           <button className="arr-btn" onClick={() => changeRowH(h => h / 1.2)} title="Shorter tracks (Ctrl + Shift + scroll)">−</button>
           <button className="arr-btn" onClick={() => changeRowH(h => h * 1.2)} title="Taller tracks (Ctrl + Shift + scroll)">+</button>
           <button className="arr-btn arr-fit" onClick={fitHeight} title="Fit all tracks into the window height">Fit</button>
         </div>
-        <canvas ref={rulerRef} className="arr-ruler" style={{ width: size.w, height: RULER_H }} />
+        <canvas ref={rulerRef} className="arr-ruler" style={{ width: size.w, height: TOP_H, cursor: 'pointer' }} onPointerDown={(e) => startPointer(e, true)} onDoubleClick={onTopDoubleClick} onContextMenu={onTopContextMenu} />
       </div>
+      {sections.length > 0 && onSongPlanChange && (
+        <div className="arr-order">
+          <label className="arr-order-mode" title="When on, Play follows this order: each section is stored once, so a section that comes back plays the same notes and an edit changes every repeat.">
+            <input type="checkbox" checked={songPlan.mode} onChange={(e) => onSongPlanChange({ ...songPlan, mode: e.target.checked })} />
+            Song order
+          </label>
+          <div className="arr-order-chips">
+            {songPlan.order.map((id, i) => {
+              const sec = sections.find(x => x.id === id);
+              if (!sec) return null;
+              return (
+                <span
+                  key={`${id}-${i}`} className={`arr-chip${sec.id === selectedSectionId ? ' on' : ''}`} style={{ '--c': sec.color || '#b24fcc' }}
+                  draggable onDragStart={() => setOrderDrag(i)} onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => { if (orderDrag === null || orderDrag === i) return; const o = [...songPlan.order]; const [m] = o.splice(orderDrag, 1); o.splice(i, 0, m); onSongPlanChange({ ...songPlan, order: o }); setOrderDrag(null); }}
+                  onClick={() => onSelectSection && onSelectSection(sec.id)}
+                  title="Drag to reorder, click to select this section"
+                >
+                  {sec.name}
+                  <button className="arr-chip-x" onClick={(e) => { e.stopPropagation(); onSongPlanChange({ ...songPlan, order: songPlan.order.filter((_, k) => k !== i) }); }} title="Take this out of the order">×</button>
+                </span>
+              );
+            })}
+            {!songPlan.order.length && <span className="arr-order-empty">Add sections in the order they should play, e.g. Intro, Head, Solo, Head, Outro</span>}
+          </div>
+          <select
+            className="arr-order-add" value="" title="Add a section to the end of the order"
+            onChange={(e) => { if (e.target.value) onSongPlanChange({ ...songPlan, order: [...songPlan.order, e.target.value] }); }}
+          >
+            <option value="">+ section</option>
+            {sections.map(sec => <option key={sec.id} value={sec.id}>{sec.name}</option>)}
+          </select>
+          <button className="arr-btn arr-fit" onClick={() => onSongPlanChange({ ...songPlan, order: sections.map(x => x.id) })} title="Use every section once, in song order">All</button>
+        </div>
+      )}
       <div className="arr-scroll" ref={scrollRef}>
         <div className="arr-heads">
           {rows.list.map((r) => (r.kind === 'group' ? (
@@ -349,17 +570,38 @@ export default function Arrangement({
                   {r.track.type === 'audio' ? '🎵 ' : ''}{r.track.name}
                 </span>
               )}
-              <button className={`arr-btn ${r.track.muted ? 'on-red' : ''}`} onClick={(e) => { e.stopPropagation(); onToggleMute(r.track.id); }} title="Mute">M</button>
+              {(() => {
+                // one speaker: on = you will hear this track, off = muted or silenced by another track's solo
+                const silenced = !r.track.muted && !r.track.solo && tracks.some(t => t.solo);
+                const audible = !r.track.muted && !silenced;
+                return (
+                  <button
+                    className={`arr-btn arr-speaker ${audible ? '' : 'off'}`}
+                    onClick={(e) => { e.stopPropagation(); onToggleMute(r.track.id); }}
+                    title={r.track.muted ? 'Muted: click to unmute' : silenced ? 'Silent because another track is soloed: click to mute' : 'Click to mute'}
+                  >{audible ? <Volume2 size={13} /> : <VolumeX size={13} />}</button>
+                );
+              })()}
               <button className={`arr-btn ${r.track.solo ? 'on-yellow' : ''}`} onClick={(e) => { e.stopPropagation(); onToggleSolo(r.track.id); }} title="Solo">S</button>
               <button className="arr-btn" onClick={(e) => { e.stopPropagation(); onToggleVisible(r.track.id); }} title={r.track.visible === false ? 'Show in the roll' : 'Hide from the roll'}>
                 {r.track.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
               </button>
+              <input
+                type="range" className="arr-vol arr-vol-op" min={5} max={100} value={Math.round((r.track.bgOpacity ?? 0.2) * 100)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => onSetBgOpacity(r.track.id, Number(e.target.value) / 100)}
+                title={`Opacity in the background of the roll: ${Math.round((r.track.bgOpacity ?? 0.2) * 100)}%`}
+              />
               <input
                 type="range" className="arr-vol" min={0} max={100} value={Math.round(r.track.volume * 100)}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => onSetVolume(r.track.id, Number(e.target.value) / 100)}
                 title={`Volume ${Math.round(r.track.volume * 100)}%`}
               />
+              <button
+                className="arr-btn" title="More options for this track"
+                onClick={(e) => { e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); setOpts({ id: r.track.id, x: b.left, y: b.bottom + 4 }); }}
+              ><MoreHorizontal size={13} /></button>
             </div>
           )))}
           <div className="arr-adds">
@@ -377,35 +619,67 @@ export default function Arrangement({
           </div>
         </div>
         <div className="arr-lanes" ref={lanesRef}>
-          <canvas ref={canvasRef} className="arr-canvas" style={{ width: size.w, height: Math.max(rows.total, 1) }} onPointerDown={onLaneDown} />
+          <canvas ref={canvasRef} className="arr-canvas" style={{ width: size.w, height: Math.max(rows.total, 1) }} onPointerDown={(e) => startPointer(e, false)} />
         </div>
       </div>
-      {extraBottom}
-      <div className={`arr-inspector${inspOpen ? ' open' : ''}`}>
-        <button className="arr-insp-toggle" onClick={toggleInsp} title="The options of the selected track">
-          {inspOpen ? '▾' : '▸'} {activeTrack ? `${activeTrack.name}: options` : 'Track options'}
-        </button>
-        {inspOpen && activeTrack && (
-          <div className="arr-insp-body track-row-controls">
+      {optsTrack && (
+        <div className="arr-opts" style={{ left: Math.min(opts.x, window.innerWidth - 460), top: Math.min(opts.y, window.innerHeight - 260) }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="arr-opts-title">{optsTrack.name}</div>
+          <div className="arr-opts-body track-row-controls">
             <TrackControls
-              track={activeTrack} isActive
+              track={optsTrack} isActive={optsTrack.id === activeTrackId}
               onToggleMute={onToggleMute} onToggleSolo={onToggleSolo} onSetVolume={onSetVolume}
               onToggleVisible={onToggleVisible} onSetBgOpacity={onSetBgOpacity} onSetTrackScheme={onSetTrackScheme}
               sessionSchemes={sessionSchemes} missingAudioIds={missingAudioIds} onLoadAudio={onLoadAudio}
               onSetAudioOptions={onSetAudioOptions} onNudgeBpm={onNudgeBpm} onDetectTempo={onDetectTempo} bpm={bpm}
               onAddSyncPoint={onAddSyncPoint} onAutoSync={onAutoSync} onClearSyncPoints={onClearSyncPoints}
             />
-            <button className="track-btn-lg" onClick={() => onDuplicateTrack(activeTrack.id)} title="Duplicate this track">Duplicate</button>
-            <button className="track-btn-lg" onClick={() => askDelete(activeTrack)} title="Delete this track" style={{ color: 'var(--danger)' }}>Delete</button>
+            <button className="track-btn-lg" onClick={() => { onDuplicateTrack(optsTrack.id); setOpts(null); }} title="Duplicate this track">Duplicate</button>
+            <button className="track-btn-lg" onClick={() => { askDelete(optsTrack); setOpts(null); }} title="Delete this track" style={{ color: 'var(--danger)' }}>Delete</button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+      {secMenu && (() => {
+        const stop = (e) => e.stopPropagation();
+        const pos = { left: Math.min(secMenu.x, window.innerWidth - 230), top: Math.min(secMenu.y, window.innerHeight - 280) };
+        if (secMenu.add !== undefined) {
+          return (
+            <div className="tab-context-menu" style={pos} onMouseDown={stop}>
+              <button className="tab-context-menu-item" onClick={() => { onAddMarker(secMenu.add, 'Section'); setSecMenu(null); }}>New section here</button>
+            </div>
+          );
+        }
+        const sec = sections.find(x => x.id === secMenu.id);
+        if (!sec) return null;
+        const act = sectionActions || {};
+        const item = (label, fn, extra) => <button className="tab-context-menu-item" onClick={() => { fn(); setSecMenu(null); }}>{label}{extra ? <span className="tab-context-menu-key">{extra}</span> : null}</button>;
+        return (
+          <div className="tab-context-menu" style={pos} onMouseDown={stop}>
+            <div className="tab-context-menu-title">{sec.name}</div>
+            {onAddMarker && secMenu.at > sec.start && item('Start a new section here', () => onAddMarker(secMenu.at, 'Section'))}
+            {item('Rename', () => { const n = window.prompt('Section name', sec.name); if (n && n.trim()) onUpdateMarker(sec.id, { name: n.trim() }); })}
+            <label className="tab-context-menu-colour-picker">
+              <span className="tab-context-menu-label">Colour</span>
+              <span className="tab-context-menu-colour-swatch" style={{ background: sec.color }} />
+              <input type="color" value={sec.color || '#b24fcc'} onChange={(e) => onUpdateMarker(sec.id, { color: e.target.value })} onMouseDown={stop} aria-label="Pick section colour" />
+            </label>
+            <div className="tab-context-menu-divider" />
+            {act.select && item('Select its notes', () => act.select(sec.id))}
+            {act.loop && item('Loop this section', () => act.loop(sec.id), 'J')}
+            {act.duplicate && item('Duplicate (insert a copy after)', () => act.duplicate(sec.id))}
+            {act.remove && item('Delete section and close the gap', () => act.remove(sec.id))}
+            <div className="tab-context-menu-divider" />
+            {item('Remove section marker only', () => onDeleteMarker(sec.id))}
+          </div>
+        );
+      })()}
       <TrackMenu
         menu={ctxMenu} onClose={() => setCtxMenu(null)} tracks={tracks} trackGroups={trackGroups} selectedTrackIds={selectedTrackIds}
         onGroupTracks={onGroupTracks} onUngroupTracks={onUngroupTracks} onDuplicateTrack={onDuplicateTrack}
         onLoadAudio={onLoadAudio} missingAudioIds={missingAudioIds} onTranscribe={onTranscribe} onLearn={onLearn}
         onToggleHeat={onToggleHeat} heatTracks={heatTracks} onRemoveAudio={onRemoveAudio} onAskDelete={askDelete}
         onRename={(id) => { const t = tracks.find(x => x.id === id); if (t) { setEditingId(t.id); setEditName(t.name); } }}
+        onOptions={(id) => setOpts({ id, x: ctxMenu?.x || 300, y: ctxMenu?.y || 300 })}
         onRenameTrackGroup={onRenameTrackGroup} onToggleTrackGroup={onToggleTrackGroup}
         onSetTrackGroupColour={onSetTrackGroupColour} onRemoveTrackGroup={onRemoveTrackGroup}
       />

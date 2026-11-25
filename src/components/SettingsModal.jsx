@@ -8,6 +8,7 @@ import {
 } from '../utils/storage';
 import { SENSITIVITY } from '../utils/transcribe';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
+import { loadPianoSize, setPianoSize, PIANO_SIZES } from '../utils/pianoSize';
 import { readSavedState, validateState, writeSavedState } from '../utils/dockLayout';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
@@ -111,6 +112,7 @@ function getSessionSchemes(appState, savedSchemes) {
 
 export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab }) {
   // ---- share / import window layouts ----
+  const [pianoSize, setPianoSizeState] = useState(loadPianoSize);
   const [layoutMsg, setLayoutMsg] = useState(null);
   const [layoutPasteOpen, setLayoutPasteOpen] = useState(false);
   const [layoutText, setLayoutText] = useState('');
@@ -1112,6 +1114,15 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     </>);
   } else if (activeTab === 'timeline') {
     pane = (<>
+          <div className="settings-section">
+            <h3>Piano keys</h3>
+            <p className="settings-desc">The key column beside the piano roll. Make it narrower, or hide it to give the notes more room.</p>
+            <div className="settings-row">
+              <select className="duration-select" value={pianoSize} onChange={(e) => { setPianoSizeState(e.target.value); setPianoSize(e.target.value); }}>
+                {Object.entries(PIANO_SIZES).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+              </select>
+            </div>
+          </div>
           <div className="settings-section">
             <h3>Tuplet Grid Lines</h3>
             <p className="settings-desc">Subdivision lines between beats in the grid.</p>

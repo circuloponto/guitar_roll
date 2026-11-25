@@ -8,8 +8,9 @@
 export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement'];
 const NEW_PANELS = ['sync', 'arrangement']; // added later: layouts saved before them keep these closed
 export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement' };
-export const CLOSABLE = ['tracks', 'fretboard', 'timeline', 'arrangement', 'sync']; // the menu holds the toolbar, so it stays
-const STORAGE_KEY = 'guitar-roll-layout-v4';
+export const CLOSABLE = ['arrangement', 'fretboard', 'timeline', 'tracks', 'sync']; // the menu holds the toolbar, so it stays
+const STORAGE_KEY = 'guitar-roll-layout-v5';
+const V4_KEY = 'guitar-roll-layout-v4';
 const V3_KEY = 'guitar-roll-layout-v3';
 const V2_KEY = 'guitar-roll-layout-v2';
 export const STRIP_PX = 26;          // a minimised panel is just its title strip
@@ -26,14 +27,19 @@ const newEmpty = () => leaf(`_e${Date.now().toString(36)}${emptyCounter++}`);
 const split = (dir, ratio, a, b) => ({ dir, ratio, a, b });
 
 export function defaultState(w = 1400, h = 900) {
-  const menuH = clamp(140 / h, 0.05, 0.3);
-  const tracksH = clamp(146 / (h - 140), 0.05, 0.35);
-  const fretW = clamp(380 / w, 0.15, 0.6);
+  // The board's layout: the Arrangement (track list + lanes) top left, fretboard and timeline below,
+  // the menu as a narrow column on the right. The Tracks (tracks + Synth tabs) and Sync editor windows
+  // start closed and open from the toolbar buttons.
+  const menuW = clamp(300 / w, 0.14, 0.3);
+  const arrH = clamp(250 / h, 0.2, 0.45);
+  const fretW = clamp(420 / (w * (1 - menuW)), 0.2, 0.55);
   return {
-    tree: split('col', menuH, leaf('menu'),
-      split('col', tracksH, leaf('tracks'), split('row', fretW, leaf('fretboard'), leaf('timeline')))),
+    v: 5,
+    tree: split('row', 1 - menuW,
+      split('col', arrH, leaf('arrangement'), split('row', fretW, leaf('fretboard'), leaf('timeline'))),
+      leaf('menu')),
     minimized: {},          // { [id]: true }
-    closed: { sync: true, arrangement: true }, // closed panels are out of the layout; the toolbar buttons reopen them
+    closed: { tracks: true, sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
   };
@@ -57,7 +63,12 @@ function cleanTree(n) {
   return a && b ? split(n.dir, n.ratio, a, b) : null;
 }
 
-function finish(s, tree) {
+function migrateV5(s, tree) {
+  return { s, tree }; // saved layouts keep their windows as they were
+}
+
+function finish(s0, tree0) {
+  const { s, tree } = migrateV5(s0, tree0);
   const minimized = {}, floating = {};
   PANEL_IDS.forEach((id) => {
     if (s.minimized?.[id]) minimized[id] = true;
@@ -70,7 +81,7 @@ function finish(s, tree) {
   const expected = PANEL_IDS.filter(id => !floating[id] && !closed[id]);
   const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
   if (!ok) return null;
-  return { tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
+  return { v: 5, tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
 }
 
 // the old fixed arrangement (v2/v3) as a tree
@@ -106,6 +117,14 @@ export function loadState(w, h) {
       if (r) return r;
     }
   } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(V4_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      const r = s && finish({ ...s, v: undefined }, cleanTree(s.tree));
+      if (r) return r;
+    }
+  } catch { /* ignore */ }
   for (const key of [V3_KEY, V2_KEY]) {
     try {
       const raw = localStorage.getItem(key);
@@ -125,7 +144,7 @@ export function saveState(s) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(s)); } catch { /* ignore */ }
 }
 export function clearSavedState() {
-  try { [STORAGE_KEY, V3_KEY, V2_KEY].forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
+  try { [STORAGE_KEY, V4_KEY, V3_KEY, V2_KEY].forEach(k => localStorage.removeItem(k)); } catch { /* ignore */ }
 }
 
 export const isFloating = (st, id) => !!st.floating[id];

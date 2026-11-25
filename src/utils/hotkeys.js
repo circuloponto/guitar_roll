@@ -27,6 +27,7 @@ const DEFAULT_HOTKEYS = {
   bendUp: { label: 'Bend Up', description: 'Increase bend on selected notes', key: 'ArrowUp', modifiers: { shift: true } },
   bendDown: { label: 'Bend Down', description: 'Decrease bend on selected notes', key: 'ArrowDown', modifiers: { shift: true } },
   toggleSlide: { label: 'Toggle Slide', description: 'Toggle slide to next note on selected', key: 's', modifiers: { shift: true } },
+  loopSection: { label: 'Loop Section', description: 'Loop the section selected in the Arrangement', key: 'j' },
   soloTrack: { label: 'Solo Track', description: 'Solo the selected track (press again to unsolo)', key: 's' },
   groupTracks: { label: 'Group Tracks', description: 'Group the selected tracks (select several with Ctrl/Cmd or Shift + click)', key: 'g', modifiers: { ctrl: true } },
   ungroupTracks: { label: 'Ungroup Tracks', description: 'Take the selected tracks out of their group', key: 'g', modifiers: { ctrl: true, shift: true } },

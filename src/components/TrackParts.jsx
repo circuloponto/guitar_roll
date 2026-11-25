@@ -209,7 +209,7 @@ export function TrackControls({
 export function TrackMenu({
   menu, onClose, tracks, trackGroups = [], selectedTrackIds = new Set(),
   onGroupTracks, onUngroupTracks, onDuplicateTrack, onLoadAudio, missingAudioIds,
-  onTranscribe, onLearn, onToggleHeat, heatTracks = {}, onRemoveAudio, onAskDelete, onRename,
+  onTranscribe, onLearn, onToggleHeat, heatTracks = {}, onRemoveAudio, onAskDelete, onRename, onOptions,
   onRenameTrackGroup, onToggleTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup,
 }) {
   const groupById = (id) => trackGroups.find(g => g.id === id) || null;
@@ -259,6 +259,7 @@ export function TrackMenu({
     <div className="tab-context-menu" style={pos} onMouseDown={stop}>
       <div className="tab-context-menu-title">{selCount > 1 ? `${selCount} tracks selected` : t.name}</div>
       {onRename && <button className="tab-context-menu-item" onClick={() => { onRename(t.id); close(); }}>Rename track</button>}
+      {onOptions && <button className="tab-context-menu-item" onClick={() => { onOptions(t.id); close(); }}>Track options…</button>}
       <button
         className="tab-context-menu-item"
         disabled={selCount < 2}

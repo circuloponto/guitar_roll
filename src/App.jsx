@@ -24,14 +24,16 @@ import { getMidiNote, closestComboForPitch, getComboForPosition, midiToPitchRow,
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
-import TrackStrip from './components/TrackStrip';
 import UltraboxEditor from './components/UltraboxEditor';
 import SyncEditor from './components/SyncEditor';
+import TrackStrip from './components/TrackStrip';
+import { loadPianoSize, applyPianoSize } from './utils/pianoSize';
 import Arrangement from './components/Arrangement';
 import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
+import { copyRange, insertBars, removeBars, pasteRange, barIndexAt, barBoundaryAtOrAfter, beatOfBar, contentEnd } from './utils/barOps';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
-import { Metronome, Undo2, Redo2 } from 'lucide-react';
+import { Metronome, Undo2, Redo2, ListMusic, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform } from 'lucide-react';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES, loadToolbar, saveToolbar, defaultToolbar } from './utils/toolbarConfig';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
@@ -128,6 +130,9 @@ function App() {
     selectedBeat: selectedBeatRef.current,
     selectedNotes: [...selectedNotesRef.current],    
     autoForward: autoForwardLastActionRef.current,
+    markers: JSON.parse(JSON.stringify(markersRef.current)),
+    loopStart: loopStartRef.current,
+    loopEnd: loopEndRef.current,
   }), []);
 
   const restoreSnapshot = useCallback((snap) => {
@@ -155,7 +160,9 @@ function App() {
     if (snap.barSubdivisions) setBarSubdivisions(snap.barSubdivisions);
     if (snap.selectedBeat !== undefined && snap.autoForward) setSelectedBeat(snap.selectedBeat);
     if (snap.selectedNotes) setSelectedNotes(new Set(snap.selectedNotes));
-  }, [setTracksTracked, setActiveNotes, setTrackGroups]);
+    if (snap.markers) setMarkers(snap.markers);
+    if (snap.loopStart !== undefined) { setLoopStart(snap.loopStart); setLoopEnd(snap.loopEnd); }
+  }, [setTracksTracked, setActiveNotes, setTrackGroups]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // setNotes: pushes undo, for one-shot operations
   const setNotes = useCallback((updater) => {
@@ -396,6 +403,11 @@ function App() {
   const [markers, setMarkers] = useState([]); // [{ id, name, beat, color }]
   const markersRef = useRef(markers);
   markersRef.current = markers;
+  // The song plan: the order the sections play in (a section can come back, like "Head" twice) and
+  // whether Play follows it. Sections are stored once, so editing one changes every repeat.
+  const [songPlan, setSongPlan] = useState({ order: [], mode: false });
+  const songPlanRef = useRef(songPlan);
+  songPlanRef.current = songPlan;
   const [tupletLines, setTupletLines] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('guitar-roll-tuplet-lines'));
@@ -423,14 +435,14 @@ function App() {
   const [swungDisplay, setSwungDisplay] = useState(() => {
     try {
       const saved = localStorage.getItem('guitar-roll-swung-display');
-      return saved === null ? false : saved === 'true';
+      return saved === null ? true : saved === 'true';
     } catch { return false; }
   });
   const [fretboardAutoForward, setFretboardAutoForward] = useState(() => {
     try {
       const saved = localStorage.getItem('guitar-roll-fretboard-auto-forward');
-      return saved === null ? false : saved === 'true';
-    } catch { return false; }
+      return saved === null ? true : saved === 'true';
+    } catch { return true; }
   });
   const [fretboardAutoForwardExcludeAdjacent, setFretboardAutoForwardExcludeAdjacent] = useState(() => {
     try {
@@ -502,8 +514,6 @@ function App() {
   const [showMultDial, setShowMultDial] = useState(false);
   const multDialRef = useRef(null);
   const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
-  const [tracksTab, setTracksTab] = useState('tracks'); // the Tracks window holds two tabs: Tracks | Synth
-  const [synthOpened, setSynthOpened] = useState(false);
   // Alt + scroll moves the page vertically, Alt + Shift + scroll horizontally (the browser cannot see
   // the Fn key). The page scrolls when the windows need more room than the screen has.
   useEffect(() => {
@@ -519,17 +529,22 @@ function App() {
     window.addEventListener('wheel', on, { capture: true, passive: false });
     return () => window.removeEventListener('wheel', on, { capture: true });
   }, []);
-  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
-  useEffect(() => {
-    const on = (e) => setPanelsClosed(e.detail?.closed || {});
-    window.addEventListener('guitar-roll-panels', on);
-    return () => window.removeEventListener('guitar-roll-panels', on);
-  }, []);
+  const [tracksTab, setTracksTab] = useState('tracks'); // the Tracks window holds two tabs: Tracks | Synth
+  const [synthOpened, setSynthOpened] = useState(false);
   const chooseTracksTab = (t) => {
     setTracksTab(t);
     if (t === 'synth') setSynthOpened(true);
     window.dispatchEvent(new CustomEvent(t === 'synth' ? 'guitar-roll-tracks-height' : 'guitar-roll-fit-tracks', { detail: { share: 0.62 } }));
   };
+  const [selectedSectionId, setSelectedSectionId] = useState(null);
+  useEffect(() => { applyPianoSize(loadPianoSize()); }, []);
+  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
+  useEffect(() => {
+    const on = (e) => setPanelsClosed(e.detail?.closed || {});
+    window.addEventListener('guitar-roll-panels', on);
+    window.dispatchEvent(new Event('guitar-roll-panels-request'));
+    return () => window.removeEventListener('guitar-roll-panels', on);
+  }, []);
   // Toolbar customisation: which controls show, their order and size (like FL Studio's toolbar)
   const [toolbarCfg, setToolbarCfg] = useState(loadToolbar);
   const [tbMenu, setTbMenu] = useState(null); // right-click menu on the toolbar
@@ -673,7 +688,7 @@ function App() {
   activeSongIdRef.current = activeSongId;
   const songHistoryRef = useRef({}); // { [songId]: { undo, redo } } — in memory only
   const liveRef = useRef({});
-  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature, timelineZoom, trackGroups };
+  liveRef.current = { bpm, swing, loop, loopStart, loopEnd, subdivisions, rhythmUnit, rhythmMult, markers, barSubdivisions, timeSignature, timelineZoom, trackGroups, songPlan };
   const captureSong = useCallback(() => ({
     ...liveRef.current,
     tracks: tracksRef.current,
@@ -753,6 +768,7 @@ function App() {
     if (data.rhythmUnit !== undefined) setRhythmUnit(data.rhythmUnit);
     if (data.rhythmMult !== undefined) setRhythmMult(data.rhythmMult);
     if (data.markers !== undefined) setMarkers(data.markers);
+    if (data.markers !== undefined) setSongPlan(data.songPlan || { order: [], mode: false });
     if (data.metronome !== undefined) setMetronome(data.metronome);
     if (data.sessionSchemes !== undefined) {
       setSessionSchemes(data.sessionSchemes || {});
@@ -1700,6 +1716,11 @@ setPositionModeValue(null);
         e.preventDefault();
         if (handleToggleSoloRef.current) handleToggleSoloRef.current();
       }
+      if (hk.loopSection && matchesHotkey(e, hk.loopSection)) {
+        e.preventDefault();
+        if (selectedSectionRef.current) sectionActionsRef.current?.loop(selectedSectionRef.current);
+        else showToast('Select a section in the Arrangement first');
+      }
       if (matchesHotkey(e, hk.soloGroup)) {
         e.preventDefault();
         handleGroupHotkeyRef.current?.('solo');
@@ -2144,6 +2165,18 @@ setPositionModeValue(null);
     });
   }, [ensureAudioChain]);
 
+  const buildSongSegments = (fromBeat) => {
+    const plan = songPlanRef.current;
+    if (!plan.mode || !plan.order.length) return null;
+    const ranges = plan.order.map(id => sectionRangeOf(id)).filter(Boolean).map(r => ({ start: r.s, end: r.e }));
+    if (!ranges.length) return null;
+    const first = ranges.findIndex(r => fromBeat >= r.start - 1e-6 && fromBeat < r.end - 1e-6);
+    if (first < 0) return ranges;
+    const segs = ranges.slice(first);
+    segs[0] = { start: fromBeat, end: ranges[first].end };
+    return segs;
+  };
+
   const startPlaybackRef = useRef(null);
   const startPlayback = useCallback((fromBeat, chainsReady = false) => {
     const playable = getPlayableTracks(tracksRef.current);
@@ -2159,7 +2192,10 @@ setPositionModeValue(null);
     const barSubs = barSubsRef.current;
     const totalCols = totalColumns(barSubs);
     const regionStart = fromBeat;
-    const regionEnd = isLoop ? loopEndRef.current : totalCols;
+    // song mode: play the sections in the song plan's order
+    const segs = buildSongSegments(fromBeat);
+    let segIdx = 0;
+    const regionEnd = segs ? segs[0].end : (isLoop ? loopEndRef.current : totalCols);
     const regionDuration = regionEnd - regionStart;
 
     if (regionDuration <= 0) return;
@@ -2191,7 +2227,10 @@ setPositionModeValue(null);
 
       // Read live loop region — use initialStart on first pass
       let rStart, rEnd;
-      if (firstPass) {
+      if (segs) {
+        rStart = segs[segIdx].start;
+        rEnd = segs[segIdx].end;
+      } else if (firstPass) {
         rStart = initialStart;
         rEnd = loopRef.current ? loopEndRef.current : tc;
       } else {
@@ -2202,8 +2241,20 @@ setPositionModeValue(null);
 
       if (rDuration <= 0) { stopPlayback(); return; }
 
+      // Song mode: at the end of a section go on to the next one in the plan (the audio is queued there)
+      const advanceSection = () => {
+        if (segIdx + 1 < segs.length) segIdx++; else if (loopRef.current) segIdx = 0; else return false;
+        const oldDur = rDuration;
+        nextBeatIndex -= oldDur;
+        rStart = segs[segIdx].start; rEnd = segs[segIdx].end; rDuration = rEnd - rStart;
+        prevRStart = rStart; prevRDuration = rDuration;
+        scheduleAudioPass(getPlayableTracks(tracksRef.current), rStart, nextBeatTime, ctx, rEnd);
+        return true;
+      };
+      if (segs) { while (nextBeatIndex >= rDuration && advanceSection()) { /* next section */ } }
+
       // If loop region changed, adjust nextBeatIndex to stay in range
-      if (rStart !== prevRStart || rDuration !== prevRDuration) {
+      if (!segs && (rStart !== prevRStart || rDuration !== prevRDuration)) {
         if (!firstPass) nextBeatIndex = nextBeatIndex % rDuration;
         prevRStart = rStart;
         prevRDuration = rDuration;
@@ -2211,7 +2262,7 @@ setPositionModeValue(null);
 
       // Loop boundary: reached end of current region. Reset indexing so note scheduling
       // continues from loopStart. Audio loops natively via source.loop, so no rescheduling.
-      if (loopRef.current && nextBeatIndex >= rDuration) {
+      if (!segs && loopRef.current && nextBeatIndex >= rDuration) {
         firstPass = false;
         nextBeatIndex -= rDuration;
         prevRStart = loopStartRef.current;
@@ -2231,7 +2282,9 @@ setPositionModeValue(null);
       const playheadBeatIndex = nextBeatIndex - 1 + Math.min(1, Math.max(0, beatsSinceLastScheduled));
       // Just after a loop wrap the index is still in the last column of the previous pass (< 0):
       // wrap it to the end of the loop instead of letting it fall before the loop start.
-      const playheadBeat = rStart + (((playheadBeatIndex % rDuration) + rDuration) % rDuration);
+      // (song mode: just after a jump the index is a hair before the new section, so stay on its first beat)
+      const headIdx = segs ? Math.max(0, playheadBeatIndex) : playheadBeatIndex;
+      const playheadBeat = rStart + (((headIdx % rDuration) + rDuration) % rDuration);
 
       if (!loopRef.current && playheadBeatIndex >= rDuration) {
         stopPlayback();
@@ -2246,7 +2299,7 @@ setPositionModeValue(null);
       const currentPlayable = getPlayableTracks(tracksRef.current);
 
       while (nextBeatTime <= scheduleEnd) {
-        if (!loopRef.current && nextBeatIndex >= rDuration) break;
+        if (segs && nextBeatIndex >= rDuration) { if (!advanceSection()) break; } else if (!segs && !loopRef.current && nextBeatIndex >= rDuration) break;
 
         const beatInRegion = nextBeatIndex % rDuration;
         const beat = rStart + beatInRegion;
@@ -2611,7 +2664,7 @@ setPositionModeValue(null);
       __songSwitch: true,
       tracks: snap.tracks, bpm: snap.bpm, swing: snap.swing, loop: snap.loop,
       loopStart: snap.loopStart, loopEnd: snap.loopEnd, subdivisions: snap.subdivisions,
-      rhythmUnit: snap.rhythmUnit, rhythmMult: snap.rhythmMult, markers: snap.markers,
+      rhythmUnit: snap.rhythmUnit, rhythmMult: snap.rhythmMult, markers: snap.markers, songPlan: snap.songPlan,
       barSubdivisions: snap.barSubdivisions, timeSignature: snap.timeSignature,
       trackGroups: snap.trackGroups || [],
     });
@@ -2659,7 +2712,7 @@ setPositionModeValue(null);
       tracks: [track], activeTrackId: track.id, selectedBeat: 0,
       bpm: lv.bpm, swing: lv.swing, timeSignature: lv.timeSignature, subdivisions: lv.subdivisions,
       rhythmUnit: 'beat', rhythmMult: 1, loop: false, loopStart: 0,
-      loopEnd: totalColumns(defaultBarSubdivisions()), markers: [], barSubdivisions: defaultBarSubdivisions(),
+      loopEnd: totalColumns(defaultBarSubdivisions()), markers: [], songPlan: { order: [], mode: false }, barSubdivisions: defaultBarSubdivisions(),
     };
     const name = nextTabName(songsRef.current);
     const cur = activeSongIdRef.current;
@@ -3078,11 +3131,11 @@ setPositionModeValue(null);
   }, [setTracksTracked]);
 
   // Marker management
-  const handleAddMarker = useCallback((beat) => {
+  const handleAddMarker = useCallback((beat, name = 'Marker') => {
     setMarkers(prev => {
       const newMarker = {
         id: crypto.randomUUID(),
-        name: 'Marker',
+        name,
         beat,
         color: '#b24fcc',
       };
@@ -3096,7 +3149,93 @@ setPositionModeValue(null);
 
   const handleDeleteMarker = useCallback((id) => {
     setMarkers(prev => prev.filter(m => m.id !== id));
+    setSongPlan(p => ({ ...p, order: p.order.filter(x => x !== id) }));
   }, []);
+
+  // ---- Sections: a marker starts a section that runs to the next marker ----
+  const sectionRangeOf = (id) => {
+    const ms = [...markersRef.current].sort((x, y) => x.beat - y.beat);
+    const i = ms.findIndex(m => m.id === id);
+    if (i < 0) return null;
+    const subs = barSubsRef.current;
+    const mapOf = (t) => tempoMapRef.current.forTrack(t);
+    const sBar = barIndexAt(subs, ms[i].beat);
+    let eBar;
+    if (i + 1 < ms.length) eBar = barBoundaryAtOrAfter(subs, ms[i + 1].beat);
+    else eBar = Math.min(subs.length, Math.max(sBar + 1, barBoundaryAtOrAfter(subs, contentEnd(tracksRef.current, mapOf))));
+    if (eBar <= sBar) eBar = Math.min(subs.length, sBar + 1);
+    return { marker: ms[i], sBar, eBar, s: beatOfBar(subs, sBar), e: beatOfBar(subs, eBar), subs, mapOf };
+  };
+  const currentDoc = () => ({
+    tracks: tracksRef.current, subs: barSubsRef.current, markers: markersRef.current,
+    loopStart: loopStartRef.current, loopEnd: loopEndRef.current,
+  });
+  const applyDoc = (d) => {
+    setTracksTracked(d.tracks);
+    setBarSubdivisions(d.subs);
+    setMarkers([...d.markers].sort((x, y) => x.beat - y.beat));
+    setLoopStart(d.loopStart);
+    setLoopEnd(d.loopEnd);
+  };
+  const sectionActions = {
+    loop: (id) => {
+      const r = sectionRangeOf(id);
+      if (!r) return;
+      setLoopStart(r.s); setLoopEnd(r.e); setLoop(true);
+      showToast(`Looping "${r.marker.name}"`);
+    },
+    select: (id) => {
+      const r = sectionRangeOf(id);
+      if (!r) return;
+      const idx = new Set();
+      notesRef.current.forEach((n, i) => { if (n.beat >= r.s - 1e-6 && n.beat < r.e - 1e-6) idx.add(i); });
+      setSelectedNotes(idx);
+      showToast(`${idx.size} note${idx.size === 1 ? '' : 's'} selected in "${r.marker.name}"`);
+    },
+    duplicate: (id) => {
+      const r = sectionRangeOf(id);
+      if (!r) return;
+      if (r.subs.length + (r.eBar - r.sBar) > 999) { showToast('The song would get too long'); return; }
+      saveSnapshot();
+      const payload = copyRange(tracksRef.current, r.s, r.e, r.mapOf);
+      let d = insertBars(currentDoc(), r.eBar, r.subs.slice(r.sBar, r.eBar), r.mapOf);
+      d = pasteRange(d, payload, r.e);
+      d = { ...d, markers: [...d.markers, { id: crypto.randomUUID(), name: `${r.marker.name} copy`, beat: r.e, color: r.marker.color }] };
+      applyDoc(d);
+      showToast(`Duplicated "${r.marker.name}"`);
+    },
+    remove: (id) => {
+      const r = sectionRangeOf(id);
+      if (!r) return;
+      if (r.subs.length - (r.eBar - r.sBar) < 1) { showToast('Keep at least one bar'); return; }
+      saveSnapshot();
+      applyDoc(removeBars(currentDoc(), r.sBar, r.eBar, r.mapOf));
+      setSongPlan(p => ({ ...p, order: p.order.filter(x => x !== id) }));
+      setSelectedSectionId(null);
+      showToast(`Removed "${r.marker.name}" and closed the gap`);
+    },
+    move: (id, dropBeat) => {
+      const r = sectionRangeOf(id);
+      if (!r) return;
+      const dropBar = barBoundaryAtOrAfter(r.subs, dropBeat);
+      if (dropBar >= r.sBar && dropBar <= r.eBar) return;
+      saveSnapshot();
+      const payload = copyRange(tracksRef.current, r.s, r.e, r.mapOf);
+      const span = r.eBar - r.sBar;
+      let d = removeBars(currentDoc(), r.sBar, r.eBar, r.mapOf);
+      const tBar = dropBar > r.eBar ? dropBar - span : dropBar;
+      d = insertBars(d, tBar, r.subs.slice(r.sBar, r.eBar), r.mapOf);
+      const at = d.at;
+      d = pasteRange(d, payload, at);
+      d = { ...d, markers: [...d.markers, { ...r.marker, beat: at }] };
+      applyDoc(d);
+      showToast(`Moved "${r.marker.name}"`);
+    },
+  };
+  const sectionActionsRef = useRef(null);
+  sectionActionsRef.current = sectionActions;
+  const selectedSectionRef = useRef(null);
+  selectedSectionRef.current = selectedSectionId;
 
   // Every toolbar control, by id; which ones show, and in what order, is the toolbar config.
   const toolbarNodes = {
@@ -3146,7 +3285,7 @@ setPositionModeValue(null);
         </button>
     ),
     instrument: (
-<>
+<span className="tb-group">
 <span className="toolbar-label">Inst:</span>
         <select
           className="duration-select"
@@ -3173,7 +3312,7 @@ setPositionModeValue(null);
             </optgroup>
           ))}
         </select>
-</>
+</span>
     ),
     new: (
 <button
@@ -3186,7 +3325,7 @@ setPositionModeValue(null);
               bpm: 120, swing: 50, loop: false, loopStart: 0, loopEnd: totalColumns(defaultBarSubdivisions()),
               stringColors: ['#ffffff','#ffffff','#ffffff','#ffffff','#ffffff','#ffffff'],
               synesthesia: [], sessionScheme: null, sessionSchemes: {},
-              subdivisions: 4, markers: [], metronome: false,
+              subdivisions: 4, markers: [], songPlan: { order: [], mode: false }, metronome: false,
               barSubdivisions: defaultBarSubdivisions(),
               timeSignature: [4, 4], projectName: 'Untitled',
             });
@@ -3218,14 +3357,18 @@ setPositionModeValue(null);
     ),
     panels: (
       <span className="panel-btns" title="Show or hide the windows">
-        {CLOSABLE.map((pid) => (
-          <button
-            key={pid}
-            className={`tool-btn${panelsClosed[pid] ? ' off' : ''}`}
-            onClick={() => window.dispatchEvent(new CustomEvent('guitar-roll-panel-toggle', { detail: { id: pid } }))}
-            title={`${panelsClosed[pid] ? 'Show' : 'Hide'} the ${PANEL_TITLES[pid]} window`}
-          >{PANEL_TITLES[pid]}</button>
-        ))}
+        {CLOSABLE.map((pid) => {
+          const Icon = { tracks: ListMusic, fretboard: Guitar, timeline: ChartNoAxesGantt, arrangement: Rows3, sync: AudioWaveform }[pid];
+          return (
+            <button
+              key={pid}
+              className={`tool-btn panel-btn${panelsClosed[pid] ? ' off' : ''}`}
+              onClick={() => window.dispatchEvent(new CustomEvent('guitar-roll-panel-toggle', { detail: { id: pid } }))}
+              title={`${panelsClosed[pid] ? 'Show' : 'Hide'} the ${PANEL_TITLES[pid]} window`}
+              aria-label={`${panelsClosed[pid] ? 'Show' : 'Hide'} ${PANEL_TITLES[pid]}`}
+            >{Icon ? <Icon size={16} /> : PANEL_TITLES[pid]}</button>
+          );
+        })}
       </span>
     ),
     settings: (
@@ -3241,7 +3384,7 @@ setPositionModeValue(null);
 <span className="toolbar-separator" />
     ),
     timeSig: (
-<>
+<span className="tb-group">
 <span className="toolbar-label">Time:</span>
         <select
           className="duration-select"
@@ -3283,10 +3426,10 @@ setPositionModeValue(null);
           <option value="9/8">9/8</option>
           <option value="12/8">12/8</option>
         </select>
-</>
+</span>
     ),
     bpm: (
-<>
+<span className="tb-group">
 <span className="toolbar-label">BPM:</span>
         <NumberInput
           className="bpm-input"
@@ -3295,10 +3438,10 @@ setPositionModeValue(null);
           max={300}
           onChange={setBpm}
         />
-</>
+</span>
     ),
     swing: (
-<>
+<span className="tb-group">
 <span className="toolbar-label">Swing %:</span>
         <NumberInput
           className="bpm-input"
@@ -3308,7 +3451,7 @@ setPositionModeValue(null);
           step={1}
           onChange={(amt) => setSwing(amountToRatio(amt / 100) * 100)}
         />
-</>
+</span>
     ),
     clear: (
 <button className="tool-btn" onClick={() => {
@@ -3513,8 +3656,35 @@ setPositionModeValue(null);
       </div>
   );
 
+  const mobileActionsNode = (
+      <div className="mobile-actions">
+        <button onClick={undo} title="Undo">↩</button>
+        <button onClick={redo} title="Redo">↪</button>
+        <button onClick={() => {
+          if (selectedNotes.size > 0) {
+            setNotes(prev => prev.filter((_, i) => !selectedNotes.has(i)));
+            setSelectedNotes(new Set());
+          }
+        }} title="Delete">🗑</button>
+        <span className="mobile-actions-sep" />
+        <button onClick={() => setSelectedBeat(b => Math.max(0, b - 1))} title="Prev beat">◀</button>
+        <button onClick={() => setSelectedBeat(b => Math.min(totalBeats - 1, b + 1))} title="Next beat">▶</button>
+        <span className="mobile-actions-sep" />
+        <button onClick={copySelectedNotes} title="Copy">Copy</button>
+        <button onClick={async () => {
+          let text = '';
+          try { text = (await navigator.clipboard?.readText()) || ''; } catch { /* fall back to in-app clipboard */ }
+          pasteNotes(text);
+        }} title="Paste">Paste</button>
+        <span className="mobile-actions-sep" />
+        <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
+        <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
+      </div>
+  );
+
   return (
     <div className="app">
+      <div className="song-strip">{songTabsNode}</div>
       <Dock
       menu={(
       <div
@@ -3550,35 +3720,10 @@ setPositionModeValue(null);
           />
         </div>
       )}
-      {songTabsNode}
       <TrackStrip tracks={tracks} activeTrackId={activeTrackId} {...trackApi} />
-      {statusBarNode}
-      {/* Mobile action bar */}
-      <div className="mobile-actions">
-        <button onClick={undo} title="Undo">↩</button>
-        <button onClick={redo} title="Redo">↪</button>
-        <button onClick={() => {
-          if (selectedNotes.size > 0) {
-            setNotes(prev => prev.filter((_, i) => !selectedNotes.has(i)));
-            setSelectedNotes(new Set());
-          }
-        }} title="Delete">🗑</button>
-        <span className="mobile-actions-sep" />
-        <button onClick={() => setSelectedBeat(b => Math.max(0, b - 1))} title="Prev beat">◀</button>
-        <button onClick={() => setSelectedBeat(b => Math.min(totalBeats - 1, b + 1))} title="Next beat">▶</button>
-        <span className="mobile-actions-sep" />
-        <button onClick={copySelectedNotes} title="Copy">Copy</button>
-        <button onClick={async () => {
-          let text = '';
-          try { text = (await navigator.clipboard?.readText()) || ''; } catch { /* fall back to in-app clipboard */ }
-          pasteNotes(text);
-        }} title="Paste">Paste</button>
-        <span className="mobile-actions-sep" />
-        <button className={freeMode ? 'active' : ''} onClick={() => setFreeMode(m => !m)}>Free</button>
-        <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
-      </div>
       </>
       )}
+      mobile={mobileActionsNode}
       arrangement={(
         <Arrangement
           {...trackApi}
@@ -3597,8 +3742,15 @@ setPositionModeValue(null);
           currentBeat={currentBeat}
           playing={playing}
           onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
-          extraTop={panelsClosed.tracks ? songTabsNode : null}
-          extraBottom={panelsClosed.tracks ? statusBarNode : null}
+          markers={markers}
+          onUpdateMarker={handleUpdateMarker}
+          onAddMarker={handleAddMarker}
+          onDeleteMarker={handleDeleteMarker}
+          selectedSectionId={selectedSectionId}
+          onSelectSection={setSelectedSectionId}
+          sectionActions={sectionActions}
+          songPlan={songPlan}
+          onSongPlanChange={setSongPlan}
         />
       )}
       sync={(
@@ -3796,6 +3948,7 @@ setPositionModeValue(null);
       </div>
       )}
       />
+      <div className="status-footer">{statusBarNode}</div>
 
       {/* Cheat Sheet Overlay */}
       {showCheatSheet && (
