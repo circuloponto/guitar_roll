@@ -161,11 +161,14 @@ export function removeLeaf(n, id) {
   return a === n.a && b === n.b ? n : { ...n, a, b };
 }
 
+// share of the slot the new panel gets: the menu is a slim bar, the rest start half and half
+const newShare = (id) => (id === 'menu' ? 0.22 : 0.5);
 function insertBeside(n, targetId, id, side) {
   if (n.id) {
     if (n.id !== targetId) return n;
     const dir = side === 'n' || side === 's' ? 'col' : 'row';
-    return side === 'n' || side === 'w' ? split(dir, 0.5, leaf(id), n) : split(dir, 0.5, n, leaf(id));
+    const k = newShare(id);
+    return side === 'n' || side === 'w' ? split(dir, k, leaf(id), n) : split(dir, 1 - k, n, leaf(id));
   }
   const a = insertBeside(n.a, targetId, id, side), b = insertBeside(n.b, targetId, id, side);
   return a === n.a && b === n.b ? n : { ...n, a, b };
@@ -297,7 +300,7 @@ export function dropTarget(dragId, st, panels, fx, fy) {
   const dists = { w: u, e: 1 - u, n: v, s: 1 - v };
   const side = Object.keys(dists).reduce((a, b) => (dists[a] <= dists[b] ? a : b));
   if (dists[side] > 0.3) {
-    return { rect: r, apply: (s) => ({ ...s, tree: swapLeaves(s.tree, dragId, target) }) };
+    return { rect: r, swap: true, apply: (s) => ({ ...s, tree: swapLeaves(s.tree, dragId, target) }) };
   }
   const rect = side === 'w' ? { ...r, w: r.w / 2 } : side === 'e' ? { ...r, x: r.x + r.w / 2, w: r.w / 2 }
     : side === 'n' ? { ...r, h: r.h / 2 } : { ...r, y: r.y + r.h / 2, h: r.h / 2 };

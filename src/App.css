@@ -3747,3 +3747,6 @@ html[data-piano-size='hidden'] .piano-key-label { display: none; }
 .arr-chip-x:hover { color: var(--danger); }
 .arr-order-empty { color: var(--mute); }
 .arr-order-add { background: var(--off); color: var(--fg); border: 1px solid var(--hairline); border-radius: 6px; font-size: 11px; height: 22px; }
+
+.dock-ghost { max-width: 280px; }
+.dock-ghost-hint { display: block; font-size: 10px; opacity: 0.75; font-weight: 400; margin-top: 2px; white-space: normal; }

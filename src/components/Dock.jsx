@@ -417,7 +417,12 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
           style={{ left: pct(hl.x), top: pct(hl.y), width: pct(hl.w), height: pct(hl.h) }}
         />
       )}
-      {drag && <div className="dock-ghost" style={{ left: drag.x + 12, top: drag.y + 12 }}>{PANEL_TITLES[drag.id]}</div>}
+      {drag && (
+        <div className="dock-ghost" style={{ left: drag.x + 12, top: drag.y + 12 }}>
+          {PANEL_TITLES[drag.id]}
+          <span className="dock-ghost-hint">{drag.hit ? (drag.hit.swap ? 'drop to swap places' : 'drop to dock here') : 'drop on the edge of a panel to dock beside it (its neighbours then stretch around it), in its middle to swap'}</span>
+        </div>
+      )}
     </div>
   );
 }
