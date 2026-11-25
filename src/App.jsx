@@ -27,6 +27,7 @@ import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
 import UltraboxEditor from './components/UltraboxEditor';
 import SyncEditor from './components/SyncEditor';
+import Arrangement from './components/Arrangement';
 import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
@@ -518,7 +519,7 @@ function App() {
     window.addEventListener('wheel', on, { capture: true, passive: false });
     return () => window.removeEventListener('wheel', on, { capture: true });
   }, []);
-  const [panelsClosed, setPanelsClosed] = useState({ sync: true });
+  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
   useEffect(() => {
     const on = (e) => setPanelsClosed(e.detail?.closed || {});
     window.addEventListener('guitar-roll-panels', on);
@@ -3427,6 +3428,90 @@ setPositionModeValue(null);
     ),
   };
 
+  const songTabsNode = (
+      <SongTabs
+        songs={songs}
+        groups={songGroups}
+        activeSongId={activeSongId}
+        onSelect={switchSong}
+        onAdd={handleAddSong}
+        onRemove={handleRemoveSong}
+        onRename={handleRenameSong}
+        onDuplicate={handleDuplicateSong}
+        onAddGroup={handleAddGroup}
+        onToggleGroupCollapsed={handleToggleGroupCollapsed}
+        onRemoveGroup={handleRemoveGroup}
+        onRenameGroup={handleRenameGroup}
+        onSetGroupColour={handleSetGroupColour}
+        onMoveSong={handleMoveSong}
+        onMoveGroup={handleMoveGroup}
+        onAssignSongToGroup={handleAssignSongToGroup}
+      />
+  );
+  const trackApi = {
+    onSwitchTrack: switchTrack,
+    onToggleMute: handleToggleMute,
+    onToggleSolo: handleToggleSolo,
+    onSetVolume: handleSetTrackVolume,
+    onAddTrack: handleAddTrack,
+    onDeleteTrack: handleDeleteTrack,
+    onDuplicateTrack: handleDuplicateTrack,
+    onReorderTracks: handleReorderTracks,
+    onTranscribe: handleTranscribe,
+    onLearn: handleLearn,
+    onToggleHeat: handleToggleHeat,
+    heatTracks: pitchHeats,
+    trackGroups: trackGroups,
+    selectedTrackIds: selectedTrackIds,
+    onSelectTrack: handleSelectTrack,
+    onGroupTracks: handleGroupTracks,
+    onUngroupTracks: handleUngroupTracks,
+    onRemoveTrackGroup: handleRemoveTrackGroup,
+    onToggleTrackGroup: handleToggleTrackGroup,
+    onRenameTrackGroup: handleRenameTrackGroup,
+    onSetTrackGroupColour: handleSetTrackGroupColour,
+    onTrackGroupFlag: handleTrackGroupFlag,
+    onTrackGroupSet: handleTrackGroupSet,
+    onRenameTrack: handleRenameTrack,
+    onLoadAudio: handleLoadAudio,
+    missingAudioIds: missingAudioIds,
+    onRemoveAudio: handleRemoveAudio,
+    onAddSyncPoint: addSyncPointAtPlayhead,
+    onAutoSync: autoSyncPoints,
+    onClearSyncPoints: clearSyncPoints,
+    onNudgeBpm: nudgeBpm,
+    onDetectTempo: detectTempoOf,
+    bpm: bpm,
+    onSetAudioOptions: (trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t)),
+    onToggleVisible: handleToggleVisible,
+    onSetBgOpacity: handleSetBgOpacity,
+    onSetTrackScheme: handleSetTrackScheme,
+    sessionSchemes: sessionSchemes,
+  };
+  const statusBarNode = (
+      <div className="status-bar">
+        <span style={{ color: (freeMode || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
+          {freeMode ? 'FREE ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
+        </span>
+        {positionMode ? <span style={{ color: 'var(--accent-hi)', marginLeft: 8 }}>Select Position {positionModeValue != null ? `(${positionModeValue})` : ''}</span> : null}
+        {!positionMode && (() => {
+          const romanNumerals = ['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'];
+          return <span style={{ color: 'var(--soft)', marginLeft: 8 }}>Pos: {romanNumerals[Math.min(position, romanNumerals.length - 1)]}</span>;
+        })()}
+        <span className="status-separator" />
+        <span className="toolbar-label">Vel:</span>
+        <input
+          type="range"
+          className="velocity-slider"
+          min={0}
+          max={100}
+          value={Math.round(defaultVelocity * 100)}
+          onChange={(e) => setDefaultVelocity(Number(e.target.value) / 100)}
+        />
+        <span style={{ fontSize: '11px', color: 'var(--mute)', minWidth: 28 }}>{Math.round(defaultVelocity * 100)}%</span>
+      </div>
+  );
+
   return (
     <div className="app">
       <Dock
@@ -3464,87 +3549,9 @@ setPositionModeValue(null);
           />
         </div>
       )}
-      <SongTabs
-        songs={songs}
-        groups={songGroups}
-        activeSongId={activeSongId}
-        onSelect={switchSong}
-        onAdd={handleAddSong}
-        onRemove={handleRemoveSong}
-        onRename={handleRenameSong}
-        onDuplicate={handleDuplicateSong}
-        onAddGroup={handleAddGroup}
-        onToggleGroupCollapsed={handleToggleGroupCollapsed}
-        onRemoveGroup={handleRemoveGroup}
-        onRenameGroup={handleRenameGroup}
-        onSetGroupColour={handleSetGroupColour}
-        onMoveSong={handleMoveSong}
-        onMoveGroup={handleMoveGroup}
-        onAssignSongToGroup={handleAssignSongToGroup}
-      />
-      <TrackStrip
-        tracks={tracks}
-        activeTrackId={activeTrackId}
-        onSwitchTrack={switchTrack}
-        onToggleMute={handleToggleMute}
-        onToggleSolo={handleToggleSolo}
-        onSetVolume={handleSetTrackVolume}
-        onAddTrack={handleAddTrack}
-        onDeleteTrack={handleDeleteTrack}
-        onDuplicateTrack={handleDuplicateTrack}
-        onReorderTracks={handleReorderTracks}
-        onTranscribe={handleTranscribe}
-        onLearn={handleLearn}
-        onToggleHeat={handleToggleHeat}
-        heatTracks={pitchHeats}
-        trackGroups={trackGroups}
-        selectedTrackIds={selectedTrackIds}
-        onSelectTrack={handleSelectTrack}
-        onGroupTracks={handleGroupTracks}
-        onUngroupTracks={handleUngroupTracks}
-        onRemoveTrackGroup={handleRemoveTrackGroup}
-        onToggleTrackGroup={handleToggleTrackGroup}
-        onRenameTrackGroup={handleRenameTrackGroup}
-        onSetTrackGroupColour={handleSetTrackGroupColour}
-        onTrackGroupFlag={handleTrackGroupFlag}
-        onTrackGroupSet={handleTrackGroupSet}
-        onRenameTrack={handleRenameTrack}
-        onLoadAudio={handleLoadAudio}
-        missingAudioIds={missingAudioIds}
-        onRemoveAudio={handleRemoveAudio}
-        onAddSyncPoint={addSyncPointAtPlayhead}
-        onAutoSync={autoSyncPoints}
-        onClearSyncPoints={clearSyncPoints}
-        onNudgeBpm={nudgeBpm}
-        onDetectTempo={detectTempoOf}
-        bpm={bpm}
-        onSetAudioOptions={(trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t))}
-        onToggleVisible={handleToggleVisible}
-        onSetBgOpacity={handleSetBgOpacity}
-        onSetTrackScheme={handleSetTrackScheme}
-        sessionSchemes={sessionSchemes}
-      />
-      <div className="status-bar">
-        <span style={{ color: (freeMode || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
-        </span>
-        {positionMode ? <span style={{ color: 'var(--accent-hi)', marginLeft: 8 }}>Select Position {positionModeValue != null ? `(${positionModeValue})` : ''}</span> : null}
-        {!positionMode && (() => {
-          const romanNumerals = ['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'];
-          return <span style={{ color: 'var(--soft)', marginLeft: 8 }}>Pos: {romanNumerals[Math.min(position, romanNumerals.length - 1)]}</span>;
-        })()}
-        <span className="status-separator" />
-        <span className="toolbar-label">Vel:</span>
-        <input
-          type="range"
-          className="velocity-slider"
-          min={0}
-          max={100}
-          value={Math.round(defaultVelocity * 100)}
-          onChange={(e) => setDefaultVelocity(Number(e.target.value) / 100)}
-        />
-        <span style={{ fontSize: '11px', color: 'var(--mute)', minWidth: 28 }}>{Math.round(defaultVelocity * 100)}%</span>
-      </div>
+      {songTabsNode}
+      <TrackStrip tracks={tracks} activeTrackId={activeTrackId} {...trackApi} />
+      {statusBarNode}
       {/* Mobile action bar */}
       <div className="mobile-actions">
         <button onClick={undo} title="Undo">↩</button>
@@ -3570,6 +3577,28 @@ setPositionModeValue(null);
         <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
       </div>
       </>
+      )}
+      arrangement={(
+        <Arrangement
+          {...trackApi}
+          tracks={tracks}
+          trackGroups={trackGroups}
+          activeTrackId={activeTrackId}
+          selectedTrackIds={selectedTrackIds}
+          bodyRef={timelineBodyRef}
+          barSubdivisions={barSubdivisions}
+          timelineZoom={timelineZoom}
+          tempoMap={tempoMap}
+          loop={loop}
+          loopStart={loopStart}
+          loopEnd={loopEnd}
+          selectedBeat={selectedBeat}
+          currentBeat={currentBeat}
+          playing={playing}
+          onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
+          extraTop={panelsClosed.tracks ? songTabsNode : null}
+          extraBottom={panelsClosed.tracks ? statusBarNode : null}
+        />
       )}
       sync={(
         <SyncEditor

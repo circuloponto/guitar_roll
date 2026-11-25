@@ -5,9 +5,10 @@
 // Docked panels form a split tree: { id } leaves and { dir: 'row'|'col', ratio, a, b } splits (ratio
 // is the share of `a`). The tree holds exactly the docked panels; floating ones are kept apart.
 
-export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync'];
-export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor' };
-export const CLOSABLE = ['tracks', 'fretboard', 'timeline', 'sync']; // the menu holds the toolbar, so it stays
+export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement'];
+const NEW_PANELS = ['sync', 'arrangement']; // added later: layouts saved before them keep these closed
+export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement' };
+export const CLOSABLE = ['tracks', 'fretboard', 'timeline', 'arrangement', 'sync']; // the menu holds the toolbar, so it stays
 const STORAGE_KEY = 'guitar-roll-layout-v4';
 const V3_KEY = 'guitar-roll-layout-v3';
 const V2_KEY = 'guitar-roll-layout-v2';
@@ -32,7 +33,7 @@ export function defaultState(w = 1400, h = 900) {
     tree: split('col', menuH, leaf('menu'),
       split('col', tracksH, leaf('tracks'), split('row', fretW, leaf('fretboard'), leaf('timeline')))),
     minimized: {},          // { [id]: true }
-    closed: { sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
+    closed: { sync: true, arrangement: true }, // closed panels are out of the layout; the toolbar buttons reopen them
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
   };
@@ -64,8 +65,8 @@ function finish(s, tree) {
   });
   const closed = {};
   if (s.closed) PANEL_IDS.forEach((id) => { if (s.closed[id] && CLOSABLE.includes(id)) closed[id] = true; });
-  else closed.sync = true; // saved before the sync editor existed
   const ids = collectIds(tree).filter(i => !isEmptyId(i));
+  NEW_PANELS.forEach((id) => { if (!ids.includes(id) && !floating[id]) closed[id] = true; }); // saved before this panel existed
   const expected = PANEL_IDS.filter(id => !floating[id] && !closed[id]);
   const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
   if (!ok) return null;
