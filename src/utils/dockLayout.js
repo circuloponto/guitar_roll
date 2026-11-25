@@ -5,8 +5,9 @@
 // Docked panels form a split tree: { id } leaves and { dir: 'row'|'col', ratio, a, b } splits (ratio
 // is the share of `a`). The tree holds exactly the docked panels; floating ones are kept apart.
 
-export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline'];
-export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline' };
+export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync'];
+export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor' };
+export const CLOSABLE = ['tracks', 'fretboard', 'timeline', 'sync']; // the menu holds the toolbar, so it stays
 const STORAGE_KEY = 'guitar-roll-layout-v4';
 const V3_KEY = 'guitar-roll-layout-v3';
 const V2_KEY = 'guitar-roll-layout-v2';
@@ -31,6 +32,7 @@ export function defaultState(w = 1400, h = 900) {
     tree: split('col', menuH, leaf('menu'),
       split('col', tracksH, leaf('tracks'), split('row', fretW, leaf('fretboard'), leaf('timeline')))),
     minimized: {},          // { [id]: true }
+    closed: { sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
   };
@@ -60,11 +62,14 @@ function finish(s, tree) {
     if (s.minimized?.[id]) minimized[id] = true;
     if (okRect(s.floating?.[id])) floating[id] = { ...s.floating[id] };
   });
+  const closed = {};
+  if (s.closed) PANEL_IDS.forEach((id) => { if (s.closed[id] && CLOSABLE.includes(id)) closed[id] = true; });
+  else closed.sync = true; // saved before the sync editor existed
   const ids = collectIds(tree).filter(i => !isEmptyId(i));
-  const expected = PANEL_IDS.filter(id => !floating[id]);
+  const expected = PANEL_IDS.filter(id => !floating[id] && !closed[id]);
   const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
   if (!ok) return null;
-  return { tree, minimized, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
+  return { tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
 }
 
 // the old fixed arrangement (v2/v3) as a tree
@@ -331,4 +336,23 @@ export function raiseFloating(st, id) {
 
 export function setFloatRect(st, id, rect) {
   return { ...st, floating: { ...st.floating, [id]: rect } };
+}
+
+// Close a panel (it leaves the layout, floating or docked); openPanel brings it back.
+export function closePanel(st, id) {
+  if (!CLOSABLE.includes(id)) return st;
+  const floating = { ...st.floating };
+  delete floating[id];
+  const minimized = { ...st.minimized };
+  delete minimized[id];
+  return {
+    ...st, tree: removeLeaf(st.tree, id), floating, minimized, closed: { ...st.closed, [id]: true },
+    order: st.order.filter(x => x !== id),
+  };
+}
+
+export function openPanel(st, id, panels, size) {
+  const closed = { ...st.closed };
+  delete closed[id];
+  return dockBack({ ...st, closed }, id, panels, size);
 }

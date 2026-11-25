@@ -11,7 +11,7 @@ export default function TrackStrip({
   onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleVisible, onSetBgOpacity, onSetTrackScheme,
   trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
-  onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag,
+  onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag, onTrackGroupSet,
   onTranscribe, onLearn, onToggleHeat, heatTracks = {},
   onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onAddSyncPoint, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
@@ -202,6 +202,23 @@ export default function TrackStrip({
                   onClick={() => onTrackGroupFlag(grp.id, 'solo')}
                   title="Solo the whole group"
                 >S</button>
+                <button
+                  className="track-btn-lg"
+                  onClick={() => onTrackGroupSet && onTrackGroupSet(grp.id, 'visible', members.every(t => t.visible === false))}
+                  title={members.every(t => t.visible === false) ? 'Show the whole group' : 'Hide the whole group'}
+                >{members.every(t => t.visible === false) ? <EyeOff size={13} /> : <Eye size={13} />}</button>
+                <label className="track-group-sl" title="Volume of the whole group (the balance between its tracks is kept)">
+                  Vol
+                  <input type="range" className="track-slider track-group-slider" min={0} max={100}
+                    value={Math.round(Math.max(...members.map(t => t.volume)) * 100)}
+                    onChange={(e) => onTrackGroupSet && onTrackGroupSet(grp.id, 'volume', Number(e.target.value) / 100)} />
+                </label>
+                <label className="track-group-sl" title="Opacity of the whole group's notes in the background">
+                  Opacity
+                  <input type="range" className="track-slider track-group-slider track-slider-ghost" min={5} max={100}
+                    value={Math.round(members.reduce((a, t) => a + (t.bgOpacity ?? 0.2), 0) / members.length * 100)}
+                    onChange={(e) => onTrackGroupSet && onTrackGroupSet(grp.id, 'bgOpacity', Number(e.target.value) / 100)} />
+                </label>
                 <button className="track-btn-lg" onClick={() => onRemoveTrackGroup(grp.id)} title="Ungroup these tracks (Ctrl+Shift+G)">Ungroup</button>
               </div>
             ) : null;

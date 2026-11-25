@@ -635,7 +635,9 @@ export default function Timeline({
     const loopLeftX = beatToX(loopStart, barSubdivisions, cellWidth);
     const loopRightX = beatToX(loopEnd, barSubdivisions, cellWidth);
 
-    if (loop) {
+    const regionSet = loop || loopStart > 0 || loopEnd < totalCols; // an inactive region stays editable
+    const keepOff = !loop;
+    if (regionSet) {
       const isNearLeft = Math.abs(x - loopLeftX) < edgeThreshold;
       const isNearRight = Math.abs(x - loopRightX) < edgeThreshold;
       const isInside = x > loopLeftX + edgeThreshold && x < loopRightX - edgeThreshold;
@@ -646,6 +648,11 @@ export default function Timeline({
         loopDragRef.current = { mode: 'right', fixedStart: loopStart };
       } else if (isInside) {
         loopDragRef.current = { mode: 'move', startX: x, origStart: loopStart, origEnd: loopEnd, loopLen: loopEnd - loopStart, didMove: false };
+      } else if (keepOff) {
+        // inactive region: drags outside it scrub the playhead as usual
+        e.preventDefault();
+        startScrubDragRef.current(e);
+        return;
       } else {
         const startCol = snapBeat(xToBeat(x, barSubdivisions, cellWidth, false));
         if (startCol < 0 || startCol >= totalCols) return;
@@ -674,10 +681,10 @@ export default function Timeline({
         const newStart = Math.min(col, d.fixedEnd - snap);
         setLoopStart(newStart);
         setSelectedBeat(newStart);
-        setLoop(true);
+        if (!keepOff) setLoop(true);
       } else if (d.mode === 'right') {
         setLoopEnd(Math.max(col, d.fixedStart + snap));
-        setLoop(true);
+        if (!keepOff) setLoop(true);
       } else if (d.mode === 'move') {
         const rawStart = xToBeat(beatToX(d.origStart, barSubdivisions, cellWidth) + (mx - d.startX), barSubdivisions, cellWidth, false);
         const snappedStart = snapBeat(rawStart);
@@ -1650,7 +1657,7 @@ export default function Timeline({
         <div className="piano-spacer" />
         <div className="timeline-header" ref={headerRef} onMouseDown={handleHeaderMouseDown} onMouseEnter={scrubPrepare} style={{ flex: 1 }}
           onMouseMove={(e) => {
-            if (!loop || loopDragRef.current) return;
+            if (!(loop || loopStart > 0 || loopEnd < totalCols) || loopDragRef.current) return;
             const rect = headerRef.current.getBoundingClientRect();
             const scrollLeft = bodyRef.current ? bodyRef.current.scrollLeft : 0;
             const x = e.clientX - rect.left + scrollLeft;
@@ -1685,8 +1692,8 @@ export default function Timeline({
           }}
         >
           <div style={{ position: 'relative', transform: `translateX(-${headerScrollLeft}px)`, width: gridWidth, height: '100%' }}>
-            {loop && <div
-              className="loop-region-header"
+            {(loop || loopStart > 0 || loopEnd < totalCols) && <div
+              className={`loop-region-header${loop ? '' : ' inactive'}`}
               style={{ left: loopLeftPx, width: loopWidthPx }}
             />}
             {/* Markers */}
@@ -1906,6 +1913,11 @@ export default function Timeline({
         >
         <div className="timeline-grid" style={{ width: gridWidth, height: gridTotalHeight }}>
           {/* Loop region highlight in grid */}
+          {!loop && (loopStart > 0 || loopEnd < totalCols) && <>
+            <div className="loop-region-grid inactive" style={{ left: loopLeftPx, width: loopWidthPx }} />
+            <div className="loop-boundary inactive" style={{ left: loopLeftPx }} />
+            <div className="loop-boundary inactive" style={{ left: loopLeftPx + loopWidthPx }} />
+          </>}
           {loop && <>
             <div
               className="loop-region-grid"

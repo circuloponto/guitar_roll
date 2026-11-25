@@ -26,6 +26,8 @@ import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
 import TrackStrip from './components/TrackStrip';
 import UltraboxEditor from './components/UltraboxEditor';
+import SyncEditor from './components/SyncEditor';
+import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
 import { Metronome, Undo2, Redo2 } from 'lucide-react';
@@ -494,6 +496,27 @@ function App() {
   const [settingsTab, setSettingsTab] = useState(null); // opens Settings on a given tab
   const [tracksTab, setTracksTab] = useState('tracks'); // the Tracks window holds two tabs: Tracks | Synth
   const [synthOpened, setSynthOpened] = useState(false);
+  // Alt + scroll moves the page vertically, Alt + Shift + scroll horizontally (the browser cannot see
+  // the Fn key). The page scrolls when the windows need more room than the screen has.
+  useEffect(() => {
+    const on = (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const el = document.scrollingElement;
+      if (!el) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const d = e.shiftKey ? (e.deltaX || e.deltaY) : e.deltaY;
+      if (e.shiftKey) el.scrollLeft += d; else el.scrollTop += d;
+    };
+    window.addEventListener('wheel', on, { capture: true, passive: false });
+    return () => window.removeEventListener('wheel', on, { capture: true });
+  }, []);
+  const [panelsClosed, setPanelsClosed] = useState({ sync: true });
+  useEffect(() => {
+    const on = (e) => setPanelsClosed(e.detail?.closed || {});
+    window.addEventListener('guitar-roll-panels', on);
+    return () => window.removeEventListener('guitar-roll-panels', on);
+  }, []);
   const chooseTracksTab = (t) => {
     setTracksTab(t);
     if (t === 'synth') setSynthOpened(true);
@@ -938,6 +961,48 @@ function App() {
     return false;
   };
 
+  // Sync editor: pin the sound of the recording at file time `time` to the grid beat `beat` (a stem
+  // dragged onto the waveform). phase 'start' asks for confirmation once and saves an undo step.
+  const setPinForBeat = useCallback((trackId, beat, time, phase) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    if (!t || syncBlockedByOtherTrack(trackId)) return false;
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const clips = getClips(t);
+    if (!clips.length) return false;
+    const pts = getSyncPoints(t);
+    const c0 = clips.reduce((a, c) => (c.start < a.start ? c : a));
+    const anchor = (pts.length && Number.isFinite(t.syncAnchor)) ? t.syncAnchor : c0.start - c0.srcStart / spb;
+    const B = beat - anchor;
+    if (B <= 0.001) return false;
+    if (phase === 'start') {
+      if (!confirmTempoMapChange()) return false;
+      saveSnapshot();
+    }
+    const sorted = [...pts].sort((a, b) => a.time - b.time);
+    const idx = sorted.findIndex(p => Math.abs(p.beat - B) < 1e-3);
+    const others = sorted.filter((_, i) => i !== idx);
+    const prevPin = others.filter(p => p.beat < B).pop() || { time: 0, beat: 0 };
+    const nextPin = others.find(p => p.beat > B) || null;
+    const MIN_RATE = 0.25, MAX_RATE = 4;
+    let lo = prevPin.time + Math.max(0.005, MIN_RATE * spb * (B - prevPin.beat));
+    let hi = prevPin.time + MAX_RATE * spb * (B - prevPin.beat);
+    if (nextPin) {
+      lo = Math.max(lo, nextPin.time - MAX_RATE * spb * (nextPin.beat - B));
+      hi = Math.min(hi, nextPin.time - Math.max(0.005, MIN_RATE * spb * (nextPin.beat - B)));
+    } else hi = Math.min(hi, t.audioDuration || Infinity);
+    lo = Math.max(lo, 0);
+    if (hi < lo) return false;
+    const T = Math.min(hi, Math.max(lo, time));
+    setTracksTracked(prev => prev.map(x => (x.id !== trackId ? x : {
+      ...x,
+      syncAnchor: anchor,
+      syncPoints: idx >= 0
+        ? pts.map(p => (p.id === sorted[idx].id ? { ...p, time: T } : p))
+        : [...pts, { id: crypto.randomUUID(), time: T, beat: B }],
+    })));
+    return true;
+  }, [saveSnapshot, setTracksTracked]);
+
   // Add a sync point where the sound is at timeline `beat` of `clip` (the map itself does not change).
   const addSyncPointAtBeat = useCallback((trackId, clip, beat) => {
     const t = tracksRef.current.find(x => x.id === trackId);
@@ -984,7 +1049,15 @@ function App() {
       const detectedBpm = Math.round(60 / fit.period * (4 / timeSigRef.current[1]) * 10) / 10;
       // label the first beat with the grid beat it already sits closest to
       const b0 = Math.max(1, Math.round(fit.t0 / fit.period));
-      const bars = new Set(barStartBeats(barSubsRef.current));
+      // The grid must reach the end of the recording, or the bars after its last bar get no sync point.
+      const lastBeat = b0 + beats.length - 1;
+      let subs = barSubsRef.current;
+      if (totalColumns(subs) <= lastBeat) {
+        subs = [...subs];
+        while (totalColumns(subs) <= lastBeat && subs.length < 999) subs.push(timeSigRef.current[0]);
+        setBarSubdivisions(subs);
+      }
+      const bars = new Set(barStartBeats(subs));
       const step = timeSigRef.current[0] || 4;
       const maxDrift = Math.max(...fit.residual.map(Math.abs));
       const offset = b0 * fit.period - fit.t0; // where the first beat sits vs. the grid beat it was given
@@ -2733,6 +2806,21 @@ setPositionModeValue(null);
       return prev.map(t => (t.groupId === gid ? { ...t, [flag]: !all } : t));
     });
   }, [setTracksTracked]);
+  // Group volume / opacity / visibility: act on every member (volume keeps the balance between them).
+  const handleTrackGroupSet = useCallback((gid, field, value) => {
+    setTracksTracked(prev => {
+      const members = prev.filter(t => t.groupId === gid);
+      if (!members.length) return prev;
+      if (field === 'volume') {
+        const top = Math.max(...members.map(t => t.volume));
+        if (top < 0.01) return prev.map(t => (t.groupId === gid ? { ...t, volume: value } : t));
+        const k = value / top;
+        return prev.map(t => (t.groupId === gid ? { ...t, volume: Math.min(1, Math.max(0, t.volume * k)) } : t));
+      }
+      if (field === 'visible') return prev.map(t => (t.groupId === gid ? { ...t, visible: !!value } : t));
+      return prev.map(t => (t.groupId === gid ? { ...t, [field]: value } : t));
+    });
+  }, [setTracksTracked]);
   // Hotkeys: act on the group the active track belongs to.
   const handleGroupHotkey = useCallback((flag) => {
     const active = tracksRef.current.find(t => t.id === activeTrackIdRef.current);
@@ -3082,6 +3170,18 @@ setPositionModeValue(null);
           Import MIDI
         </button>
     ),
+    panels: (
+      <span className="panel-btns" title="Show or hide the windows">
+        {CLOSABLE.map((pid) => (
+          <button
+            key={pid}
+            className={`tool-btn${panelsClosed[pid] ? ' off' : ''}`}
+            onClick={() => window.dispatchEvent(new CustomEvent('guitar-roll-panel-toggle', { detail: { id: pid } }))}
+            title={`${panelsClosed[pid] ? 'Show' : 'Hide'} the ${PANEL_TITLES[pid]} window`}
+          >{PANEL_TITLES[pid]}</button>
+        ))}
+      </span>
+    ),
     settings: (
 <button
           className="tool-btn"
@@ -3363,6 +3463,7 @@ setPositionModeValue(null);
         onRenameTrackGroup={handleRenameTrackGroup}
         onSetTrackGroupColour={handleSetTrackGroupColour}
         onTrackGroupFlag={handleTrackGroupFlag}
+        onTrackGroupSet={handleTrackGroupSet}
         onRenameTrack={handleRenameTrack}
         onLoadAudio={handleLoadAudio}
         missingAudioIds={missingAudioIds}
@@ -3422,6 +3523,21 @@ setPositionModeValue(null);
         <button className={fingeringMode ? 'active' : ''} onClick={() => { fingeringModeRef.current = !fingeringModeRef.current; setFingeringMode(fingeringModeRef.current); }}>Finger</button>
       </div>
       </>
+      )}
+      sync={(
+        <SyncEditor
+          tracks={tracks}
+          activeTrackId={activeTrackId}
+          tempoMap={tempoMap}
+          timeSignature={timeSignature}
+          selectedBeat={selectedBeat}
+          currentBeat={currentBeat}
+          playing={playing}
+          getBuffer={(id) => audioBuffersRef.current[id]}
+          onSetPin={setPinForBeat}
+          onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
+          onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
+        />
       )}
       fretboard={(
         <Fretboard

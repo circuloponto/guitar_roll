@@ -3636,3 +3636,21 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .ub-matrix-row { display: flex; align-items: center; gap: 10px; }
 .ub-matrix-row .ub-op-n { width: 16px; }
 .ub-ctl-name { font-size: 12px; }
+
+/* a loop region that is switched off stays visible, greyed */
+.loop-region-header.inactive { background: color-mix(in srgb, var(--mute) 28%, transparent); }
+.loop-region-grid.inactive { background: color-mix(in srgb, var(--mute) 7%, transparent); }
+.loop-boundary.inactive { background: var(--mute); opacity: 0.6; width: 1px; }
+.track-group-header .track-group-slider { width: 64px; }
+.track-group-header .track-group-sl { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--mute); }
+
+/* sync editor */
+.sync-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
+.sync-bar { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 12px; }
+.sync-title { color: var(--fg); font-weight: 500; }
+.sync-info { color: var(--mute); }
+.sync-canvas-wrap { flex: 1; min-height: 60px; position: relative; border: 1px solid var(--hairline); border-radius: 6px; overflow: hidden; background: var(--ink); }
+.sync-canvas-wrap canvas { position: absolute; inset: 0; display: block; }
+.sync-hint { margin: 0; font-size: 11px; color: var(--mute); flex-shrink: 0; }
+.panel-btns { display: inline-flex; gap: 2px; }
+.panel-btns .tool-btn.off { opacity: 0.55; }

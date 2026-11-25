@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
-import { Minus, Square, ExternalLink, LayoutPanelLeft } from 'lucide-react';
+import { Minus, Square, ExternalLink, LayoutPanelLeft, X } from 'lucide-react';
 import {
-  PANEL_TITLES, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
+  PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
   loadState, saveState, clearSavedState, defaultState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
   toggleMinimized, undock, dockBack, raiseFloating, setFloatRect,
 } from '../utils/dockLayout';
@@ -29,7 +29,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // FL Studio style windows: panels resize against their neighbours (which adapt), minimise to a
 // title strip, and undock into floating windows. Panels are always rendered flat (keyed by id) and
 // positioned from the layout state, so docking, undocking and moving never remount them.
-export default function Dock({ menu, tracks, fretboard, timeline }) {
+export default function Dock({ menu, tracks, fretboard, timeline, sync }) {
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
@@ -53,7 +53,7 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
   const { panels, gutters } = useMemo(() => computeRects(st.tree, box, st.minimized), [st.tree, st.minimized, box]);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
-  const content = { menu, tracks, fretboard, timeline };
+  const content = { menu, tracks, fretboard, timeline, sync };
 
   const commit = useCallback((t) => { setSt(t); saveState(t); }, []);
 
@@ -79,6 +79,23 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
     window.addEventListener('guitar-roll-fit-tracks', fit);
     return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
   }, [commit]);
+
+  // Toolbar buttons open/close panels; the toolbar learns which ones are open.
+  useEffect(() => {
+    const on = (e) => {
+      const id = e.detail?.id;
+      const s = stRef.current;
+      if (!CLOSABLE.includes(id)) return;
+      const el = containerRef.current;
+      const size = { w: el?.clientWidth || 1400, h: el?.clientHeight || 900 };
+      commit(s.closed[id] ? openPanel(s, id, panelsRef.current, size) : closePanel(s, id));
+    };
+    window.addEventListener('guitar-roll-panel-toggle', on);
+    return () => window.removeEventListener('guitar-roll-panel-toggle', on);
+  }, [commit]);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('guitar-roll-panels', { detail: { closed: st.closed } }));
+  }, [st.closed]);
 
   // Make the Tracks window this tall (a share of the dock area), e.g. when the Synth tab opens.
   useEffect(() => {
@@ -316,6 +333,11 @@ export default function Dock({ menu, tracks, fretboard, timeline }) {
                   >
                     {minimized ? <Square size={10} /> : <Minus size={11} />}
                   </button>
+                  {CLOSABLE.includes(id) && (
+                    <button className="dock-btn" onClick={() => commit(closePanel(stRef.current, id))} title="Close (reopen it from the toolbar)" aria-label="Close">
+                      <X size={11} />
+                    </button>
+                  )}
                   <button
                     className="dock-btn"
                     onClick={() => commit(fl ? dockBack(stRef.current, id, panelsRef.current, box) : undock(stRef.current, id, panelsRef.current[id]))}

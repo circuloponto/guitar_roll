@@ -14,6 +14,7 @@ export const TOOLBAR_ITEMS = [
   { id: 'new', label: 'New session' },
   { id: 'importMidi', label: 'Import MIDI' },
   { id: 'settings', label: 'Settings' },
+  { id: 'panels', label: 'Panel buttons' },
   { id: 'sep1', label: 'Separator' },
   { id: 'timeSig', label: 'Time signature' },
   { id: 'bpm', label: 'BPM' },
