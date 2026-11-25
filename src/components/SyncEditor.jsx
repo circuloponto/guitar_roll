@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { getClips, getSyncPoints, clipBeatToTime, clipTimeToBeat } from '../utils/audioClips';
 import { onsetTimes } from '../utils/beatDetect';
+import { barStartBeats } from '../utils/barLayout';
 
-const HEAD_H = 18;      // time ruler
+const ROW_H = 18;       // each ruler row
+const HEAD_H = ROW_H * 2; // time (seconds) row + grid (bar.beat) row
 const HIT = 6;          // px grab distance
 
 // Sync editor: the recording's waveform with your notes as stems standing on it. Drag a stem to the
 // spot where the sound really is and a sync point is made for that note, so you do not have to
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
-  tracks, activeTrackId, tempoMap, timeSignature = [4, 4], selectedBeat, currentBeat, playing, getBuffer,
+  tracks, activeTrackId, tempoMap, timeSignature = [4, 4], barSubdivisions = [], selectedBeat, currentBeat, playing, getBuffer,
   onSetPin, onRemovePin, onSelectBeat, onUndo, onRedo,
 }) {
   const wrapRef = useRef(null);
@@ -99,7 +101,7 @@ export default function SyncEditor({
     const css = getComputedStyle(cv);
     const col = (n, d) => (css.getPropertyValue(n).trim() || d);
     const ink = col('--ink', '#0b0b0f'), hair = col('--hairline', '#2a2a33'), mute = col('--mute', '#888');
-    const accent = col('--accent-hi', '#b06cff'), soft = col('--soft', '#bbb'), amber = col('--amber', '#f5a623');
+    const soft = col('--soft', '#bbb'), amber = col('--amber', '#f5a623');
     g.fillStyle = ink; g.fillRect(0, 0, size.w, size.h);
     if (!audio || !buffer) {
       g.fillStyle = mute; g.font = '12px sans-serif';
@@ -108,19 +110,45 @@ export default function SyncEditor({
     }
     // the notation sits in a band above the waveform; the waveform has the rest
     const bandTop = HEAD_H + 4;
-    const bandH = Math.max(80, Math.min(size.h * 0.5, 190));
+    const bandH = Math.max(76, Math.round(Math.max(80, Math.min(size.h * 0.5, 190)) / 3)); // a third of what it was
     const laneTop = bandTop + bandH + 4, laneH = Math.max(30, size.h - laneTop - 6);
     const mid = laneTop + laneH / 2;
     g.fillStyle = col('--raise', '#15151b'); g.globalAlpha = 0.5; g.fillRect(0, bandTop, size.w, bandH); g.globalAlpha = 1;
     g.strokeStyle = hair; g.beginPath(); g.moveTo(0, laneTop - 2.5); g.lineTo(size.w, laneTop - 2.5); g.stroke();
-    // ruler
+    // ruler: seconds on top, the grid (bar.beat) underneath
     g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, 0, size.w, HEAD_H);
+    g.strokeStyle = hair; g.beginPath(); g.moveTo(0, ROW_H + 0.5); g.lineTo(size.w, ROW_H + 0.5); g.stroke();
     const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(s => s * view.pps >= 60) || 60;
     g.font = '10px monospace'; g.textBaseline = 'middle';
     for (let rt = Math.ceil((view.t0 - tMin) / step) * step; tx(tMin + rt) < size.w; rt += step) {
       const t = rt; const x = tx(tMin + rt);
-      g.strokeStyle = hair; g.beginPath(); g.moveTo(x + 0.5, HEAD_H - 5); g.lineTo(x + 0.5, size.h); g.stroke();
-      g.fillStyle = mute; g.fillText(`${Math.floor(t / 60)}:${(t % 60).toFixed(step < 1 ? 1 : 0).padStart(step < 1 ? 4 : 2, '0')}`, x + 3, HEAD_H / 2);
+      g.strokeStyle = hair; g.beginPath(); g.moveTo(x + 0.5, ROW_H - 5); g.lineTo(x + 0.5, ROW_H); g.stroke();
+      g.fillStyle = mute; g.fillText(`${Math.floor(t / 60)}:${(t % 60).toFixed(step < 1 ? 1 : 0).padStart(step < 1 ? 4 : 2, '0')}`, x + 3, ROW_H / 2);
+    }
+    if (barSubdivisions.length) {
+      const starts = barStartBeats(barSubdivisions);
+      for (let bi = 0; bi < barSubdivisions.length; bi++) {
+        const x0 = tx(beatTime(starts[bi]));
+        const x1 = tx(beatTime(starts[bi] + barSubdivisions[bi]));
+        if (x1 < 0) continue;
+        if (x0 > size.w) break;
+        // bar line through the whole editor
+        g.strokeStyle = hair; g.globalAlpha = 0.7;
+        g.beginPath(); g.moveTo(x0 + 0.5, ROW_H); g.lineTo(x0 + 0.5, size.h); g.stroke(); g.globalAlpha = 1;
+        g.fillStyle = soft; g.font = 'bold 10px monospace';
+        g.fillText(String(bi + 1), x0 + 3, ROW_H + ROW_H / 2);
+        // the beats inside the bar, numbered when there is room
+        const per = (x1 - x0) / barSubdivisions[bi];
+        if (per >= 9) {
+          g.font = '9px monospace';
+          for (let c = 1; c < barSubdivisions[bi]; c++) {
+            const xc = x0 + per * c;
+            g.strokeStyle = hair; g.globalAlpha = 0.45;
+            g.beginPath(); g.moveTo(xc + 0.5, ROW_H + 8); g.lineTo(xc + 0.5, HEAD_H); g.stroke(); g.globalAlpha = 1;
+            if (per >= 26) { g.fillStyle = mute; g.fillText(`${bi + 1}.${c + 1}`, xc + 2, ROW_H + ROW_H / 2); }
+          }
+        }
+      }
     }
     // waveform
     const d = buffer.getChannelData(0), sr = buffer.sampleRate;
@@ -157,11 +185,16 @@ export default function SyncEditor({
     const den = timeSignature[1] || 4;
     const allPitch = noteTrack ? noteTrack.notes.map(n => n.stringIndex * 24 + n.fret) : [0, 1];
     const pLo = Math.min(...allPitch), pHi = Math.max(...allPitch, pLo + 1);
-    const headY = (n) => bandTop + 40 + (1 - ((n.stringIndex * 24 + n.fret) - pLo) / (pHi - pLo)) * Math.max(8, bandH - 56);
-    const STEM = 30;
+    const headY = (n) => bandTop + 28 + (1 - ((n.stringIndex * 24 + n.fret) - pLo) / (pHi - pLo)) * Math.max(6, bandH - 38);
+    const STEM = 20;
     const laid = stems.map((st) => {
       const x = tx(st.time);
-      const ys = st.notes.map(headY);
+      // notes that sound together are stacked on one stem, each head clearly above the one below
+      const GAP = 9;
+      const stack = st.notes.map(headY).sort((a, b) => b - a); // lowest head first
+      for (let i = 1; i < stack.length; i++) stack[i] = Math.min(stack[i], stack[i - 1] - GAP);
+      const lift = Math.max(0, (bandTop + STEM + 6) - stack[stack.length - 1]);
+      const ys = stack.map(y => y + lift);
       const q = Math.max(...st.notes.map(n => (n.duration * 4) / den)); // longest note, in quarter notes
       return { st, x, ys, q, top: Math.min(...ys) - STEM, bottom: Math.max(...ys) };
     });
@@ -181,7 +214,7 @@ export default function SyncEditor({
       const { st, x, ys, q } = l;
       if (x < -20 || x > size.w + 20) return;
       const on = hover?.kind === 'stem' && hover.beat === st.beat;
-      g.strokeStyle = accent; g.fillStyle = accent; g.lineWidth = lw(on);
+      g.strokeStyle = '#fff'; g.fillStyle = '#fff'; g.lineWidth = lw(on);
       // a faint line down to the waveform shows exactly which moment the note is pinned to
       g.globalAlpha = on ? 0.55 : 0.22;
       g.beginPath(); g.moveTo(x + 0.5, l.bottom); g.lineTo(x + 0.5, laneTop + laneH); g.stroke();

@@ -3577,6 +3577,7 @@ setPositionModeValue(null);
           activeTrackId={activeTrackId}
           tempoMap={tempoMap}
           timeSignature={timeSignature}
+          barSubdivisions={barSubdivisions}
           selectedBeat={selectedBeat}
           currentBeat={currentBeat}
           playing={playing}
