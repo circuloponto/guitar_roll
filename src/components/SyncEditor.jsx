@@ -194,6 +194,8 @@ export default function SyncEditor({
     // waveform
     const d = buffer.getChannelData(0), sr = buffer.sampleRate;
     const gain = 0.98 / peak;
+    // visual upward compression of the attacks only: a square-root curve lifts small transients (see lift below)
+    const squash = (v) => Math.sign(v) * Math.pow(Math.abs(v), 0.5);
     g.fillStyle = soft; g.globalAlpha = 0.42;
     for (let x = 0; x < size.w; x++) {
       if (!inSpan(xt(x))) continue;
@@ -203,7 +205,15 @@ export default function SyncEditor({
       let mn = 1, mx = -1;
       for (let i = Math.max(0, a); i < Math.min(d.length, b); i += stride) { if (d[i] < mn) mn = d[i]; if (d[i] > mx) mx = d[i]; }
       if (mx < mn) continue;
-      g.fillRect(x, mid - mx * gain * (laneH / 2), 1, Math.max(1, (mx - mn) * gain * (laneH / 2)));
+      // only the attacks are lifted: full boost on an attack, fading back to the true level over ~90 ms
+      const tNow = xt(x);
+      let lo2 = 0, hi2 = onsets.length;
+      while (lo2 < hi2) { const md = (lo2 + hi2) >> 1; if (onsets[md] <= tNow + 0.012) lo2 = md + 1; else hi2 = md; }
+      const dt = lo2 > 0 ? tNow - onsets[lo2 - 1] : 9;
+      const w = Math.max(0, Math.min(1, 1 - Math.max(0, dt) / 0.09));
+      const lift = (v) => v * (1 - w) + squash(v) * w;
+      const yTop = mid - lift(mx * gain) * (laneH / 2), yBot = mid - lift(mn * gain) * (laneH / 2);
+      g.fillRect(x, yTop, 1, Math.max(1, yBot - yTop));
     }
     g.globalAlpha = 1;
     // attacks (faint ticks at the top)
