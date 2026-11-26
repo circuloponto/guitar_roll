@@ -2100,7 +2100,7 @@ export default function Timeline({
             const peaks = at.waveformPeaks;
             const buffer = at.audioBuffer;
             const m = mapFor(at);
-            const showPins = !!(tempoMap && tempoMap.active && tempoMap.refId === at.trackId);
+            const showPins = false; // sync points are only shown and edited in the Sync editor
             return (at.clips || []).map(clip => {
               const clipDur = clip.srcEnd - clip.srcStart;
               const lenBeats = clipTimeToBeat(clip, clip.srcEnd, m) - clip.start;
@@ -2201,8 +2201,7 @@ export default function Timeline({
                   className={`audio-clip${interactive ? ' interactive' : ''}${isSel ? ' selected' : ''}`}
                   style={{ left: startX, width: totalWidth, height: clipH }}
                   onMouseDown={interactive ? (e) => handleClipMouseDown(e, at, clip) : undefined}
-                  onDoubleClick={interactive ? (e) => handleClipDoubleClick(e, at, clip) : undefined}
-                  title={interactive ? 'Double-click to add a sync point' : undefined}
+                  title={undefined}
                 >
                   {canvases}
                   {showPins && (at.syncPoints || []).map(p => ({ p, beat: tempoMap.fileBeatToBeat(p.beat) }))

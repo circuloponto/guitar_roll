@@ -3760,6 +3760,7 @@ setPositionModeValue(null);
           onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
           onUndo={undo}
           onRedo={redo}
+          onSetAudioOptions={trackApi.onSetAudioOptions}
         />
       )}
       fretboard={(
