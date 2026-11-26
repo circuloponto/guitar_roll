@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { Minus, Square, ExternalLink, LayoutPanelLeft, X } from 'lucide-react';
+import { listLayoutPresets, applyLayoutBundle, getDefaultLayout } from '../utils/layoutPresets';
 import {
   PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
   loadState, saveState, clearSavedState, defaultState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
@@ -122,10 +123,17 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     return () => window.removeEventListener('guitar-roll-tracks-height', on);
   }, [commit]);
 
+  // back to the layout saved as the default, or the built-in one
   const resetLayout = useCallback(() => {
     clearSavedState();
     const el = containerRef.current;
-    setSt(defaultState(el?.clientWidth, el?.clientHeight));
+    setSt(loadState(el?.clientWidth || window.innerWidth - 40, el?.clientHeight || window.innerHeight - 40));
+  }, []);
+  const [presetsVersion, setPresetsVersion] = useState(0);
+  useEffect(() => {
+    const on = () => setPresetsVersion(v => v + 1);
+    window.addEventListener('guitar-roll-presets-changed', on);
+    return () => window.removeEventListener('guitar-roll-presets-changed', on);
   }, []);
 
   // an imported layout was stored: load it
@@ -337,6 +345,21 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
                 <span className="dock-grip">⠿</span>
                 <span className="dock-title">{PANEL_TITLES[id]}</span>
                 <span className="dock-btns">
+                  {id === 'menu' && !minimized && (
+                    <select
+                      className="dock-reset dock-layouts" value="" title="Switch to a saved layout"
+                      key={presetsVersion}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '__default') resetLayout();
+                        else { const pr = listLayoutPresets().find(x => x.id === v); if (pr) applyLayoutBundle(pr.bundle); }
+                      }}
+                    >
+                      <option value="">Layouts</option>
+                      <option value="__default">{getDefaultLayout() ? 'My default layout' : 'Default layout'}</option>
+                      {listLayoutPresets().map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                    </select>
+                  )}
                   {id === 'menu' && !minimized && (
                     <button className="dock-reset" onClick={resetLayout} title="Restore the default layout">
                       Reset layout

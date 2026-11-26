@@ -137,6 +137,12 @@ export function loadState(w, h) {
       if (r) return r;
     } catch { /* ignore */ }
   }
+  // nothing saved yet: use the layout saved as the default, if there is one
+  try {
+    const b = JSON.parse(localStorage.getItem('guitar-roll-layout-default'));
+    const r = b && b.format === 'guitar-roll-layout' ? finish(b.dock, cleanTree(b.dock?.tree)) : null;
+    if (r) return r;
+  } catch { /* ignore */ }
   return d;
 }
 

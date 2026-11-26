@@ -550,6 +550,11 @@ function App() {
   const [tbMenu, setTbMenu] = useState(null); // right-click menu on the toolbar
   const changeToolbar = useCallback((patch) => setToolbarCfg(prev => { const n = { ...prev, ...patch }; saveToolbar(n); return n; }), []);
   useEffect(() => {
+    const on = (e) => { if (e.detail && Array.isArray(e.detail.order)) changeToolbar(e.detail); };
+    window.addEventListener('guitar-roll-apply-toolbar', on);
+    return () => window.removeEventListener('guitar-roll-apply-toolbar', on);
+  }, [changeToolbar]);
+  useEffect(() => {
     if (!tbMenu) return undefined;
     const close = () => setTbMenu(null);
     const key = (e) => { if (e.key === 'Escape') close(); };

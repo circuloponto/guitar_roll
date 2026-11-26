@@ -33,17 +33,24 @@ export function defaultToolbar() {
   return { order: [...IDS], hidden, size: 'normal' };
 }
 
-// Saved config merged with the current item list (items added later show up at the end).
+// A saved config merged with the current item list (items added later show up at the end).
+function mergeSaved(s, d) {
+  const order = (Array.isArray(s.order) ? s.order : []).filter(id => IDS.includes(id));
+  IDS.forEach(id => { if (!order.includes(id)) order.push(id); });
+  const hidden = {};
+  IDS.forEach(id => { hidden[id] = id in (s.hidden || {}) ? !!s.hidden[id] : !!d.hidden[id]; });
+  return { order, hidden, size: TOOLBAR_SIZES[s.size] ? s.size : 'normal' };
+}
+
 export function loadToolbar() {
   const d = defaultToolbar();
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (!s) return d;
-    const order = (Array.isArray(s.order) ? s.order : []).filter(id => IDS.includes(id));
-    IDS.forEach(id => { if (!order.includes(id)) order.push(id); });
-    const hidden = {};
-    IDS.forEach(id => { hidden[id] = id in (s.hidden || {}) ? !!s.hidden[id] : !!d.hidden[id]; });
-    return { order, hidden, size: TOOLBAR_SIZES[s.size] ? s.size : 'normal' };
+    if (s) return mergeSaved(s, d);
+    // nothing saved yet: the toolbar of the default layout, if one was saved
+    const b = JSON.parse(localStorage.getItem('guitar-roll-layout-default'));
+    if (b && b.toolbar && Array.isArray(b.toolbar.order)) return mergeSaved(b.toolbar, d);
+    return d;
   } catch { return d; }
 }
 

@@ -9,7 +9,10 @@ import {
 import { SENSITIVITY } from '../utils/transcribe';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
 import { loadPianoSize, setPianoSize, PIANO_SIZES } from '../utils/pianoSize';
-import { readSavedState, validateState, writeSavedState } from '../utils/dockLayout';
+import {
+  currentLayoutBundle, applyLayoutBundle, listLayoutPresets, saveLayoutPreset, deleteLayoutPreset,
+  getDefaultLayout, setDefaultLayout, clearDefaultLayout,
+} from '../utils/layoutPresets';
 import { exportSessionZip, importSessionFile, sessionHasAudio } from '../utils/sessionBundle';
 import {
   loadHotkeys, saveHotkeys, getDefaultHotkeys, formatHotkey,
@@ -111,50 +114,56 @@ function getSessionSchemes(appState, savedSchemes) {
 }
 
 export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab }) {
-  // ---- share / import window layouts ----
+  // ---- saved layouts: presets listed here, a default, and export / import ----
   const [pianoSize, setPianoSizeState] = useState(loadPianoSize);
   const [layoutMsg, setLayoutMsg] = useState(null);
   const [layoutPasteOpen, setLayoutPasteOpen] = useState(false);
   const [layoutText, setLayoutText] = useState('');
-  const buildLayoutBundle = () => ({
-    format: 'guitar-roll-layout', version: 1,
-    dock: readSavedState(),
-    toolbar: toolbarCfg || null,
-    arrangementRowHeight: (() => { try { return Number(localStorage.getItem('guitar-roll-arrangement-row-height')) || null; } catch { return null; } })(),
-  });
-  const exportLayout = async (how) => {
-    const bundle = buildLayoutBundle();
-    if (!bundle.dock) { setLayoutMsg({ ok: false, text: 'Nothing to export yet: move or resize a window first.' }); return; }
-    const text = JSON.stringify(bundle, null, 2);
-    if (how === 'copy') {
-      try { await navigator.clipboard.writeText(text); setLayoutMsg({ ok: true, text: 'Layout copied. Paste it to someone, or into "Paste layout text" on another computer.' }); }
-      catch { setLayoutMsg({ ok: false, text: 'The browser would not let me copy. Use "Export layout…" instead.' }); }
-      return;
-    }
-    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const [presetName, setPresetName] = useState('');
+  const [presetsVersion, setPresetsVersion] = useState(0);
+  useEffect(() => {
+    const on = () => setPresetsVersion(v => v + 1);
+    window.addEventListener('guitar-roll-presets-changed', on);
+    return () => window.removeEventListener('guitar-roll-presets-changed', on);
+  }, []);
+  void presetsVersion;
+  const presets = listLayoutPresets();
+  const hasDefault = !!getDefaultLayout();
+  const say = (ok, text) => setLayoutMsg({ ok, text });
+  const download = (bundle, fileName) => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
-    a.href = url; a.download = 'guitar-roll-layout.json';
+    a.href = url; a.download = fileName;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    setLayoutMsg({ ok: true, text: 'Layout saved as guitar-roll-layout.json.' });
   };
-  const applyLayoutText = (text) => {
+  const slug = (n) => (n || 'layout').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'layout';
+  const saveCurrentAsPreset = () => {
+    const e = saveLayoutPreset(presetName);
+    setPresetName('');
+    say(true, `Saved "${e.name}". It is listed below and in the Menu window's Layouts list.`);
+  };
+  // text or file content: a layout is applied and also kept in the list
+  const takeLayoutText = (text, nameHint) => {
     let obj;
-    try { obj = JSON.parse(text); } catch { setLayoutMsg({ ok: false, text: 'That is not a layout file (it could not be read).' }); return; }
-    if (!obj || obj.format !== 'guitar-roll-layout') { setLayoutMsg({ ok: false, text: 'That is not a Guitar Roll layout.' }); return; }
-    const dock = validateState(obj.dock);
-    if (!dock) { setLayoutMsg({ ok: false, text: 'The window layout in that file is not valid.' }); return; }
-    writeSavedState(dock);
-    window.dispatchEvent(new Event('guitar-roll-reload-layout'));
-    if (obj.toolbar && Array.isArray(obj.toolbar.order) && onToolbarChange) onToolbarChange(obj.toolbar);
-    if (obj.arrangementRowHeight) { try { localStorage.setItem('guitar-roll-arrangement-row-height', String(obj.arrangementRowHeight)); } catch { /* ignore */ } }
-    setLayoutMsg({ ok: true, text: 'Layout applied.' });
+    try { obj = JSON.parse(text); } catch { say(false, 'That is not a layout file (it could not be read).'); return; }
+    const r = applyLayoutBundle(obj);
+    if (!r.ok) { say(false, r.text); return; }
+    const e = saveLayoutPreset(nameHint || 'Imported layout', obj);
+    say(true, `Layout applied and saved as "${e.name}".`);
   };
   const importLayoutFile = () => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = '.json,application/json';
-    input.onchange = async () => { if (input.files[0]) applyLayoutText(await input.files[0].text()); };
+    input.onchange = async () => {
+      const f = input.files[0];
+      if (f) takeLayoutText(await f.text(), f.name.replace(/\.json$/i, '').replace(/[-_]+/g, ' '));
+    };
     input.click();
+  };
+  const copyCurrentLayout = async () => {
+    try { await navigator.clipboard.writeText(JSON.stringify(currentLayoutBundle(), null, 2)); say(true, 'Layout copied as text.'); }
+    catch { say(false, 'The browser would not let me copy. Use "Export layout…" instead.'); }
   };
   // Preferences-style layout: one tab per topic (like Ableton's Preferences).
   const [tab, setTab] = useState(() => { if (initialTab) return initialTab; try { return localStorage.getItem('guitar-roll-settings-tab') || 'look'; } catch { return 'look'; } });
@@ -723,11 +732,39 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
         </div>
         <div className="settings-section">
-          <h3>Share a layout</h3>
-          <p className="settings-desc">Save how your windows and toolbar are arranged as a file (or a piece of text) to share, and load a layout someone else made. Importing replaces your current window layout and toolbar.</p>
+          <h3>Saved layouts</h3>
+          <p className="settings-desc">Keep named layouts here (window arrangement, toolbar and track height), switch between them, or share them. The Menu window also has a Layouts list for switching quickly.</p>
           <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button className="settings-btn" onClick={() => exportLayout('file')}>Export layout…</button>
-            <button className="settings-btn" onClick={() => exportLayout('copy')}>Copy layout as text</button>
+            <input className="settings-input" value={presetName} placeholder="Name for the current layout" style={{ width: 200 }}
+              onChange={(e) => setPresetName(e.target.value)} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') saveCurrentAsPreset(); }} />
+            <button className="settings-btn" onClick={saveCurrentAsPreset}>Save current layout</button>
+          </div>
+          <div className="layout-presets">
+            {presets.length === 0 && <p className="settings-desc" style={{ margin: '8px 0 0' }}>No saved layouts yet.</p>}
+            {presets.map(pr => (
+              <div key={pr.id} className="layout-preset-row">
+                <span className="layout-preset-name">{pr.name}</span>
+                <button className="settings-btn-sm" onClick={() => { const r = applyLayoutBundle(pr.bundle); say(r.ok, r.ok ? `Switched to "${pr.name}".` : r.text); }}>Apply</button>
+                <button className="settings-btn-sm" onClick={() => { setDefaultLayout(pr.bundle); say(true, `"${pr.name}" is now the default layout.`); }}>Make default</button>
+                <button className="settings-btn-sm" onClick={() => { download(pr.bundle, `guitar-roll-${slug(pr.name)}.json`); say(true, `Saved guitar-roll-${slug(pr.name)}.json.`); }}>Export</button>
+                <button className="settings-btn-sm danger" onClick={() => deleteLayoutPreset(pr.id)}>Delete</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="settings-section">
+          <h3>Default layout</h3>
+          <p className="settings-desc">{hasDefault ? 'Your own default layout is in use: "Reset layout" and new browsers start from it.' : 'The built-in layout is the default. Save the current one as your default and "Reset layout" and new browsers will start from it.'}</p>
+          <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="settings-btn" onClick={() => { setDefaultLayout(); say(true, 'The current layout is now your default.'); }}>Save current layout as default</button>
+            {hasDefault && <button className="settings-btn" onClick={() => { clearDefaultLayout(); say(true, 'Back to the built-in default layout.'); }}>Use the built-in default</button>}
+          </div>
+        </div>
+        <div className="settings-section">
+          <h3>Share a layout</h3>
+          <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="settings-btn" onClick={() => { download(currentLayoutBundle(), 'guitar-roll-layout.json'); say(true, 'Saved guitar-roll-layout.json.'); }}>Export current layout…</button>
+            <button className="settings-btn" onClick={copyCurrentLayout}>Copy as text</button>
             <button className="settings-btn" onClick={importLayoutFile}>Import layout…</button>
             <button className="settings-btn" onClick={() => setLayoutPasteOpen(o => !o)}>Paste layout text…</button>
           </div>
@@ -738,7 +775,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
                 onChange={(e) => setLayoutText(e.target.value)} onKeyDown={(e) => e.stopPropagation()}
                 style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
               />
-              <button className="settings-btn" style={{ alignSelf: 'flex-start' }} onClick={() => applyLayoutText(layoutText)} disabled={!layoutText.trim()}>Apply pasted layout</button>
+              <button className="settings-btn" style={{ alignSelf: 'flex-start' }} onClick={() => takeLayoutText(layoutText, 'Pasted layout')} disabled={!layoutText.trim()}>Apply pasted layout</button>
             </div>
           )}
           {layoutMsg && <p className="settings-desc" style={{ marginTop: 8, color: layoutMsg.ok ? 'var(--ok)' : 'var(--danger)' }}>{layoutMsg.text}</p>}
