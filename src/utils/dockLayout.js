@@ -235,6 +235,30 @@ export function pruneEmpty(st) {
   return st.tree ? { ...st, tree: go(st.tree) } : st;
 }
 
+// A divider between two stacks shares one line: row(col(a1, a2), col(b1, b2)) has a single vertical line
+// for both pairs. Re-nesting it as col(row(a1, b1), row(a2, b2)) gives each pair its own vertical line
+// (the horizontal line becomes the shared one instead). Works the same the other way round.
+export function canSwapShared(st, path) {
+  let n = st.tree;
+  for (const c of path) n = n && !n.id ? n[c] : null;
+  if (!n || n.id) return false;
+  const other = n.dir === 'row' ? 'col' : 'row';
+  return !n.a.id && !n.b.id && n.a.dir === other && n.b.dir === other;
+}
+export function swapSharedLine(st, path) {
+  if (!canSwapShared(st, path)) return st;
+  const go = (n, i) => {
+    if (i === path.length) {
+      const dir = n.dir === 'row' ? 'col' : 'row';
+      const inner = n.dir; // the children's direction after the swap
+      const mid = (n.a.ratio + n.b.ratio) / 2;
+      return split(dir, mid, split(inner, n.ratio, n.a.a, n.b.a), split(inner, n.ratio, n.a.b, n.b.b));
+    }
+    return path[i] === 'a' ? { ...n, a: go(n.a, i + 1) } : { ...n, b: go(n.b, i + 1) };
+  };
+  return { ...st, tree: go(st.tree, 0) };
+}
+
 export function findParent(n, id, path = '') {
   if (!n || n.id) return null;
   if (n.a.id === id) return { path, node: n, isA: true };

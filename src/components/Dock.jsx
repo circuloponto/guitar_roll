@@ -4,7 +4,7 @@ import { listLayoutPresets, applyLayoutBundle, getDefaultLayout } from '../utils
 import {
   PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
   loadState, saveState, clearSavedState, defaultState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
-  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect,
+  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine,
 } from '../utils/dockLayout';
 
 const MIN_PX = 90;       // smallest a split side may be dragged to
@@ -430,7 +430,10 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
             className={`dock-gutter ${isRow ? 'row' : 'col'}`}
             style={style}
             onPointerDown={(e) => startResize(e, g)}
-            title="Drag to resize"
+            onDoubleClick={() => { if (canSwapShared(stRef.current, g.path)) commit(swapSharedLine(stRef.current, g.path)); }}
+            title={canSwapShared(st, g.path)
+              ? `Drag to resize. Double-click so the two sides stop sharing this line: each pair then gets its own ${isRow ? 'vertical' : 'horizontal'} line and the other direction is shared.`
+              : 'Drag to resize'}
           />
         );
       })}
