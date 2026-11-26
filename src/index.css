@@ -82,3 +82,9 @@ input[type='range'], input[type='checkbox'] { accent-color: var(--accent); }
   html, body { overflow: auto; height: auto; min-height: 100vh; }
   html body #root { height: 100vh; min-height: 720px; min-width: 1100px; width: 100%; overflow: visible; }
 }
+
+/* status bar: snapping magnet */
+.status-magnet { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; color: var(--mute); cursor: pointer; border-radius: 4px; }
+.status-magnet.on { color: var(--accent-hi); }
+.status-magnet:hover { background: var(--hairline); }
+.status-magnet-off { position: absolute; left: 3px; right: 3px; top: 50%; height: 1.5px; background: #e67e22; transform: rotate(-45deg); }

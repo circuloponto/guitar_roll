@@ -34,7 +34,7 @@ import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import { copyRange, insertBars, removeBars, pasteRange, barIndexAt, barBoundaryAtOrAfter, beatOfBar, contentEnd } from './utils/barOps';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
-import { Metronome, Undo2, Redo2, ListMusic, SlidersHorizontal, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform } from 'lucide-react';
+import { Metronome, Undo2, Redo2, ListMusic, SlidersHorizontal, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform, Magnet } from 'lucide-react';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES, loadToolbar, saveToolbar, defaultToolbar } from './utils/toolbarConfig';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
@@ -3680,14 +3680,15 @@ setPositionModeValue(null);
   };
   const statusBarNode = (
       <div className="status-bar">
-        <span style={{ color: (freeMode || fingeringMode || machineGunMode) ? '#e67e22' : '#888' }}>
-          {freeMode ? 'FREE ' : ''}{fingeringMode ? 'FINGERING ' : ''}{machineGunMode ? 'DRAW ' : ''}{notes.length} notes{selectedNotes.size > 0 ? ` (${selectedNotes.size} selected)` : ''} | Beat: {selectedBeat + 1} | Bar: {Math.floor(selectedBeat / SUBDIVISIONS) + 1}
-        </span>
-        {positionMode ? <span style={{ color: 'var(--accent-hi)', marginLeft: 8 }}>Select Position {positionModeValue != null ? `(${positionModeValue})` : ''}</span> : null}
-        {!positionMode && (() => {
-          const romanNumerals = ['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'];
-          return <span style={{ color: 'var(--soft)', marginLeft: 8 }}>Pos: {romanNumerals[Math.min(position, romanNumerals.length - 1)]}</span>;
-        })()}
+        <button
+          className={`status-magnet${freeMode ? '' : ' on'}`}
+          onClick={() => setFreeMode(m => !m)}
+          title={freeMode ? 'Free mode: no grid snapping (click or press the hotkey to snap again)' : 'Snapping to the grid (click or press the hotkey for free mode)'}
+          aria-label="Toggle grid snapping"
+        ><Magnet size={14} />{freeMode && <span className="status-magnet-off" />}</button>
+        {(fingeringMode || machineGunMode) && (
+          <span style={{ color: '#e67e22', marginLeft: 8 }}>{fingeringMode ? 'FINGERING' : 'DRAW'}</span>
+        )}
         <span className="status-separator" />
         <span className="toolbar-label">Vel:</span>
         <input
@@ -3824,6 +3825,7 @@ setPositionModeValue(null);
         <Fretboard
           playing={playing}
             positionMode={positionMode}
+          positionModeValue={positionModeValue}
           onNoteClick={handleFretClick}
           onAdjacentClick={handleAdjacentClick}
           onMoveNote={handleMoveNote}

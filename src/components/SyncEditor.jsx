@@ -1,3 +1,4 @@
+import { prepareScrub, scrubTarget, scrubHold, scrubStop } from '../utils/scrubVoice';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { getClips, getSyncPoints, clipBeatToTime, clipTimeToBeat } from '../utils/audioClips';
 import { onsetTimes } from '../utils/beatDetect';
@@ -402,6 +403,30 @@ export default function SyncEditor({
     }
     if (!hit) {
       onSelectBeat(Math.max(0, timeBeat(xt(x))));
+      if (playing || !buffer) return;
+      // drag to scrub: the recording is heard under the pointer, tape style
+      e.preventDefault();
+      prepareScrub(buffer);
+      const hear = (cx) => {
+        const t = xt(cx - canvasRef.current.getBoundingClientRect().left);
+        scrubTarget(buffer, t >= tMin && t <= tMax ? t : null, audio.volume ?? 1);
+        return t;
+      };
+      hear(e.clientX);
+      const x0s = e.clientX;
+      let dragged = false;
+      const sm = (ev) => {
+        if (!dragged && Math.abs(ev.clientX - x0s) < 3) return;
+        dragged = true;
+        const t = hear(ev.clientX);
+        onSelectBeat(Math.max(0, timeBeat(t)));
+      };
+      const su = () => {
+        window.removeEventListener('pointermove', sm); window.removeEventListener('pointerup', su);
+        scrubHold(buffer, false); scrubStop(buffer);
+      };
+      window.addEventListener('pointermove', sm);
+      window.addEventListener('pointerup', su);
       return;
     }
     // A pin is dragged by the beat it pins (its file beat plus the file origin); a stem moves only its

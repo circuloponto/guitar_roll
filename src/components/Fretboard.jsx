@@ -76,7 +76,7 @@ const TOTAL_CELLS = NUM_FRETS + 1;
 
 
 
-export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, showFretNumbers = true, openDots = true, openScroll = true, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false }) {
+export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, onDurationChange, onBeatChange, saveSnapshot, commitDrag, freeMode = false, totalBeats, activeNotes = [], selectedExtraNotes = [], backgroundActiveNotes = [], playingNotes = [], playheadBeatRef = null, tempoMap = null, noteFadeFactor = 1, showFretNumbers = true, openDots = true, openScroll = true, stringColors, getNoteColor, hoveredNote, setHoveredNote, hotkeys, hoverPreview = false, hoverVolume = 0.3, snapUnit = 1, fretboardZoom = 1, setFretboardZoom, voicingPreview, fingeringMode = false, onExitFingeringMode, onDeleteNote, onDeleteNotes, notes = [], selectedBeat, selectedNotes, setSelectedNotes, autoScroll, hoverPill, timelineBodyRef, timelineZoom = 1, barSubdivisions = 4, position = 0, setPosition, setPlayheadPreview, setSelectedBeat, fretboardAutoForward = false, swing, swungDisplay, playing = false, positionMode = false, positionModeValue = null }) {
   const FRET_HEIGHT = BASE_FRET_HEIGHT * fretboardZoom;
   const GRID_HEIGHT = TOTAL_CELLS * FRET_HEIGHT;
   const cellTopPx = (cell) => cell * FRET_HEIGHT;
@@ -686,6 +686,16 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           background: '#1a1a1a',
           borderBottom: 'none',
         }} />
+        {/* Position readout in the blank area above fret zero: numeral left, prompt middle, typed value right */}
+        <div style={{
+          position: 'absolute', left: 0, right: 0, top: 0, height: FRET_HEIGHT, pointerEvents: 'none', zIndex: 3,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px', fontSize: 10,
+          color: 'var(--soft)',
+        }}>
+          <span style={{ opacity: 0.7 }}>{['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'][Math.min(position, 24)]}</span>
+          <span style={{ color: 'var(--accent-hi)', fontSize: 11 }}>{positionMode ? 'Select position' : ''}</span>
+          <span style={{ color: 'var(--accent-hi)', fontSize: 11 }}>{positionMode && positionModeValue != null ? positionModeValue : ''}</span>
+        </div>
 
         {/* Position window highlight: frets [position, position+4] */}
         <div style={{
