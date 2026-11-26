@@ -134,11 +134,22 @@ export default function Timeline({
   // Track K key for cursor-only mode (deselect + place cursor, no note input)
   useEffect(() => {
     const getKey = () => (hotkeysRef.current?.cursorMode?.key || 'k').toLowerCase();
-    const down = (e) => { if (e.key.toLowerCase() === getKey()) { cursorModeRef.current = true; setCursorMode(true); } };
-    const up = (e) => { if (e.key.toLowerCase() === getKey()) { cursorModeRef.current = false; setCursorMode(false); } };
+    const setMode = (on) => { cursorModeRef.current = on; setCursorMode(on); };
+    const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName || '') || e.target?.isContentEditable;
+    // Not with Cmd/Ctrl/Alt: the browser never sends the key-up for those combos, which left the mode stuck on
+    // (no hover rectangle, clicks only moved the cursor).
+    const down = (e) => { if (e.key.toLowerCase() === getKey() && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e)) setMode(true); };
+    const up = (e) => { if (e.key.toLowerCase() === getKey()) setMode(false); };
+    const reset = () => setMode(false);
+    const vis = () => { if (document.hidden) reset(); };
     document.addEventListener('keydown', down);
     document.addEventListener('keyup', up);
-    return () => { document.removeEventListener('keydown', down); document.removeEventListener('keyup', up); };
+    window.addEventListener('blur', reset);
+    document.addEventListener('visibilitychange', vis);
+    return () => {
+      document.removeEventListener('keydown', down); document.removeEventListener('keyup', up);
+      window.removeEventListener('blur', reset); document.removeEventListener('visibilitychange', vis);
+    };
   }, []);
 
   const handleClick = useCallback((e) => {
@@ -953,6 +964,8 @@ export default function Timeline({
   // Machine gun: convert mouse Y to string+fret
   // Marquee selection / machine gun on grid background
   const handleGridMouseDown = useCallback((e) => {
+    // a fresh press: forget a 'swallow the next click' flag left over from a press whose click never came
+    marqueeDidDragRef.current = false;
     // Active audio track: the grid is a clip lane. Empty space deselects clips and places the playhead.
     if (activeAudio) {
       if (e.button === 0 && !e.target.closest('.audio-clip')) {

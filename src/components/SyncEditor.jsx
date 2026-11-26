@@ -12,7 +12,7 @@ const HIT = 6;          // px grab distance
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
   tracks, activeTrackId, tempoMap, timeSignature = [4, 4], barSubdivisions = [], selectedBeat, currentBeat, playing, getBuffer,
-  onSetPin, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead,
+  onSetPin, onMoveStem, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead,
 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
@@ -97,6 +97,17 @@ export default function SyncEditor({
 
   const tx = useCallback((t) => (t - view.t0) * view.pps, [view]);
   const xt = useCallback((x) => view.t0 + x / view.pps, [view]);
+
+  // follow the playhead while playing: page to the right when it reaches the edge
+  const followT = playing && currentBeat != null && clip && m ? clipBeatToTime(clip, currentBeat, m) : null;
+  useEffect(() => {
+    if (followT == null || !size.w) return;
+    setView((v) => {
+      const x = (followT - v.t0) * v.pps;
+      if (x >= 0 && x <= size.w * 0.92) return v;
+      return { ...v, t0: Math.max(tMin - 1, followT - (size.w * 0.08) / v.pps) };
+    });
+  }, [followT, size.w, tMin]);
 
   // draw
   const headBeat = playing && currentBeat != null ? currentBeat : selectedBeat;
@@ -336,18 +347,32 @@ export default function SyncEditor({
       onSelectBeat(Math.max(0, timeBeat(xt(x))));
       return;
     }
-    // a pin is dragged by the beat it pins (its file beat plus the file origin)
+    // A pin is dragged by the beat it pins (its file beat plus the file origin); a stem moves only its
+    // notes. Nothing moves until the pointer travels a few pixels: a plain click puts the playhead there.
     const beat = hit.kind === 'stem' ? hit.beat : (anchor ?? 0) + hit.beat;
     e.preventDefault();
-    let started = false;
+    const x0 = e.clientX;
+    let started = false, curBeat = beat;
+    const ids = pairedTracks.map(t => t.id);
     const move = (ev) => {
+      if (!started && Math.abs(ev.clientX - x0) < 4) return;
       const lx = ev.clientX - canvasRef.current.getBoundingClientRect().left;
+      if (hit.kind === 'stem') {
+        const nb = Math.max(0, timeBeat(Math.max(0, xt(lx))));
+        if (onMoveStem) onMoveStem(ids, curBeat, nb, started ? 'move' : 'start');
+        curBeat = nb; started = true;
+        return;
+      }
       const t = Math.max(0, snapTime(xt(lx), ev.altKey));
       const ok = onSetPin(audio.id, beat, t, started ? 'move' : 'start');
       if (ok === false && !started) { cleanup(); return; }
       started = true;
     };
-    const cleanup = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', cleanup); document.body.classList.remove('dock-resizing'); dragRef.current = null; };
+    const cleanup = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', cleanup);
+      document.body.classList.remove('dock-resizing'); dragRef.current = null;
+      if (!started) onSelectBeat(Math.max(0, hit.kind === 'stem' ? hit.beat : timeBeat(hit.time)));
+    };
     dragRef.current = true;
     document.body.classList.add('dock-resizing');
     window.addEventListener('pointermove', move);

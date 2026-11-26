@@ -986,6 +986,16 @@ function App() {
 
   // Sync editor: pin the sound of the recording at file time `time` to the grid beat `beat` (a stem
   // dragged onto the waveform). phase 'start' asks for confirmation once and saves an undo step.
+  // Nudge the notes of a stem (the notes of `trackIds` sitting at `fromBeat`) to `toBeat`: only the notes move,
+  // no sync point is involved.
+  const moveStemNotes = useCallback((trackIds, fromBeat, toBeat, phase) => {
+    if (phase === 'start') saveSnapshot();
+    const hi = Math.max(0, toBeat);
+    setTracksTracked(prev => prev.map(x => (trackIds.includes(x.id) && x.notes
+      ? { ...x, notes: x.notes.map(n => (Math.abs(n.beat - fromBeat) < 1e-3 ? { ...n, beat: hi } : n)) }
+      : x)));
+  }, [saveSnapshot, setTracksTracked]);
+
   const setPinForBeat = useCallback((trackId, beat, time, phase) => {
     const t = tracksRef.current.find(x => x.id === trackId);
     if (!t || syncBlockedByOtherTrack(trackId)) return false;
@@ -3794,8 +3804,14 @@ setPositionModeValue(null);
           playing={playing}
           getBuffer={(id) => audioBuffersRef.current[id]}
           onSetPin={setPinForBeat}
+          onMoveStem={moveStemNotes}
           onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
-          onSelectBeat={(b) => setSelectedBeat(Math.max(0, Math.min(totalBeats - 1, b)))}
+          onSelectBeat={(b) => {
+            const nb = Math.max(0, Math.min(totalBeats - 1, b));
+            // clicking while playing jumps playback to that point
+            if (playingRef.current) { stopPlayback(); startPlayback(nb); }
+            setSelectedBeat(nb);
+          }}
           onUndo={undo}
           onRedo={redo}
           onSetAudioOptions={trackApi.onSetAudioOptions}
