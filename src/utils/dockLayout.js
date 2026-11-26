@@ -238,21 +238,47 @@ export function pruneEmpty(st) {
 // A divider between two stacks shares one line: row(col(a1, a2), col(b1, b2)) has a single vertical line
 // for both pairs. Re-nesting it as col(row(a1, b1), row(a2, b2)) gives each pair its own vertical line
 // (the horizontal line becomes the shared one instead). Works the same the other way round.
-export function canSwapShared(st, path) {
+function nodeAt(st, path) {
   let n = st.tree;
   for (const c of path) n = n && !n.id ? n[c] : null;
-  if (!n || n.id) return false;
-  const other = n.dir === 'row' ? 'col' : 'row';
-  return !n.a.id && !n.b.id && n.a.dir === other && n.b.dir === other;
+  return n;
 }
-export function swapSharedLine(st, path) {
-  if (!canSwapShared(st, path)) return st;
+// 'both': two stacks of the other direction (each pair gets its own line);
+// 'leaf': one stack of the other direction next to a single window, which then moves into one row/column
+export function sharedKind(st, path) {
+  const n = nodeAt(st, path);
+  if (!n || n.id) return null;
+  const other = n.dir === 'row' ? 'col' : 'row';
+  const aSplit = !n.a.id && n.a.dir === other, bSplit = !n.b.id && n.b.dir === other;
+  if (aSplit && bSplit) return 'both';
+  if ((aSplit && n.b.id) || (bSplit && n.a.id)) return 'leaf';
+  return null;
+}
+export const canSwapShared = (st, path) => sharedKind(st, path) !== null;
+// `alt` (leaf case): put the lone window beside the first window of the stack instead of the second
+export function swapSharedLine(st, path, alt = false) {
+  const kind = sharedKind(st, path);
+  if (!kind) return st;
   const go = (n, i) => {
     if (i === path.length) {
       const dir = n.dir === 'row' ? 'col' : 'row';
-      const inner = n.dir; // the children's direction after the swap
-      const mid = (n.a.ratio + n.b.ratio) / 2;
-      return split(dir, mid, split(inner, n.ratio, n.a.a, n.b.a), split(inner, n.ratio, n.a.b, n.b.b));
+      const inner = n.dir;
+      if (kind === 'both') {
+        const mid = (n.a.ratio + n.b.ratio) / 2;
+        return split(dir, mid, split(inner, n.ratio, n.a.a, n.b.a), split(inner, n.ratio, n.a.b, n.b.b));
+      }
+      const stackIsA = !n.a.id;
+      const stack = stackIsA ? n.a : n.b;
+      const lone = stackIsA ? n.b : n.a;
+      // the lone window joins one half of the stack; it keeps the share it had along the old line
+      const joinFirst = !!alt;
+      const target = joinFirst ? stack.a : stack.b;
+      const merged = stackIsA
+        ? split(inner, n.ratio, target, lone)
+        : split(inner, n.ratio, lone, target);
+      return joinFirst
+        ? split(dir, stack.ratio, merged, stack.b)
+        : split(dir, stack.ratio, stack.a, merged);
     }
     return path[i] === 'a' ? { ...n, a: go(n.a, i + 1) } : { ...n, b: go(n.b, i + 1) };
   };
