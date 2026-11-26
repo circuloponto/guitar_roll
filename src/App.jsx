@@ -1935,10 +1935,7 @@ setPositionModeValue(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     const handleKeyUp = (e) => {
-      // Shift + Space plays only while the keys are down
-      if ((e.code === 'Space' || e.key === 'Shift') && shiftPlayOriginRef.current != null) {
-        stopShiftPlayRef.current?.();
-      }
+      // Shift + Space is a tap: it keeps playing after the keys are released (Space alone stops)
       if (e.code === 'KeyX') {
         xHeldRef.current = false;
         setXHeld(false);
@@ -2563,8 +2560,6 @@ setPositionModeValue(null);
       const snap = snapUnitRef.current || 1;
       beat = Math.max(0, Math.min(totalColumns(barSubsRef.current) - 1, Math.floor(raw / snap + 1e-9) * snap));
     }
-    // Shift + Space is momentary: remember the playhead so it can go back when the keys are released
-    if (shiftPlayOriginRef.current == null) shiftPlayOriginRef.current = selectedBeatRef.current;
     if (playingRef.current) stopPlayback();
     startPlayback(beat);
   };
