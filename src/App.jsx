@@ -393,6 +393,8 @@ function App() {
   const clipboardRef = useRef([]);
   const [instrument, setInstrumentState] = useState(getInstrument());
   const [freeMode, setFreeMode] = useState(false);
+  const freeModeRef = useRef(false);
+  freeModeRef.current = freeMode;
   const [machineGunMode, setMachineGunMode] = useState(false);
   const [defaultVelocity, setDefaultVelocity] = useState(0.8);
   const [hoverPreview, setHoverPreview] = useState(() => {
@@ -2477,7 +2479,15 @@ setPositionModeValue(null);
       pauseWithMode();
       return;
     }
-    startPlayback(selectedBeatRef.current);
+    // Off the grid (a remnant playhead left where it paused) and not in free mode: start from the
+    // last subdivision before it.
+    let from = selectedBeatRef.current;
+    if (!freeModeRef.current) {
+      const u = snapUnitRef.current || 1;
+      const snapped = Math.floor(from / u + 1e-6) * u;
+      if (Math.abs(snapped - from) > 1e-6) { from = Math.max(0, snapped); setSelectedBeat(from); }
+    }
+    startPlayback(from);
   }, [playing, pauseWithMode, startPlayback]);
 
   handlePlayRef.current = handlePlayFromHead;

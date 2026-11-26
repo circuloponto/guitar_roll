@@ -34,6 +34,8 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
+  const activeRef = useRef(null);   // the window that has focus
+  const swallowRef = useRef(false); // the click in progress only focused its window
   const [moving, setMoving] = useState(null); // id of the floating window being moved
   const [drag, setDrag] = useState(null); // { id, x, y, hit }
   const [box, setBox] = useState({ w: Math.max(400, window.innerWidth - 40), h: Math.max(300, window.innerHeight - 100) });
@@ -387,7 +389,19 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
             key={id}
             className={`dock-panel dock-panel-${id}${fl ? ' floating' : ''}${minimized ? ' minimized' : ''}${vertical ? ' vertical' : ''}${drag?.id === id ? ' dragging' : ''}${moving === id || drag?.id === id ? ' moving' : ''}`}
             style={style}
-            onPointerDownCapture={fl ? () => { const n = raiseFloating(stRef.current, id); if (n !== stRef.current) commit(n); } : undefined}
+            onPointerDownCapture={(e) => {
+              if (fl) { const n = raiseFloating(stRef.current, id); if (n !== stRef.current) commit(n); }
+              // First click on a window that is not the focused one only focuses it: no note is placed, no
+              // button pressed. (The title bar and edges work straight away, so windows can be moved.)
+              const grab = e.target.closest?.('.dock-handle, .dock-edge');
+              const swallow = activeRef.current != null && activeRef.current !== id && !grab && e.button === 0;
+              swallowRef.current = swallow;
+              activeRef.current = id;
+              if (swallow) { e.preventDefault(); e.stopPropagation(); }
+            }}
+            onMouseDownCapture={(e) => { if (swallowRef.current) { e.preventDefault(); e.stopPropagation(); } }}
+            onMouseUpCapture={(e) => { if (swallowRef.current) { e.preventDefault(); e.stopPropagation(); } }}
+            onClickCapture={(e) => { if (swallowRef.current) { swallowRef.current = false; e.preventDefault(); e.stopPropagation(); } }}
           >
             <div className="dock-card">
               <div

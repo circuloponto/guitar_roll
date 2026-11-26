@@ -80,6 +80,14 @@ export default function SyncEditor({
   }, [noteSource, clip, m, beatTime, inSpan]);
 
   const pinTime = useCallback((p) => p.time, []);
+  // loudest sample: the waveform is scaled to fill its lane so quiet recordings still show their transients
+  const peak = useMemo(() => {
+    if (!buffer) return 1;
+    const d = buffer.getChannelData(0);
+    let mx = 0;
+    for (let i = 0; i < d.length; i += 8) { const v = Math.abs(d[i]); if (v > mx) mx = v; }
+    return Math.max(0.02, mx);
+  }, [buffer]);
   const onsets = useMemo(() => {
     if (!buffer) return [];
     try { return onsetTimes(buffer); } catch { return []; }
@@ -143,7 +151,7 @@ export default function SyncEditor({
     // sync markers standing through both with a red cross at the bottom to remove them.
     const stripTop = HEAD_H + 4, stripBottom = size.h - 6;
     const stripH = Math.max(80, stripBottom - stripTop);
-    const laneTop = stripTop, laneH = stripH * 0.72;
+    const laneTop = stripTop, laneH = stripH * 0.9;
     const mid = stripTop + stripH * 0.58;   // the waveform's centre: the marker circles sit on it
     const hk = Math.max(0.9, Math.min(1.8, stripH / 240)); // everything below scales with the window
     g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, stripTop - 2, size.w, stripH + 4);
@@ -185,6 +193,7 @@ export default function SyncEditor({
     }
     // waveform
     const d = buffer.getChannelData(0), sr = buffer.sampleRate;
+    const gain = 0.98 / peak;
     g.fillStyle = soft; g.globalAlpha = 0.42;
     for (let x = 0; x < size.w; x++) {
       if (!inSpan(xt(x))) continue;
@@ -194,7 +203,7 @@ export default function SyncEditor({
       let mn = 1, mx = -1;
       for (let i = Math.max(0, a); i < Math.min(d.length, b); i += stride) { if (d[i] < mn) mn = d[i]; if (d[i] > mx) mx = d[i]; }
       if (mx < mn) continue;
-      g.fillRect(x, mid - mx * (laneH / 2), 1, Math.max(1, (mx - mn) * (laneH / 2)));
+      g.fillRect(x, mid - mx * gain * (laneH / 2), 1, Math.max(1, (mx - mn) * gain * (laneH / 2)));
     }
     g.globalAlpha = 1;
     // attacks (faint ticks at the top)
@@ -332,7 +341,7 @@ export default function SyncEditor({
     const lwid = g.measureText(label).width + 12;
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(4, stripBottom - 20, lwid, 15);
     g.fillStyle = fg; g.fillText(label, 10, stripBottom - 12);
-  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd, playing]);
+  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd, playing, peak]);
 
   // hit testing
   const hitAt = (x, y) => {
