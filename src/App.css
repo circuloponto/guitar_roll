@@ -925,6 +925,7 @@ input[type="number"] {
 
 /* Note/mode indicator bar above the fretboard */
 .fretboard-note-box {
+  position: relative;
   height: 30px;
   border-bottom: 1px solid var(--hairline);
   display: flex;
@@ -3818,3 +3819,8 @@ html[data-piano-size='hidden'] .piano-key-label { display: none; }
 .sync-pair-menu label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 
 .sync-kbd { font: 10px var(--mono); background: var(--ink); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-left: 4px; color: var(--soft); }
+
+/* position number: top-right of the strip where the note name shows */
+.fretboard-pos-badge { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 18px; font-weight: 700; color: var(--accent-hi); pointer-events: none; white-space: nowrap; }
+.fretboard-pos-badge small { font-size: 10px; font-weight: 400; color: var(--soft); margin-right: 5px; }
+.fretboard-roman-badge { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600; color: var(--soft); opacity: 0.8; pointer-events: none; }

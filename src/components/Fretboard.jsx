@@ -629,6 +629,10 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           : moveMode ? <span style={{ color: 'var(--amber)' }}>Move Mode ({hotkeys ? formatHotkey(hotkeys.moveMode) : 'M'})</span>
           : adjacentMode ? <span style={{ color: '#2ecc71' }}>Adjacent Mode ({hotkeys ? formatHotkey(hotkeys.adjacentMode) : 'A'})</span>
           : noteName || '\u00A0'}
+                  <span className="fretboard-roman-badge" title="Position (roman)">{['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'][Math.min(position, 24)]}</span>
+        <span className="fretboard-pos-badge" title="Position">
+          <small>POS</small>{positionMode && positionModeValue != null ? positionModeValue : position}
+        </span>
       </div>
       <div
         className="fretboard-scroll"
@@ -692,9 +696,9 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px', fontSize: 10,
           color: 'var(--soft)',
         }}>
-          <span style={{ opacity: 0.7 }}>{['O','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI','XXII','XXIII','XXIV'][Math.min(position, 24)]}</span>
+          <span />
           <span style={{ color: 'var(--accent-hi)', fontSize: 11 }}>{positionMode ? 'Select position' : ''}</span>
-          <span style={{ color: 'var(--accent-hi)', fontSize: 11 }}>{positionMode && positionModeValue != null ? positionModeValue : ''}</span>
+          <span />
         </div>
 
         {/* Position window highlight: frets [position, position+4] */}
