@@ -3835,3 +3835,11 @@ html[data-piano-size='hidden'] .piano-key-label { display: none; }
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), 0 0 18px 3px color-mix(in srgb, var(--accent) 55%, transparent);
 }
+
+/* Phantom-note editing: the timeline is editing the silent companion layer */
+.timeline-container.phantom-editing { position: relative; outline: 2px dashed var(--accent, #7aa2ff); outline-offset: -2px; }
+.timeline-container.phantom-editing::after {
+  content: 'Phantom notes (silent)'; position: absolute; top: 4px; right: 8px; z-index: 30;
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; pointer-events: none;
+  background: var(--accent, #7aa2ff); color: #000; opacity: .85;
+}

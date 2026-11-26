@@ -103,7 +103,10 @@ function App() {
 
   // Derived: active track's notes
   const activeTrack = tracks.find(t => t.id === activeTrackId) || tracks[0];
-  const notes = activeTrack ? activeTrack.notes : [];
+  // Phantom notes: a silent companion layer per notes track (scale / chord shapes). While
+  // `phantomEdit` is on, every editor (timeline, fretboard, hotkeys) works on that layer instead.
+  const phantomEditing = !!(activeTrack && activeTrack.phantomEdit);
+  const notes = activeTrack ? (phantomEditing ? (activeTrack.phantom || []) : activeTrack.notes) : [];
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const activeScheme = activeTrack?.activeInstanceScheme ?? null;
@@ -112,8 +115,10 @@ function App() {
   const setActiveNotes = useCallback((updater) => {
     setTracksTracked(prev => prev.map(t => {
       if (t.id !== activeTrackIdRef.current) return t;
-      const newNotes = typeof updater === 'function' ? updater(t.notes) : updater;
-      return { ...t, notes: newNotes };
+      const key = t.phantomEdit ? 'phantom' : 'notes';
+      const cur = t[key] || [];
+      const newNotes = typeof updater === 'function' ? updater(cur) : updater;
+      return { ...t, [key]: newNotes };
     }));
   }, [setTracksTracked]);
 
@@ -2400,7 +2405,7 @@ setPositionModeValue(null);
           if (track.type === 'audio') return;
           const swing = swingRef.current;
           const swungBeat = applySwingBeat(beat, swing, 0.5);
-          track.notes.forEach(note => {
+          (track.phantomEdit ? (track.phantom || []) : track.notes).forEach(note => {
             if (note.beat >= beat && note.beat < beat + 1) {
               const swungNoteStart = applySwingBeat(note.beat, swing, 0.5);
               const swungNoteEnd = applySwingBeat(note.beat + (note.duration || 1), swing, 0.5);
@@ -2546,7 +2551,7 @@ setPositionModeValue(null);
   const auditionNotesAt = useCallback((beat) => {
     getPlayableTracks(tracksRef.current).forEach(t => {
       if (t.type === 'audio') return;
-      t.notes.forEach(n => {
+      (t.phantomEdit ? (t.phantom || []) : t.notes).forEach(n => {
         if (n.ghost) return;
         if (beat >= n.beat - 1e-6 && beat < n.beat + (n.duration || 1) - 1e-6) {
           playNote(n.stringIndex, n.fret, Math.min(1.2, Math.max(0.25, (n.duration || 1) * (tempoMapRef.current.liveSpb || 0.5))), n.velocity ?? 0.8, t.instrument, t.volume);
@@ -2751,6 +2756,35 @@ setPositionModeValue(null);
     switchTrack(newTrack.id);
   }, [setTracksTracked, switchTrack]);
 
+  // Selected notes -> the active track's phantom layer: same pitches, all starting at the selection's
+  // start and lasting its whole span, so the shape stays lit on the fretboard for that stretch.
+  const copyToPhantom = useCallback((indices) => {
+    const id = activeTrackIdRef.current;
+    const tr = tracksRef.current.find(t => t.id === id);
+    if (!tr || tr.phantomEdit) return;
+    const src = indices.map(i => tr.notes[i]).filter(Boolean);
+    if (!src.length) return;
+    const start = Math.min(...src.map(n => n.beat));
+    const end = Math.max(...src.map(n => n.beat + (n.duration || 1)));
+    const seen = new Set();
+    const made = [];
+    src.forEach(n => {
+      const k = n.stringIndex + ':' + n.fret;
+      if (seen.has(k)) return;
+      seen.add(k);
+      made.push({ stringIndex: n.stringIndex, fret: n.fret, beat: start, duration: end - start, velocity: n.velocity ?? 0.8 });
+    });
+    saveSnapshot();
+    setTracksTracked(prev => prev.map(t => t.id !== id ? t : {
+      ...t,
+      phantomShow: true,
+      phantom: [
+        ...(t.phantom || []).filter(p => !(p.beat === start && seen.has(p.stringIndex + ':' + p.fret))),
+        ...made,
+      ],
+    }));
+  }, [setTracksTracked, saveSnapshot]);
+
   const handleDuplicateTrack = useCallback((trackId) => {
     const source = tracksRef.current.find(t => t.id === trackId);
     if (!source) return;
@@ -2759,6 +2793,8 @@ setPositionModeValue(null);
       id: crypto.randomUUID(),
       name: source.name + ' (copy)',
       notes: source.notes.map(n => ({ ...n })),
+      phantom: (source.phantom || []).map(n => ({ ...n })),
+      phantomEdit: false,
     };
     setTracksTracked(prev => {
       const idx = prev.findIndex(t => t.id === trackId);
@@ -3715,6 +3751,8 @@ setPositionModeValue(null);
     onTranscribe: handleTranscribe,
     onLearn: handleLearn,
     onToggleHeat: handleToggleHeat,
+    onTogglePhantomShow: (id, field = 'phantomShow') => setTracksTracked(prev => prev.map(t => t.id === id ? { ...t, [field]: !t[field] } : t)),
+    onTogglePhantomEdit: (id) => { setSelectedNotes(new Set()); setTracksTracked(prev => prev.map(t => t.id === id ? { ...t, phantomEdit: !t.phantomEdit, phantomShow: t.phantomEdit ? t.phantomShow : true, phantom: t.phantom || [] } : t)); setActiveTrackId(id); },
     heatTracks: pitchHeats,
     trackGroups: trackGroups,
     selectedTrackIds: selectedTrackIds,
@@ -3737,8 +3775,9 @@ setPositionModeValue(null);
     onDetectTempo: detectTempoOf,
     bpm: bpm,
     onSetAudioOptions: (trackId, patch) => setTracksTracked(prev => prev.map(t => t.id === trackId ? { ...t, ...patch } : t)),
-    onToggleVisible: handleToggleVisible,
-    onSetBgOpacity: handleSetBgOpacity,
+    // Per-track eye/opacity now belong to the phantom layer only
+    onToggleVisible: (id) => setTracksTracked(prev => prev.map(t => t.id === id ? { ...t, phantomShow: !t.phantomShow } : t)),
+    onSetBgOpacity: (id, v) => setTracksTracked(prev => prev.map(t => t.id === id ? { ...t, phantomOpacity: v } : t)),
     onSetTrackScheme: handleSetTrackScheme,
     sessionSchemes: sessionSchemes,
   };
@@ -3908,11 +3947,14 @@ setPositionModeValue(null);
             const beat = playing && currentBeat !== null ? currentBeat : selectedBeat;
             if (playing && currentBeat === null) return [];
             return tracks
-              .filter(t => t.id !== activeTrackId && t.visible !== false)
-              .flatMap(t => t.notes
-                .filter(n => beat >= n.beat && beat < n.beat + (n.duration || 1))
-                .map(n => ({ ...n, _trackOpacity: t.bgOpacity ?? 0.2 }))
-              );
+              .filter(t => t.visible !== false)
+              .flatMap(t => {
+                const out = [];
+                const at = (n) => beat >= n.beat && beat < n.beat + (n.duration || 1);
+                if (t.phantomShow || t.phantomEdit) out.push(...(t.phantom || []).filter(at).map(n => ({ ...n, _phantom: true, _trackOpacity: t.phantomOpacity ?? 0.85 })));
+                if (t.id === activeTrackId && t.phantomEdit) out.push(...t.notes.filter(at).map(n => ({ ...n, _trackOpacity: 0.3 })));
+                return out;
+              });
           })()}
           playingNotes={playing && currentBeat !== null
             ? notes.filter(n => currentBeat >= n.beat && currentBeat < n.beat + (n.duration || 1))
@@ -4063,6 +4105,8 @@ setPositionModeValue(null);
           swing={swing}
           swungDisplay={swungDisplay}
           activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
+          phantomEditing={phantomEditing}
+          onCopyToPhantom={copyToPhantom}
         />
       </div>
       )}

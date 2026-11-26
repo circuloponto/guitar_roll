@@ -25,7 +25,7 @@ export default function Arrangement({
   selectedTrackIds = new Set(), onSelectTrack, onToggleMute, onToggleSolo, onSetVolume, onToggleVisible, onSetBgOpacity,
   onSetTrackScheme, sessionSchemes, onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleTrackGroup, onTrackGroupFlag, onTrackGroupSet, onRenameTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup, onGroupTracks, onUngroupTracks,
-  onTranscribe, onLearn, onToggleHeat, heatTracks, onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions,
+  onTranscribe, onLearn, onToggleHeat, heatTracks, onTogglePhantomShow, onTogglePhantomEdit, onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions,
   onNudgeBpm, onDetectTempo, bpm, onAutoSync, onClearSyncPoints,
   markers = [], onUpdateMarker, onAddMarker, onDeleteMarker, selectedSectionId = null, onSelectSection,
   sectionActions = null,
@@ -523,17 +523,9 @@ export default function Arrangement({
               <div className="arr-g2">
               <button className={`arr-btn ${r.members.every(t => t.muted) ? 'on-red' : ''}`} onClick={() => onTrackGroupFlag(r.grp.id, 'muted')} title="Mute the whole group">M</button>
               <button className={`arr-btn ${r.members.every(t => t.solo) ? 'on-yellow' : ''}`} onClick={() => onTrackGroupFlag(r.grp.id, 'solo')} title="Solo the whole group">S</button>
-              <button className="arr-btn" onClick={() => onTrackGroupSet(r.grp.id, 'visible', r.members.every(t => t.visible === false))}
-                title={r.members.every(t => t.visible === false) ? 'Show the whole group' : 'Hide the whole group'}>
-                {r.members.every(t => t.visible === false) ? <EyeOff size={12} /> : <Eye size={12} />}
-              </button>
               <input type="range" className="arr-vol" min={0} max={100} value={Math.round(Math.max(...r.members.map(t => t.volume)) * 100)}
                 onChange={(e) => onTrackGroupSet(r.grp.id, 'volume', Number(e.target.value) / 100)}
                 title="Volume of the whole group (the balance between its tracks is kept)" />
-              <input type="range" className="arr-vol arr-vol-op" min={5} max={100}
-                value={Math.round(r.members.reduce((x, t) => x + (t.bgOpacity ?? 0.2), 0) / r.members.length * 100)}
-                onChange={(e) => onTrackGroupSet(r.grp.id, 'bgOpacity', Number(e.target.value) / 100)}
-                title="Opacity of the whole group's notes in the background" />
               </div>
             </div>
           ) : (
@@ -583,15 +575,19 @@ export default function Arrangement({
                 );
               })()}
               <button className={`arr-btn ${r.track.solo ? 'on-yellow' : ''}`} onClick={(e) => { e.stopPropagation(); onToggleSolo(r.track.id); }} title="Solo">S</button>
-              <button className="arr-btn" onClick={(e) => { e.stopPropagation(); onToggleVisible(r.track.id); }} title={r.track.visible === false ? 'Show in the roll' : 'Hide from the roll'}>
-                {r.track.visible === false ? <EyeOff size={12} /> : <Eye size={12} />}
-              </button>
-              <input
-                type="range" className="arr-vol arr-vol-op" min={5} max={100} value={Math.round((r.track.bgOpacity ?? 0.2) * 100)}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => onSetBgOpacity(r.track.id, Number(e.target.value) / 100)}
-                title={`Opacity in the background of the roll: ${Math.round((r.track.bgOpacity ?? 0.2) * 100)}%`}
-              />
+              {r.track.phantomRow && (
+                <>
+                  <button className="arr-btn" onClick={(e) => { e.stopPropagation(); onToggleVisible(r.track.id); }} title={r.track.phantomShow ? 'Hide phantom notes' : 'Show phantom notes'}>
+                    {!r.track.phantomShow ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                  <input
+                    type="range" className="arr-vol arr-vol-op" min={5} max={100} value={Math.round((r.track.phantomOpacity ?? 0.85) * 100)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => onSetBgOpacity(r.track.id, Number(e.target.value) / 100)}
+                    title={`Phantom notes opacity: ${Math.round((r.track.phantomOpacity ?? 0.85) * 100)}%`}
+                  />
+                </>
+              )}
               <input
                 type="range" className="arr-vol" min={0} max={100} value={Math.round(r.track.volume * 100)}
                 onClick={(e) => e.stopPropagation()}
@@ -677,7 +673,7 @@ export default function Arrangement({
         menu={ctxMenu} onClose={() => setCtxMenu(null)} tracks={tracks} trackGroups={trackGroups} selectedTrackIds={selectedTrackIds}
         onGroupTracks={onGroupTracks} onUngroupTracks={onUngroupTracks} onDuplicateTrack={onDuplicateTrack}
         onLoadAudio={onLoadAudio} missingAudioIds={missingAudioIds} onTranscribe={onTranscribe} onLearn={onLearn}
-        onToggleHeat={onToggleHeat} heatTracks={heatTracks} onRemoveAudio={onRemoveAudio} onAskDelete={askDelete}
+        onTogglePhantomShow={onTogglePhantomShow} onTogglePhantomEdit={onTogglePhantomEdit} onToggleHeat={onToggleHeat} heatTracks={heatTracks} onRemoveAudio={onRemoveAudio} onAskDelete={askDelete}
         onRename={(id) => { const t = tracks.find(x => x.id === id); if (t) { setEditingId(t.id); setEditName(t.name); } }}
         onOptions={(id) => setOpts({ id, x: ctxMenu?.x || 300, y: ctxMenu?.y || 300 })}
         onRenameTrackGroup={onRenameTrackGroup} onToggleTrackGroup={onToggleTrackGroup}

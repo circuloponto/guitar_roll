@@ -38,13 +38,13 @@ export function TrackControls({
         onClick={(e) => { e.stopPropagation(); onToggleSolo(track.id); }}
         title="Solo"
       >S</button>
-      {!isActive && onToggleVisible && (
+      {track.phantomRow && onToggleVisible && (
         <button
-          className={`track-btn-lg ${track.visible === false ? 'active-red' : ''}`}
+          className={`track-btn-lg ${!track.phantomShow ? 'active-red' : ''}`}
           onClick={(e) => { e.stopPropagation(); onToggleVisible(track.id); }}
-          title={track.visible === false ? 'Show ghost notes' : 'Hide ghost notes'}
+          title={track.phantomShow ? 'Hide phantom notes' : 'Show phantom notes'}
         >
-          {track.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+          {!track.phantomShow ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
       )}
 
@@ -62,7 +62,7 @@ export function TrackControls({
         <span className="track-slider-val">{Math.round(track.volume * 100)}%</span>
       </div>
 
-      {!isActive && onSetBgOpacity && track.visible !== false && (
+      {track.phantomRow && onSetBgOpacity && track.phantomShow && (
         <div className="track-slider-group">
           <label className="track-slider-label">Opacity</label>
           <input
@@ -70,11 +70,11 @@ export function TrackControls({
             className="track-slider track-slider-ghost"
             min={5}
             max={100}
-            value={Math.round((track.bgOpacity ?? 0.2) * 100)}
+            value={Math.round((track.phantomOpacity ?? 0.85) * 100)}
             onChange={(e) => { e.stopPropagation(); onSetBgOpacity(track.id, Number(e.target.value) / 100); }}
             onClick={(e) => e.stopPropagation()}
           />
-          <span className="track-slider-val">{Math.round((track.bgOpacity ?? 0.2) * 100)}%</span>
+          <span className="track-slider-val">{Math.round((track.phantomOpacity ?? 0.85) * 100)}%</span>
         </div>
       )}
 
@@ -203,7 +203,7 @@ export function TrackControls({
 export function TrackMenu({
   menu, onClose, tracks, trackGroups = [], selectedTrackIds = new Set(),
   onGroupTracks, onUngroupTracks, onDuplicateTrack, onLoadAudio, missingAudioIds,
-  onTranscribe, onLearn, onToggleHeat, heatTracks = {}, onRemoveAudio, onAskDelete, onRename, onOptions,
+  onTranscribe, onLearn, onToggleHeat, heatTracks = {}, onTogglePhantomShow, onTogglePhantomEdit, onRemoveAudio, onAskDelete, onRename, onOptions,
   onRenameTrackGroup, onToggleTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup,
 }) {
   const groupById = (id) => trackGroups.find(g => g.id === id) || null;
@@ -275,6 +275,19 @@ export function TrackMenu({
       )}
       <div className="tab-context-menu-divider" />
       <button className="tab-context-menu-item" onClick={() => { onDuplicateTrack(t.id); close(); }}>Duplicate track</button>
+      {t.type !== 'audio' && onTogglePhantomEdit && (
+        <>
+          <button className="tab-context-menu-item" onClick={() => { onTogglePhantomEdit(t.id); close(); }} title="A silent companion layer for scale and chord shapes: shown on the fretboard, never played">
+            {t.phantomEdit ? 'Done editing phantom notes' : 'Edit phantom notes…'}
+          </button>
+          <button className="tab-context-menu-item" onClick={() => { onTogglePhantomShow(t.id); close(); }}>
+            {t.phantomShow ? 'Hide phantom notes' : 'Show phantom notes'}
+          </button>
+          <button className="tab-context-menu-item" onClick={() => { onTogglePhantomShow(t.id, 'phantomRow'); close(); }}>
+            {t.phantomRow ? 'Hide phantom controls in track list' : 'Show phantom controls in track list'}
+          </button>
+        </>
+      )}
       <button className="tab-context-menu-item" onClick={() => { pickAudio(onLoadAudio, t.id); close(); }}>
         Import audio file…
       </button>

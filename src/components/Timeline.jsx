@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   NUM_STRINGS, NUM_FRETS, NUM_BARS, SUBDIVISIONS,
   CELL_WIDTH
@@ -64,6 +65,8 @@ export default function Timeline({
   swing,
   swungDisplay,
   activeInstanceScheme = null,
+  phantomEditing = false,
+  onCopyToPhantom = null,
   onGrowBars,
 }) {
   const bodyRef = useRef(null);
@@ -327,14 +330,29 @@ export default function Timeline({
   }, [notes, setNotesDrag, saveSnapshot, commitDrag, selectedNotes, freeMode, snapUnit, barSubdivisions, cellWidth, autoPan]);
 
   const rightDragEraseRef = useRef(false);
+  const [phantomMenu, setPhantomMenu] = useState(null); // { x, y, idx: [note indices] }
+  useEffect(() => {
+    if (!phantomMenu) return undefined;
+    const close = () => setPhantomMenu(null);
+    const key = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('mousedown', close); window.addEventListener('keydown', key); window.addEventListener('blur', close);
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', key); window.removeEventListener('blur', close); };
+  }, [phantomMenu]);
   const handleNoteContextMenu = useCallback((e, noteIndex) => {
     e.preventDefault();
     e.stopPropagation();
+    // Ctrl + right-click: options for the selection (copy to the phantom track) instead of deleting
+    if ((e.ctrlKey || e.metaKey) && onCopyToPhantom && !phantomEditing) {
+      rightDragEraseRef.current = false;
+      const idx = selectedNotes.has(noteIndex) ? [...selectedNotes] : [noteIndex];
+      setPhantomMenu({ x: e.clientX, y: e.clientY, idx });
+      return;
+    }
     // The right-click-drag eraser already handled deletion on mousedown
     if (rightDragEraseRef.current) { rightDragEraseRef.current = false; return; }
     setNotes(prev => prev.filter((_, i) => i !== noteIndex));
     setSelectedNotes(new Set());
-  }, [setNotes, setSelectedNotes]);
+  }, [setNotes, setSelectedNotes, onCopyToPhantom, phantomEditing, selectedNotes]);
 
   const handleNoteDragStart = useCallback((e, noteIndex) => {
     if (e.shiftKey || e.button !== 0) return;
@@ -988,7 +1006,7 @@ export default function Timeline({
     }
     // Shift + right-click drag: marquee-select erase (falls through to marquee logic below)
     // Plain right-click drag: brush-erase notes under the cursor
-    if (e.button === 2 && !playing && !e.shiftKey) {
+    if (e.button === 2 && !playing && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       rightDragEraseRef.current = true;
       saveSnapshot();
@@ -1646,7 +1664,7 @@ export default function Timeline({
 
   return (
     <div
-      className="timeline-container"
+      className={`timeline-container${phantomEditing ? ' phantom-editing' : ''}`}
       style={{ position: 'relative' }}
       onMouseDownCapture={(e) => {
         if (!altSpaceRef.current || e.button !== 0) return;
@@ -1655,6 +1673,12 @@ export default function Timeline({
         startContentDrag(e);
       }}
     >
+      {phantomMenu && createPortal(
+        <div className="tab-context-menu" style={{ position: 'fixed', left: phantomMenu.x, top: phantomMenu.y, zIndex: 100000 }} onMouseDown={(e) => e.stopPropagation()}>
+          <div className="tab-context-menu-title">{phantomMenu.idx.length} note{phantomMenu.idx.length === 1 ? '' : 's'}</div>
+          <button className="tab-context-menu-item" onClick={() => { onCopyToPhantom(phantomMenu.idx); setPhantomMenu(null); }}
+            title="Enter these notes on the phantom track, all lasting the whole span of the selection">Copy to phantom track</button>
+        </div>, document.body)}
       {showVerticalZoomButtons && setTimelineVerticalZoom && (
         <div className="timeline-vzoom-dock" style={{
           position: 'absolute', top: 4, right: 8, zIndex: 5,
