@@ -730,6 +730,10 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           <h3>Layout</h3>
           <p className="settings-desc">Drag a panel by its title bar to move it (drop it on the edge of another panel to dock beside it, so panels can stretch under or over each other; drop it on a panel's middle to swap; double-click a divider that two stacks share, and each pair gets its own line), and resize panels from the lines between them (the others adapt). Each panel's title bar has buttons to minimise it to a strip and to undock it into a floating window you can move and resize from any edge; double-click a title bar to minimise or restore it.</p>
           <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
+          <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+            <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-layout-free'))} title="Every window floats with its own edges, nothing is shared. They snap to each other; hold Alt to move freely.">Free layout (own edges per window)</button>
+            <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-layout-tile'))} title="Back to the tiled layout (windows share dividers). This resets the arrangement to your default layout.">Back to tiled layout</button>
+          </div>
         </div>
         <div className="settings-section">
           <h3>Saved layouts</h3>

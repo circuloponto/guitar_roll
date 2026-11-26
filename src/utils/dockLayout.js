@@ -42,6 +42,7 @@ export function defaultState(w = 1400, h = 900) {
     closed: { tracks: true, synth: true, sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
+    free: false,            // free layout: every window floats with its own edges
   };
 }
 
@@ -81,7 +82,7 @@ function finish(s0, tree0) {
   const expected = PANEL_IDS.filter(id => !floating[id] && !closed[id]);
   const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
   if (!ok) return null;
-  return { v: 5, tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
+  return { v: 5, free: !!s.free, tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
 }
 
 // the old fixed arrangement (v2/v3) as a tree
@@ -433,6 +434,13 @@ export function closePanel(st, id) {
 export function openPanel(st, id, panels, size) {
   const closed = { ...st.closed };
   delete closed[id];
+  if (st.free) {
+    // free layout: the window appears on its own, a little offset from the last one
+    const n = Object.keys(st.floating).length;
+    const off = (n % 6) * 0.03;
+    const rect = { x: 0.2 + off, y: 0.12 + off, w: 0.5, h: 0.6 };
+    return { ...st, closed, floating: { ...st.floating, [id]: rect }, order: [...st.order.filter(x => x !== id), id] };
+  }
   return dockBack({ ...st, closed }, id, panels, size);
 }
 
@@ -445,3 +453,20 @@ export function validateState(obj) {
   try { return obj && typeof obj === 'object' ? finish(obj, cleanTree(obj.tree)) : null; } catch { return null; }
 }
 export function writeSavedState(st) { saveState(st); }
+
+// Free layout: every window becomes a floating one exactly where it is now, with its own edges.
+export function freeAll(st, panels) {
+  let s = st;
+  const ids = Object.keys(panels).filter(id => PANEL_IDS.includes(id) && !s.floating[id]);
+  const area = (r) => r.w * r.h;
+  ids.sort((a, b) => area(panels[b]) - area(panels[a])); // the big ones go behind the small ones
+  ids.forEach((id) => {
+    const r = panels[id];
+    s = {
+      ...s, tree: removeLeaf(s.tree, id),
+      floating: { ...s.floating, [id]: { x: r.x, y: r.y, w: Math.max(0.06, r.w), h: Math.max(0.04, r.h) } },
+      order: [...s.order.filter(x => x !== id), id],
+    };
+  });
+  return { ...s, free: true };
+}

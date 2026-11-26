@@ -3,8 +3,8 @@ import { Minus, Square, ExternalLink, LayoutPanelLeft, X } from 'lucide-react';
 import { listLayoutPresets, applyLayoutBundle, getDefaultLayout } from '../utils/layoutPresets';
 import {
   PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
-  loadState, saveState, clearSavedState, defaultState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
-  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine, sharedKind,
+  loadState, saveState, clearSavedState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
+  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine, sharedKind, freeAll,
 } from '../utils/dockLayout';
 
 const MIN_PX = 90;       // smallest a split side may be dragged to
@@ -129,6 +129,15 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     const el = containerRef.current;
     setSt(loadState(el?.clientWidth || window.innerWidth - 40, el?.clientHeight || window.innerHeight - 40));
   }, []);
+  const goFree = useCallback(() => {
+    const cur = stRef.current;
+    commit(cur.free ? cur : freeAll(cur, panelsRef.current));
+  }, [commit]);
+  useEffect(() => {
+    window.addEventListener('guitar-roll-layout-free', goFree);
+    window.addEventListener('guitar-roll-layout-tile', resetLayout);
+    return () => { window.removeEventListener('guitar-roll-layout-free', goFree); window.removeEventListener('guitar-roll-layout-tile', resetLayout); };
+  }, [goFree, resetLayout]);
   const [presetsVersion, setPresetsVersion] = useState(0);
   useEffect(() => {
     const on = () => setPresetsVersion(v => v + 1);
@@ -237,6 +246,27 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
   };
 
   // ---- floating windows: move by the title bar, resize from any edge or corner ----
+  // Windows snap to the edges of the other windows and of the dock area (hold Alt to move freely)
+  const SNAP = 8;
+  const otherRects = (id, cr) => {
+    const cur = stRef.current;
+    const out = [];
+    Object.entries(cur.floating).forEach(([k, f]) => {
+      if (k === id) return;
+      out.push({ l: f.x * cr.width, t: f.y * cr.height, r: (f.x + f.w) * cr.width, b: (f.y + (cur.minimized[k] ? STRIP_PX / cr.height : f.h)) * cr.height });
+    });
+    Object.entries(panelsRef.current).forEach(([k, r]) => {
+      if (isEmptyId(k)) return;
+      out.push({ l: r.x * cr.width, t: r.y * cr.height, r: (r.x + r.w) * cr.width, b: (r.y + r.h) * cr.height });
+    });
+    return out;
+  };
+  const nearest = (value, targets) => {
+    let best = null, bd = SNAP + 1;
+    targets.forEach((t) => { const d = Math.abs(t - value); if (d < bd) { bd = d; best = t; } });
+    return best;
+  };
+
   const startFloatDrag = (e, id) => {
     if (e.button !== 0 || e.target.closest('button')) return;
     e.preventDefault();
@@ -244,9 +274,22 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     if (!start) return;
     const cr = containerRef.current.getBoundingClientRect();
     const sx = e.clientX, sy = e.clientY;
+    const others = otherRects(id, cr);
+    const xs = [0, cr.width, ...others.flatMap(o => [o.l, o.r])];
+    const ys = [0, cr.height, ...others.flatMap(o => [o.t, o.b])];
     const move = (ev) => {
-      const x = clamp(start.x + (ev.clientX - sx) / cr.width, 0.06 - start.w, 0.94);
-      const y = clamp(start.y + (ev.clientY - sy) / cr.height, 0, 0.95);
+      let px = start.x * cr.width + (ev.clientX - sx), py = start.y * cr.height + (ev.clientY - sy);
+      const pw = start.w * cr.width, ph = start.h * cr.height;
+      if (!ev.altKey) {
+        // snap the left or right edge, and the top or bottom edge, to the nearest line
+        let bx = SNAP + 1, dx = 0, by = SNAP + 1, dy = 0;
+        [px, px + pw].forEach((edge) => { const t = nearest(edge, xs); if (t != null && Math.abs(t - edge) < bx) { bx = Math.abs(t - edge); dx = t - edge; } });
+        [py, py + ph].forEach((edge) => { const t = nearest(edge, ys); if (t != null && Math.abs(t - edge) < by) { by = Math.abs(t - edge); dy = t - edge; } });
+        if (bx <= SNAP) px += dx;
+        if (by <= SNAP) py += dy;
+      }
+      const x = clamp(px / cr.width, 0.06 - start.w, 0.94);
+      const y = clamp(py / cr.height, 0, 0.95);
       setSt(setFloatRect(stRef.current, id, { ...start, x, y }));
     };
     const up = () => {
@@ -268,15 +311,20 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     if (!r0) return;
     const cr = containerRef.current.getBoundingClientRect();
     const sx = e.clientX, sy = e.clientY;
-    const minW = FLOAT_MIN_W / cr.width, minH = FLOAT_MIN_H / cr.height;
+    const others = otherRects(id, cr);
+    const xs = [0, cr.width, ...others.flatMap(o => [o.l, o.r])];
+    const ys = [0, cr.height, ...others.flatMap(o => [o.t, o.b])];
     const move = (ev) => {
-      const dx = (ev.clientX - sx) / cr.width, dy = (ev.clientY - sy) / cr.height;
-      let { x, y, w, h } = r0;
-      if (dir.includes('e')) w = clamp(r0.w + dx, minW, 1.5);
-      if (dir.includes('s')) h = clamp(r0.h + dy, minH, 1.5);
-      if (dir.includes('w')) { const nw = clamp(r0.w - dx, minW, 1.5); x = r0.x + (r0.w - nw); w = nw; }
-      if (dir.includes('n')) { const nh = clamp(r0.h - dy, minH, 1.5); y = r0.y + (r0.h - nh); h = nh; }
-      setSt(setFloatRect(stRef.current, id, { x, y: Math.max(0, y), w, h }));
+      let L = r0.x * cr.width, T = r0.y * cr.height, Rr = (r0.x + r0.w) * cr.width, Bb = (r0.y + r0.h) * cr.height;
+      const snap = (v, list) => { if (ev.altKey) return v; const t = nearest(v, list); return t != null ? t : v; };
+      if (dir.includes('e')) Rr = snap(Rr + (ev.clientX - sx), xs);
+      if (dir.includes('w')) L = snap(L + (ev.clientX - sx), xs);
+      if (dir.includes('s')) Bb = snap(Bb + (ev.clientY - sy), ys);
+      if (dir.includes('n')) T = snap(T + (ev.clientY - sy), ys);
+      if (Rr - L < FLOAT_MIN_W) { if (dir.includes('w')) L = Rr - FLOAT_MIN_W; else Rr = L + FLOAT_MIN_W; }
+      if (Bb - T < FLOAT_MIN_H) { if (dir.includes('n')) T = Bb - FLOAT_MIN_H; else Bb = T + FLOAT_MIN_H; }
+      T = Math.max(0, T);
+      setSt(setFloatRect(stRef.current, id, { x: L / cr.width, y: T / cr.height, w: (Rr - L) / cr.width, h: (Bb - T) / cr.height }));
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -345,6 +393,12 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
                 <span className="dock-grip">⠿</span>
                 <span className="dock-title">{PANEL_TITLES[id]}</span>
                 <span className="dock-btns">
+                  {id === 'menu' && !minimized && (
+                    <button
+                      className="dock-reset" onClick={() => (st.free ? resetLayout() : goFree())}
+                      title={st.free ? 'Free layout is on: every window has its own edges. Click to go back to the tiled layout (resets the arrangement).' : 'Free layout: every window gets its own edges, nothing is shared. Windows snap to each other (hold Alt to move freely).'}
+                    >{st.free ? 'Tile' : 'Free'}</button>
+                  )}
                   {id === 'menu' && !minimized && (
                     <select
                       className="dock-reset dock-layouts" value="" title="Switch to a saved layout"
