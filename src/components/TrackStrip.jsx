@@ -12,7 +12,7 @@ export default function TrackStrip({
   trackGroups = [], selectedTrackIds = new Set(), onSelectTrack, onGroupTracks, onUngroupTracks, onRemoveTrackGroup,
   onToggleTrackGroup, onRenameTrackGroup, onSetTrackGroupColour, onTrackGroupFlag, onTrackGroupSet,
   onTranscribe, onLearn, onToggleHeat, heatTracks = {},
-  onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
+  onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions, onNudgeBpm, onDetectTempo, bpm, onAutoSync, onClearSyncPoints,
   sessionSchemes = {},
 }) {
   const [editingId, setEditingId] = useState(null);
@@ -260,7 +260,7 @@ export default function TrackStrip({
                     onToggleVisible={onToggleVisible} onSetBgOpacity={onSetBgOpacity} onSetTrackScheme={onSetTrackScheme}
                     sessionSchemes={sessionSchemes} missingAudioIds={missingAudioIds} onLoadAudio={onLoadAudio}
                     onSetAudioOptions={onSetAudioOptions} onNudgeBpm={onNudgeBpm} onDetectTempo={onDetectTempo} bpm={bpm}
-                    onAddSyncPoint={onAddSyncPoint} onAutoSync={onAutoSync} onClearSyncPoints={onClearSyncPoints}
+                    onAutoSync={onAutoSync} onClearSyncPoints={onClearSyncPoints}
                   />
                 </div>
 

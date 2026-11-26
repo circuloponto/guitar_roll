@@ -12,7 +12,7 @@ const HIT = 6;          // px grab distance
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
   tracks, activeTrackId, tempoMap, timeSignature = [4, 4], barSubdivisions = [], selectedBeat, currentBeat, playing, getBuffer,
-  onSetPin, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions,
+  onSetPin, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead,
 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
@@ -384,7 +384,6 @@ export default function SyncEditor({
     return () => cv.removeEventListener('wheel', onWheel);
   });
 
-  const zoom = (f) => setView(v => ({ ...v, pps: Math.min(2000, Math.max(4, v.pps * f)) }));
   const fit = () => setView({ t0: tMin, pps: Math.max(4, (size.w - 8) / Math.max(0.5, tMax - tMin)) });
 
   return (
@@ -424,13 +423,16 @@ export default function SyncEditor({
         )}
         <span className="sync-info">{pins.length} sync point{pins.length === 1 ? '' : 's'}</span>
         <span className="ub-spacer" />
+        <button
+          className="settings-btn-sm" disabled={!audio}
+          onClick={() => audio && onAddAtPlayhead && onAddAtPlayhead(audio.id)}
+          title="Add a sync point at the playhead (hotkey: I)"
+        >+ Sync point <kbd className="sync-kbd">I</kbd></button>
         <button className="settings-btn-sm" onClick={onUndo} title="Undo (Ctrl+Z)" aria-label="Undo sync edit">↶ Undo</button>
         <button className="settings-btn-sm" onClick={onRedo} title="Redo (Ctrl+Y)" aria-label="Redo sync edit">↷ Redo</button>
         <label className="ub-check" title="Pull dragged stems onto the recording's attacks (hold Alt to switch off)">
           <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} /> Snap to attacks
         </label>
-        <button className="settings-btn-sm" onClick={() => zoom(0.7)} title="Zoom out">−</button>
-        <button className="settings-btn-sm" onClick={() => zoom(1.4)} title="Zoom in">+</button>
         <button className="settings-btn-sm" onClick={fit} title="Fit the whole recording">Fit</button>
       </div>
       <div className="sync-canvas-wrap" ref={wrapRef}>

@@ -19,7 +19,7 @@ function pickAudio(onLoadAudio, trackId) {
 export function TrackControls({
   track, isActive,
   onToggleMute, onToggleSolo, onSetVolume, onToggleVisible, onSetBgOpacity, onSetTrackScheme, sessionSchemes = {},
-  missingAudioIds, onLoadAudio, onSetAudioOptions, onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
+  missingAudioIds, onLoadAudio, onSetAudioOptions, onNudgeBpm, onDetectTempo, bpm, onAutoSync, onClearSyncPoints,
 }) {
   const [newSchemeForTrack, setNewSchemeForTrack] = useState(null);
   const [schemesVersion, setSchemesVersion] = useState(0);
@@ -167,13 +167,7 @@ export function TrackControls({
             onClick={(e) => { e.stopPropagation(); onSetAudioOptions(track.id, { pitchSemitones: Math.min(12, (track.pitchSemitones || 0) + 1) }); }}
             title="Transpose up one semitone"
           >+</button>
-          {/* Sync points: pin the sound at the playhead to the grid, then drag the pin in the timeline */}
-          <button
-            className="track-btn-lg"
-            onClick={(e) => { e.stopPropagation(); onAddSyncPoint(track.id); }}
-            title="Add a sync point at the playhead (or double-click the waveform). Drag the pin to line that sound up with the grid."
-            style={{ fontSize: 11 }}
-          >+ Sync</button>
+          {/* Adding a sync point at the playhead lives in the Sync editor (and has a hotkey) */}
           <button
             className="track-btn-lg"
             onClick={(e) => { e.stopPropagation(); onAutoSync(track.id); }}

@@ -26,7 +26,7 @@ export default function Arrangement({
   onSetTrackScheme, sessionSchemes, onAddTrack, onDeleteTrack, onDuplicateTrack, onReorderTracks, onRenameTrack,
   onToggleTrackGroup, onTrackGroupFlag, onTrackGroupSet, onRenameTrackGroup, onSetTrackGroupColour, onRemoveTrackGroup, onGroupTracks, onUngroupTracks,
   onTranscribe, onLearn, onToggleHeat, heatTracks, onLoadAudio, missingAudioIds, onRemoveAudio, onSetAudioOptions,
-  onNudgeBpm, onDetectTempo, bpm, onAddSyncPoint, onAutoSync, onClearSyncPoints,
+  onNudgeBpm, onDetectTempo, bpm, onAutoSync, onClearSyncPoints,
   markers = [], onUpdateMarker, onAddMarker, onDeleteMarker, selectedSectionId = null, onSelectSection,
   sectionActions = null,
   songPlan = { order: [], mode: false }, onSongPlanChange,
@@ -632,7 +632,7 @@ export default function Arrangement({
               onToggleVisible={onToggleVisible} onSetBgOpacity={onSetBgOpacity} onSetTrackScheme={onSetTrackScheme}
               sessionSchemes={sessionSchemes} missingAudioIds={missingAudioIds} onLoadAudio={onLoadAudio}
               onSetAudioOptions={onSetAudioOptions} onNudgeBpm={onNudgeBpm} onDetectTempo={onDetectTempo} bpm={bpm}
-              onAddSyncPoint={onAddSyncPoint} onAutoSync={onAutoSync} onClearSyncPoints={onClearSyncPoints}
+              onAutoSync={onAutoSync} onClearSyncPoints={onClearSyncPoints}
             />
             <button className="track-btn-lg" onClick={() => { onDuplicateTrack(optsTrack.id); setOpts(null); }} title="Duplicate this track">Duplicate</button>
             <button className="track-btn-lg" onClick={() => { askDelete(optsTrack); setOpts(null); }} title="Delete this track" style={{ color: 'var(--danger)' }}>Delete</button>

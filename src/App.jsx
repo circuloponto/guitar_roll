@@ -492,8 +492,8 @@ function App() {
   const [showTimelineVerticalZoomButtons, setShowTimelineVerticalZoomButtons] = useState(() => {
     try {
       const saved = localStorage.getItem('guitar-roll-timeline-vzoom-buttons');
-      return saved === null ? true : saved === 'true';
-    } catch { return true; }
+      return saved === null ? false : saved === 'true';
+    } catch { return false; }
   });
   const [fretboardZoom, setFretboardZoom] = useState(1);
   const [stringColors, setStringColors] = useState(['#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff', '#ffffff']);
@@ -1052,6 +1052,17 @@ function App() {
     if (!clip) { showToast('Put the playhead over the audio clip first'); return; }
     addSyncPointAtBeat(trackId, clip, beat);
   }, [showToast, addSyncPointAtBeat]);
+  // the hotkey: the recording is the active track if it is audio, else the one that owns the tempo map,
+  // else the first audio track
+  const addSyncPointHotkey = useCallback(() => {
+    const list = tracksRef.current.filter(t => t.type === 'audio' && getClips(t).length > 0);
+    if (!list.length) { showToast('Load an audio track first'); return; }
+    const tm = tempoMapRef.current;
+    const t = list.find(x => x.id === activeTrackIdRef.current) || (tm.active && list.find(x => x.id === tm.refId)) || list[0];
+    addSyncPointAtPlayhead(t.id);
+  }, [showToast, addSyncPointAtPlayhead]);
+  const addSyncHotkeyRef = useRef(null);
+  addSyncHotkeyRef.current = addSyncPointHotkey;
 
   // Match tempo helpers: nudge the BPM, lock the match, or detect the recording's tempo and put its
   // first beat on a grid line.
@@ -1713,6 +1724,10 @@ setPositionModeValue(null);
       if (matchesHotkey(e, hk.soloTrack)) {
         e.preventDefault();
         if (handleToggleSoloRef.current) handleToggleSoloRef.current();
+      }
+      if (hk.addSyncPoint && matchesHotkey(e, hk.addSyncPoint)) {
+        e.preventDefault();
+        addSyncHotkeyRef.current?.();
       }
       if (hk.loopSection && matchesHotkey(e, hk.loopSection)) {
         e.preventDefault();
@@ -3618,7 +3633,6 @@ setPositionModeValue(null);
     onLoadAudio: handleLoadAudio,
     missingAudioIds: missingAudioIds,
     onRemoveAudio: handleRemoveAudio,
-    onAddSyncPoint: addSyncPointAtPlayhead,
     onAutoSync: autoSyncPoints,
     onClearSyncPoints: clearSyncPoints,
     onNudgeBpm: nudgeBpm,
@@ -3761,6 +3775,7 @@ setPositionModeValue(null);
           onUndo={undo}
           onRedo={redo}
           onSetAudioOptions={trackApi.onSetAudioOptions}
+          onAddAtPlayhead={addSyncPointAtPlayhead}
         />
       )}
       fretboard={(
