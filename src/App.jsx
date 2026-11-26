@@ -33,7 +33,7 @@ import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import { copyRange, insertBars, removeBars, pasteRange, barIndexAt, barBoundaryAtOrAfter, beatOfBar, contentEnd } from './utils/barOps';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
-import { Metronome, Undo2, Redo2, ListMusic, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform } from 'lucide-react';
+import { Metronome, Undo2, Redo2, ListMusic, SlidersHorizontal, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform } from 'lucide-react';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES, loadToolbar, saveToolbar, defaultToolbar } from './utils/toolbarConfig';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
@@ -529,16 +529,9 @@ function App() {
     window.addEventListener('wheel', on, { capture: true, passive: false });
     return () => window.removeEventListener('wheel', on, { capture: true });
   }, []);
-  const [tracksTab, setTracksTab] = useState('tracks'); // the Tracks window holds two tabs: Tracks | Synth
-  const [synthOpened, setSynthOpened] = useState(false);
-  const chooseTracksTab = (t) => {
-    setTracksTab(t);
-    if (t === 'synth') setSynthOpened(true);
-    window.dispatchEvent(new CustomEvent(t === 'synth' ? 'guitar-roll-tracks-height' : 'guitar-roll-fit-tracks', { detail: { share: 0.85 } }));
-  };
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   useEffect(() => { applyPianoSize(loadPianoSize()); }, []);
-  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
+  const [panelsClosed, setPanelsClosed] = useState({ tracks: true, synth: true, sync: true });
   useEffect(() => {
     const on = (e) => setPanelsClosed(e.detail?.closed || {});
     window.addEventListener('guitar-roll-panels', on);
@@ -3363,7 +3356,7 @@ setPositionModeValue(null);
     panels: (
       <span className="panel-btns" title="Show or hide the windows">
         {CLOSABLE.map((pid) => {
-          const Icon = { tracks: ListMusic, fretboard: Guitar, timeline: ChartNoAxesGantt, arrangement: Rows3, sync: AudioWaveform }[pid];
+          const Icon = { tracks: ListMusic, synth: SlidersHorizontal, fretboard: Guitar, timeline: ChartNoAxesGantt, arrangement: Rows3, sync: AudioWaveform }[pid];
           return (
             <button
               key={pid}
@@ -3706,15 +3699,11 @@ setPositionModeValue(null);
       </div>
       )}
       tracks={(
-      <>
-      <div className="panel-tabs" data-tab={tracksTab}>
-        <button className={tracksTab === 'tracks' ? 'active' : ''} onClick={() => chooseTracksTab('tracks')}>Tracks</button>
-        <button className={tracksTab === 'synth' ? 'active' : ''} onClick={() => chooseTracksTab('synth')}>Synth</button>
-      </div>
-      {synthOpened && (
+        <TrackStrip tracks={tracks} activeTrackId={activeTrackId} {...trackApi} />
+      )}
+      synth={(
         <div className="synth-pane">
           <UltraboxEditor
-            visible={tracksTab === 'synth'}
             currentInstrument={activeTrack?.instrument || instrument}
             onInstrumentChange={(id) => {
               setInstrument(id);
@@ -3724,9 +3713,6 @@ setPositionModeValue(null);
             }}
           />
         </div>
-      )}
-      <TrackStrip tracks={tracks} activeTrackId={activeTrackId} {...trackApi} />
-      </>
       )}
       mobile={mobileActionsNode}
       arrangement={(

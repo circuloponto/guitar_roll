@@ -5,10 +5,10 @@
 // Docked panels form a split tree: { id } leaves and { dir: 'row'|'col', ratio, a, b } splits (ratio
 // is the share of `a`). The tree holds exactly the docked panels; floating ones are kept apart.
 
-export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement'];
-const NEW_PANELS = ['sync', 'arrangement']; // added later: layouts saved before them keep these closed
-export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement' };
-export const CLOSABLE = ['arrangement', 'fretboard', 'timeline', 'tracks', 'sync']; // the menu holds the toolbar, so it stays
+export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement', 'synth'];
+const NEW_PANELS = ['sync', 'arrangement', 'synth']; // added later: layouts saved before them keep these closed
+export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement', synth: 'Synth' };
+export const CLOSABLE = ['arrangement', 'fretboard', 'timeline', 'tracks', 'synth', 'sync']; // the menu holds the toolbar, so it stays
 const STORAGE_KEY = 'guitar-roll-layout-v5';
 const V4_KEY = 'guitar-roll-layout-v4';
 const V3_KEY = 'guitar-roll-layout-v3';
@@ -39,7 +39,7 @@ export function defaultState(w = 1400, h = 900) {
       split('col', arrH, leaf('arrangement'), split('row', fretW, leaf('fretboard'), leaf('timeline'))),
       leaf('menu')),
     minimized: {},          // { [id]: true }
-    closed: { tracks: true, sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
+    closed: { tracks: true, synth: true, sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
     floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
     order: [],              // floating windows, back to front
   };
