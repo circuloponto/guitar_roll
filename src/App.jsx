@@ -28,6 +28,7 @@ import UltraboxEditor from './components/UltraboxEditor';
 import SyncEditor from './components/SyncEditor';
 import TrackStrip from './components/TrackStrip';
 import { loadPianoSize, applyPianoSize } from './utils/pianoSize';
+import { loadPlayheadMode } from './utils/playheadMode';
 import Arrangement from './components/Arrangement';
 import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import { copyRange, insertBars, removeBars, pasteRange, barIndexAt, barBoundaryAtOrAfter, beatOfBar, contentEnd } from './utils/barOps';
@@ -1427,7 +1428,13 @@ setPositionModeValue(null);
       }
       if (matchesHotkey(e, hk.returnToStart) && !instanceColorMenuRef.current) {
         e.preventDefault();
-        setSelectedBeat(0);
+        if (playingRef.current) { setSelectedBeat(0); return; }
+        // Enter: first to the spot the mode points at, and from there (a second time) to the beginning.
+        //   checkpoint: where playback was when it was paused; remnant: where you last pressed play.
+        const target = loadPlayheadMode() === 'remnant' ? lastPlayFromRef.current : pausedBeatRef.current;
+        const here = selectedBeatRef.current;
+        if (target != null && Math.abs(here - target) > 1e-6) setSelectedBeat(target);
+        else setSelectedBeat(0);
       }
       if (matchesHotkey(e, hk.prevMarker)) {
         e.preventDefault();
@@ -2114,7 +2121,11 @@ setPositionModeValue(null);
     });
   };
 
+  // where playback last started, and where it was when it was paused (for the Enter key and the pause behaviour)
+  const lastPlayFromRef = useRef(null);
+  const pausedBeatRef = useRef(null);
   const stopPlayback = useCallback(() => {
+    if (playheadBeatRef.current != null) pausedBeatRef.current = playheadBeatRef.current;
     playingRef.current = false;
     setPlaying(false);
     setCurrentBeat(null);
@@ -2200,6 +2211,7 @@ setPositionModeValue(null);
       if (pending) { pending.then(() => startPlaybackRef.current(fromBeat, true)); return; }
     }
 
+    lastPlayFromRef.current = fromBeat;
     const ctx = getAudioContext();
     const isLoop = loopRef.current;
     const barSubs = barSubsRef.current;
@@ -2393,23 +2405,35 @@ setPositionModeValue(null);
   }, []);
 
   // Play button: from start of loop or start of timeline
+  // Pausing: the checkpoint playhead goes back to where playback was started, the remnant playhead stays
+  // where playback stopped.
+  const pauseWithMode = useCallback(() => {
+    const at = playheadBeatRef.current;
+    stopPlayback();
+    if (loadPlayheadMode() === 'remnant') {
+      if (at != null) setSelectedBeat(Math.max(0, Math.min(totalColumns(barSubsRef.current) - 1, at)));
+    } else if (lastPlayFromRef.current != null) {
+      setSelectedBeat(lastPlayFromRef.current);
+    }
+  }, [stopPlayback]);
+
   const handlePlay = useCallback(() => {
     if (playing) {
-      stopPlayback();
+      pauseWithMode();
       return;
     }
     const isLoop = loopRef.current;
     startPlayback(isLoop ? loopStartRef.current : 0);
-  }, [playing, stopPlayback, startPlayback]);
+  }, [playing, pauseWithMode, startPlayback]);
 
   // Spacebar: from playhead position
   const handlePlayFromHead = useCallback(() => {
     if (playing) {
-      stopPlayback();
+      pauseWithMode();
       return;
     }
     startPlayback(selectedBeatRef.current);
-  }, [playing, stopPlayback, startPlayback]);
+  }, [playing, pauseWithMode, startPlayback]);
 
   handlePlayRef.current = handlePlayFromHead;
 

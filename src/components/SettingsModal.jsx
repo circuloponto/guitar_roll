@@ -9,6 +9,7 @@ import {
 import { SENSITIVITY } from '../utils/transcribe';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES } from '../utils/toolbarConfig';
 import { loadPianoSize, setPianoSize, PIANO_SIZES } from '../utils/pianoSize';
+import { loadPlayheadMode, savePlayheadMode, PLAYHEAD_MODES } from '../utils/playheadMode';
 import {
   currentLayoutBundle, applyLayoutBundle, listLayoutPresets, saveLayoutPreset, deleteLayoutPreset,
   getDefaultLayout, setDefaultLayout, clearDefaultLayout,
@@ -116,6 +117,7 @@ function getSessionSchemes(appState, savedSchemes) {
 export default function SettingsModal({ appState, onApplyState, onClose, onHotkeysChange, hoverPreview, onHoverPreviewChange, tupletLines, onTupletLinesChange, autoScroll, onAutoScrollChange, hoverPill, onHoverPillChange, autoSave, onAutoSaveChange, showTimelineVerticalZoomButtons, onShowTimelineVerticalZoomButtonsChange, fretboardAutoForward, onFretboardAutoForwardChange, fretboardAutoForwardExcludeAdjacent, onFretboardAutoForwardExcludeAdjacentChange, swungDisplay, onSwungDisplayChange, resetMultOnSubdiv, onResetMultOnSubdivChange, rhythmAltersSelected, onRhythmAltersSelectedChange, selectingSchemeClosesMenu, onSelectingSchemeClosesMenuChange, accent, onAccentChange, onRestoreAutosave, showSelectedOnFretboard, onShowSelectedOnFretboardChange, noteFade, onNoteFadeChange, toolbarCfg, onToolbarChange, onToolbarReset, txSettings, onTxSettingsChange, learned, onForgetLearning, onRetrain, showFretNumbers, onShowFretNumbersChange, openDots, onOpenDotsChange, openScroll, onOpenScrollChange, initialTab }) {
   // ---- saved layouts: presets listed here, a default, and export / import ----
   const [pianoSize, setPianoSizeState] = useState(loadPianoSize);
+  const [playheadMode, setPlayheadModeState] = useState(loadPlayheadMode);
   const [layoutMsg, setLayoutMsg] = useState(null);
   const [layoutPasteOpen, setLayoutPasteOpen] = useState(false);
   const [layoutText, setLayoutText] = useState('');
@@ -803,6 +805,26 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
     );
   } else if (activeTab === 'playback') {
     pane = (<>
+          <div className="settings-section">
+            <h3>Playhead behaviour</h3>
+            <p className="settings-desc">What the playhead does when you pause with Space and when you press Enter.</p>
+            <div className="settings-checks">
+              {Object.entries(PLAYHEAD_MODES).map(([key, label]) => (
+                <label key={key} className="settings-check" style={{ alignItems: 'flex-start' }}>
+                  <input type="radio" name="playhead-mode" checked={playheadMode === key}
+                    onChange={() => { setPlayheadModeState(key); savePlayheadMode(key); }} />
+                  <span>
+                    <strong>{label}</strong>
+                    <span className="settings-desc" style={{ display: 'block', margin: '2px 0 0' }}>
+                      {key === 'checkpoint'
+                        ? 'Pausing with Space sends the playhead back to where you pressed play. Enter then moves it to where the playback was when you paused; Enter again goes to the beginning.'
+                        : 'Pausing with Space leaves the playhead where it stopped, and Space again carries on from there. Enter moves it to where you last pressed play; Enter again goes to the beginning.'}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="settings-section">
             <h3>Hover Sound Preview</h3>
             <p className="settings-desc">Play the note under the cursor on hover.</p>
