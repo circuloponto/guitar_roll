@@ -20,7 +20,10 @@ import { refingerNotes, refingerNotesOctave, countInPosition, bestPosition } fro
 import { detectBeats, fitTempo } from './utils/beatDetect';
 import { makeTempoMap } from './utils/tempoMap';
 import { getClips, getSyncPoints, makeWarp, clipEndBeat, clipBeatToTime, clipLenBeats, secPerBeat, splitClips, pasteClips, newClip, MIN_CLIP_SEC } from './utils/audioClips';
-import { getMidiNote, closestComboForPitch, getComboForPosition, midiToPitchRow, TOTAL_PITCH_ROWS } from './utils/pitchMap';
+import { getMidiNote, closestComboForPitch, getComboForPosition, midiToPitchRow, pitchRowCombos, TOTAL_PITCH_ROWS } from './utils/pitchMap';
+import TemplatesPanel from './components/TemplatesPanel';
+import { defaultTemplates } from './utils/templateDefaults';
+import { placeTemplate, captureNotes, newTemplateId } from './utils/templateOps';
 import { serializeNotes, parseNotes } from './utils/noteClipboard';
 import { NUM_STRINGS, NUM_FRETS } from './utils/constants';
 import SettingsModal from './components/SettingsModal';
@@ -34,7 +37,7 @@ import { PANEL_TITLES, CLOSABLE } from './utils/dockLayout';
 import { copyRange, insertBars, removeBars, pasteRange, barIndexAt, barBoundaryAtOrAfter, beatOfBar, contentEnd } from './utils/barOps';
 import Dock from './components/Dock';
 import CycleIcon from './components/CycleIcon';
-import { Metronome, Undo2, Redo2, ListMusic, SlidersHorizontal, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform, Magnet } from 'lucide-react';
+import { Metronome, Undo2, Redo2, ListMusic, SlidersHorizontal, Guitar, ChartNoAxesGantt, Rows3, AudioWaveform, Magnet, LayoutTemplate } from 'lucide-react';
 import { TOOLBAR_ITEMS, TOOLBAR_SIZES, loadToolbar, saveToolbar, defaultToolbar } from './utils/toolbarConfig';
 import SongTabs from './components/SongTabs';
 import { loadAccent, applyAccent, saveAccent } from './utils/accent';
@@ -539,7 +542,7 @@ function App() {
   }, []);
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   useEffect(() => { applyPianoSize(loadPianoSize()); }, []);
-  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
+  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true, templates: true });
   useEffect(() => {
     const on = (e) => setPanelsClosed(e.detail?.closed || {});
     window.addEventListener('guitar-roll-panels', on);
@@ -2812,6 +2815,69 @@ setPositionModeValue(null);
     }));
   }, [setTracksTracked, saveSnapshot]);
 
+  // === Templates (scale-degree patterns from the 8-fold way app) ===
+  const [templates, setTemplates] = useState(() => {
+    try { const raw = localStorage.getItem('guitar-roll-templates'); if (raw) { const v = JSON.parse(raw); if (Array.isArray(v)) return v; } } catch { /* ignore */ }
+    return defaultTemplates;
+  });
+  useEffect(() => { try { localStorage.setItem('guitar-roll-templates', JSON.stringify(templates)); } catch { /* ignore */ } }, [templates]);
+  const [tplScale, setTplScale] = useState(() => { try { return Number(localStorage.getItem('guitar-roll-tpl-scale')) || 7; } catch { return 7; } });
+  const [tplRoot, setTplRoot] = useState(() => { try { return Number(localStorage.getItem('guitar-roll-tpl-root')) || 0; } catch { return 0; } });
+  useEffect(() => { try { localStorage.setItem('guitar-roll-tpl-scale', String(tplScale)); localStorage.setItem('guitar-roll-tpl-root', String(tplRoot)); } catch { /* ignore */ } }, [tplScale, tplRoot]);
+  const [pendingTemplate, setPendingTemplate] = useState(null); // armed: the next timeline click stamps it
+  useEffect(() => {
+    if (!pendingTemplate) return undefined;
+    const key = (e) => { if (e.key === 'Escape') setPendingTemplate(null); };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [pendingTemplate]);
+
+  // Selected timeline notes -> a template in the chosen scale + root.
+  const captureTemplate = useCallback(() => {
+    const tr = tracksRef.current.find(t => t.id === activeTrackIdRef.current);
+    if (!tr || tr.phantomEdit) return;
+    const items = [...selectedNotesRef.current].map(i => tr.notes[i]).filter(Boolean)
+      .map(n => ({ beat: n.beat, duration: n.duration || 1, midi: getMidiNote(n.stringIndex, n.fret) }));
+    if (!items.length) return;
+    const notes = captureNotes(items, tplScale, tplRoot, timeSigRef.current[1]);
+    const count = templates.filter(t => t.type !== 'folder').length + 1;
+    setTemplates(prev => [...prev, { id: newTemplateId(), type: 'template', name: `Template ${count}`, parentId: null, capturedFrom: { scaleId: tplScale, root: tplRoot }, notes }]);
+  }, [tplScale, tplRoot, templates]);
+
+  // Ghost notes for the hover preview: where the armed template would land at this beat + pitch.
+  const previewTemplate = useCallback((beat, midi) => {
+    if (!pendingTemplate) return [];
+    return placeTemplate(pendingTemplate, tplScale, tplRoot, beat, midi, timeSigRef.current[1])
+      .filter(p => p.beat >= 0 && p.beat < totalColumns(barSubsRef.current));
+  }, [pendingTemplate, tplScale, tplRoot]);
+
+  // The armed template, first note on the clicked beat + pitch, notes following the scale.
+  const stampTemplate = useCallback((beat, midi) => {
+    const tpl = pendingTemplate;
+    if (!tpl) return;
+    const placed = placeTemplate(tpl, tplScale, tplRoot, beat, midi, timeSigRef.current[1])
+      .filter(p => p.beat >= 0 && p.beat < totalColumns(barSubsRef.current));
+    if (!placed.length) return;
+    const made = [];
+    placed.forEach(p => {
+      const row = midiToPitchRow(p.midi);
+      let combo = null;
+      if (row >= 0) {
+        const posEnd = Math.min(position + 4, NUM_FRETS);
+        const busy = new Set(made.filter(m => m.beat < p.beat + p.length - 1e-6 && m.beat + m.duration > p.beat + 1e-6).map(m => m.stringIndex));
+        const cands = pitchRowCombos(row).filter(c => c.fret >= 0 && c.fret <= NUM_FRETS && !busy.has(c.stringIndex));
+        combo = cands.find(c => c.fret >= position && c.fret <= posEnd) || null;
+      }
+      if (!combo) combo = getComboForPosition(p.midi, position);
+      if (combo) made.push({ stringIndex: combo.stringIndex, fret: combo.fret, beat: p.beat, duration: p.length, velocity: defaultVelocity });
+    });
+    if (!made.length) return;
+    saveSnapshot();
+    const base = notesRef.current.length;
+    setActiveNotes(prev => [...prev, ...made]);
+    setSelectedNotes(new Set(made.map((_, i) => base + i)));
+  }, [pendingTemplate, tplScale, tplRoot, position, defaultVelocity, saveSnapshot, setActiveNotes]);
+
   const handleDuplicateTrack = useCallback((trackId) => {
     const source = tracksRef.current.find(t => t.id === trackId);
     if (!source) return;
@@ -3532,7 +3598,7 @@ setPositionModeValue(null);
     panels: (
       <span className="panel-btns" title="Show or hide the windows">
         {CLOSABLE.map((pid) => {
-          const Icon = { tracks: ListMusic, synth: SlidersHorizontal, fretboard: Guitar, timeline: ChartNoAxesGantt, arrangement: Rows3, sync: AudioWaveform }[pid];
+          const Icon = { tracks: ListMusic, synth: SlidersHorizontal, fretboard: Guitar, timeline: ChartNoAxesGantt, arrangement: Rows3, sync: AudioWaveform, templates: LayoutTemplate }[pid];
           return (
             <button
               key={pid}
@@ -3894,6 +3960,18 @@ setPositionModeValue(null);
         </div>
       )}
       mobile={mobileActionsNode}
+      templates={(
+        <TemplatesPanel
+          templates={templates}
+          setTemplates={setTemplates}
+          scaleId={tplScale} setScaleId={setTplScale}
+          root={tplRoot} setRoot={setTplRoot}
+          pendingId={pendingTemplate?.id || null}
+          onArm={(tpl) => setPendingTemplate(cur => (cur && cur.id === tpl.id ? null : tpl))}
+          onCapture={captureTemplate}
+          canCapture={selectedNotes.size > 0 && !phantomEditing}
+        />
+      )}
       arrangement={(
         <Arrangement
           {...trackApi}
@@ -4135,6 +4213,9 @@ setPositionModeValue(null);
           activeInstanceScheme={activeTrack?.activeInstanceScheme || null}
           phantomEditing={phantomEditing}
           onCopyToPhantom={copyToPhantom}
+          armedTemplate={!!pendingTemplate}
+          onStampTemplate={stampTemplate}
+          onPreviewTemplate={previewTemplate}
         />
       </div>
       )}

@@ -426,7 +426,10 @@ export default function SyncEditor({
       return;
     }
     if (!hit) {
-      onSelectBeat(Math.max(0, timeBeat(xt(x))));
+      // Alt (also Alt+Space / Alt+Shift) = hear-only scrubbing: the recording sounds under the pointer
+      // but the playhead stays where it is, also on release.
+      const hearOnly = e.altKey;
+      if (!hearOnly) onSelectBeat(Math.max(0, timeBeat(xt(x))));
       if (playing || !buffer) return;
       // drag to scrub: the recording is heard under the pointer, tape style
       e.preventDefault();
@@ -443,7 +446,7 @@ export default function SyncEditor({
         if (!dragged && Math.abs(ev.clientX - x0s) < 3) return;
         dragged = true;
         const t = hear(ev.clientX);
-        onSelectBeat(Math.max(0, timeBeat(t)));
+        if (!hearOnly) onSelectBeat(Math.max(0, timeBeat(t)));
       };
       const su = () => {
         window.removeEventListener('pointermove', sm); window.removeEventListener('pointerup', su);

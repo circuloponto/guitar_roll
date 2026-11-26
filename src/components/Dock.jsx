@@ -30,7 +30,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 // FL Studio style windows: panels resize against their neighbours (which adapt), minimise to a
 // title strip, and undock into floating windows. Panels are always rendered flat (keyed by id) and
 // positioned from the layout state, so docking, undocking and moving never remount them.
-export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangement, synth, mobile: mobileBar }) {
+export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangement, synth, templates, mobile: mobileBar }) {
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
@@ -57,7 +57,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
   const { panels, gutters } = useMemo(() => computeRects(st.tree, box, st.minimized), [st.tree, st.minimized, box]);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
-  const content = { menu, tracks, fretboard, timeline, sync, arrangement, synth };
+  const content = { menu, tracks, fretboard, timeline, sync, arrangement, synth, templates };
 
   const commit = useCallback((t) => { setSt(t); saveState(t); }, []);
 

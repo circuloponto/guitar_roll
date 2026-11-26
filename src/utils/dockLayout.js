@@ -5,10 +5,10 @@
 // Docked panels form a split tree: { id } leaves and { dir: 'row'|'col', ratio, a, b } splits (ratio
 // is the share of `a`). The tree holds exactly the docked panels; floating ones are kept apart.
 
-export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement', 'synth'];
-const NEW_PANELS = ['sync', 'arrangement', 'synth']; // added later: layouts saved before them keep these closed
-export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement', synth: 'Synth' };
-export const CLOSABLE = ['arrangement', 'fretboard', 'timeline', 'tracks', 'synth', 'sync']; // the menu holds the toolbar, so it stays
+export const PANEL_IDS = ['menu', 'tracks', 'fretboard', 'timeline', 'sync', 'arrangement', 'synth', 'templates'];
+const NEW_PANELS = ['sync', 'arrangement', 'synth', 'templates']; // added later: layouts saved before them keep these closed
+export const PANEL_TITLES = { menu: 'Menu', tracks: 'Tracks', fretboard: 'Fretboard', timeline: 'Timeline', sync: 'Sync editor', arrangement: 'Arrangement', synth: 'Synth', templates: 'Templates' };
+export const CLOSABLE = ['arrangement', 'fretboard', 'timeline', 'tracks', 'synth', 'sync', 'templates']; // the menu holds the toolbar, so it stays
 const STORAGE_KEY = 'guitar-roll-layout-v5';
 const V4_KEY = 'guitar-roll-layout-v4';
 const V3_KEY = 'guitar-roll-layout-v3';
@@ -34,7 +34,7 @@ export function defaultState() {
     v: 5,
     tree: null,
     minimized: {},
-    closed: { arrangement: true },
+    closed: { arrangement: true, templates: true },
     floating: {
       menu: { x: 0.30786401098901095, y: 0, w: 0.5026351686507935, h: 0.15162736656021894 },
       tracks: { x: 0, y: 0, w: 0.5718983707264957, h: 0.15162736656021894 },
@@ -57,7 +57,7 @@ export function tiledState() {
       split('row', 0.5, leaf('menu'), split('row', 0.5, leaf('tracks'), leaf('synth'))),
       split('row', 0.31390134529147984, leaf('fretboard'), split('row', 0.5, leaf('timeline'), leaf('sync')))),
     minimized: {},
-    closed: { arrangement: true },
+    closed: { arrangement: true, templates: true },
     floating: {},
     order: [],
     free: false,

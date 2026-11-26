@@ -67,6 +67,9 @@ export default function Timeline({
   activeInstanceScheme = null,
   phantomEditing = false,
   onCopyToPhantom = null,
+  armedTemplate = false,
+  onStampTemplate = null,
+  onPreviewTemplate = null,
   onGrowBars,
 }) {
   const bodyRef = useRef(null);
@@ -1132,6 +1135,12 @@ export default function Timeline({
         const rowFromTop = Math.floor(y / rowHeight);
         const pitchRow = Math.max(0, Math.min(totalRows - 1, totalRows - 1 - rowFromTop));
         const midiTarget = pitchRowToMidi(pitchRow);
+        // A template is armed: this click stamps it here instead of placing a single note
+        if (armedTemplate && onStampTemplate) {
+          marqueeDidDragRef.current = true;
+          onStampTemplate(Math.round(beat * 10000) / 10000, midiTarget);
+          return;
+        }
         const allCombos = pitchRowCombos(pitchRow);
         const occupied = new Set(
           notes.filter((n, i) => Math.abs(n.beat - finalBeatForCombo) < 0.001
@@ -1313,7 +1322,7 @@ export default function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [playing, notes, selectedNotes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight, position, setPosition, activeInstanceScheme, activeAudio, setSelectedClips]);
+  }, [playing, notes, selectedNotes, setSelectedNotes, setNotes, machineGunMode, noteDuration, saveSnapshot, yToPitch, freeMode, snapUnit, cellWidth, barSubdivisions, totalCols, defaultVelocity, setSelectedBeat, rowHeight, position, setPosition, activeInstanceScheme, activeAudio, setSelectedClips, armedTemplate, onStampTemplate]);
 
   // Sync vertical scroll from external source (fretboard)
   useEffect(() => {
@@ -2449,6 +2458,32 @@ export default function Timeline({
                 }}
               >
                 {midiToNoteName(newMidi)}
+              </div>
+            );
+          })}
+
+          {/* Armed template: ghost of the notes it would stamp, starting from the hovered row */}
+          {armedTemplate && onPreviewTemplate && hoverPos && !playing && onPreviewTemplate(hoverPos.beat, getMidiNote(hoverPos.stringIndex, hoverPos.fret)).map((p, k) => {
+            const row = midiToPitchRow(p.midi);
+            if (row < 0) return null;
+            return (
+              <div
+                key={`tpl-ghost-${k}`}
+                className="timeline-note"
+                style={{
+                  left: beatToX(p.beat, barSubdivisions, cellWidth) + 1,
+                  top: pitchRowTopPx(row),
+                  width: Math.max(4, durationToWidth(p.beat, p.length, barSubdivisions, cellWidth) - 2),
+                  height: rowHeight,
+                  minHeight: 4,
+                  backgroundColor: 'var(--accent)',
+                  opacity: 0.55,
+                  outline: '1px dashed rgba(255,255,255,.7)',
+                  zIndex: 20,
+                  pointerEvents: 'none',
+                }}
+              >
+                {midiToNoteName(p.midi)}
               </div>
             );
           })}
