@@ -996,6 +996,39 @@ function App() {
       : x)));
   }, [saveSnapshot, setTracksTracked]);
 
+  // Move a sync point along the grid: it keeps the sound it pins (its time) and takes the timeline beat
+  // `toBeat`, so the recording stretches or squeezes between its neighbours.
+  const setPinBeat = useCallback((trackId, pinId, toBeat, phase) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    if (!t || syncBlockedByOtherTrack(trackId)) return false;
+    const pts = getSyncPoints(t);
+    const pin = pts.find(p => p.id === pinId);
+    if (!pin || !Number.isFinite(t.syncAnchor)) return false;
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const sorted = [...pts].sort((a, b) => a.time - b.time);
+    const i = sorted.findIndex(p => p.id === pinId);
+    const prev = sorted[i - 1] || { time: 0, beat: 0 };
+    const next = sorted[i + 1] || null;
+    const MIN_RATE = 0.25, MAX_RATE = 4;
+    let lo = prev.beat + (pin.time - prev.time) / (MAX_RATE * spb);
+    let hi = prev.beat + (pin.time - prev.time) / (MIN_RATE * spb);
+    if (next) {
+      lo = Math.max(lo, next.beat - (next.time - pin.time) / (MIN_RATE * spb));
+      hi = Math.min(hi, next.beat - (next.time - pin.time) / (MAX_RATE * spb));
+    }
+    lo = Math.max(lo, 0.001);
+    if (hi < lo) return false;
+    const B = Math.min(hi, Math.max(lo, toBeat - t.syncAnchor));
+    if (phase === 'start') {
+      if (!confirmTempoMapChange()) return false;
+      saveSnapshot();
+    }
+    setTracksTracked(prev2 => prev2.map(x => (x.id !== trackId ? x : {
+      ...x, syncPoints: getSyncPoints(x).map(p => (p.id === pinId ? { ...p, beat: B } : p)),
+    })));
+    return true;
+  }, [saveSnapshot, setTracksTracked]);
+
   const setPinForBeat = useCallback((trackId, beat, time, phase) => {
     const t = tracksRef.current.find(x => x.id === trackId);
     if (!t || syncBlockedByOtherTrack(trackId)) return false;
@@ -1026,12 +1059,13 @@ function App() {
     lo = Math.max(lo, 0);
     if (hi < lo) return false;
     const T = Math.min(hi, Math.max(lo, time));
+    const newPinId = crypto.randomUUID();
     setTracksTracked(prev => prev.map(x => (x.id !== trackId ? x : {
       ...x,
       syncAnchor: anchor,
       syncPoints: idx >= 0
         ? pts.map(p => (p.id === sorted[idx].id ? { ...p, time: T } : p))
-        : [...pts, { id: crypto.randomUUID(), time: T, beat: B }],
+        : [...pts, { id: newPinId, time: T, beat: B }],
     })));
     return true;
   }, [saveSnapshot, setTracksTracked]);
@@ -1049,8 +1083,9 @@ function App() {
     const c0 = getClips(t).reduce((a, c) => (c.start < a.start ? c : a));
     const anchor = (getSyncPoints(t).length && Number.isFinite(t.syncAnchor)) ? t.syncAnchor : c0.start - c0.srcStart / spb;
     saveSnapshot();
+    const newPinId = crypto.randomUUID(); // made here, not inside the updater (it may run twice)
     setTracksTracked(prev => prev.map(x => x.id === trackId
-      ? { ...x, syncAnchor: anchor, syncPoints: [...getSyncPoints(x), { id: crypto.randomUUID(), time, beat: fileBeat }] }
+      ? { ...x, syncAnchor: anchor, syncPoints: [...getSyncPoints(x), { id: newPinId, time, beat: fileBeat }] }
       : x));
   }, [showToast, saveSnapshot, setTracksTracked]);
 
@@ -3806,6 +3841,7 @@ setPositionModeValue(null);
           getBuffer={(id) => audioBuffersRef.current[id]}
           onSetPin={setPinForBeat}
           onMoveStem={moveStemNotes}
+          onMovePin={setPinBeat}
           loop={loop} loopStart={loopStart} loopEnd={loopEnd}
           setLoop={setLoop} setLoopStart={setLoopStart} setLoopEnd={setLoopEnd}
           onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
@@ -3819,6 +3855,9 @@ setPositionModeValue(null);
           onRedo={redo}
           onSetAudioOptions={trackApi.onSetAudioOptions}
           onAddAtPlayhead={addSyncPointAtPlayhead}
+          onAutoSync={autoSyncPoints}
+          onClearSync={clearSyncPoints}
+          onDetectTempo={detectTempoOf}
         />
       )}
       fretboard={(

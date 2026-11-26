@@ -734,7 +734,7 @@ export default function SettingsModal({ appState, onApplyState, onClose, onHotke
           <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-reset-layout'))}>Reset layout</button>
           <div className="settings-row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
             <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-layout-free'))} title="Every window floats with its own edges, nothing is shared. They snap to each other; hold Alt to move freely.">Free layout (own edges per window)</button>
-            <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-layout-tile'))} title="Back to the tiled layout (windows share dividers). This resets the arrangement to your default layout.">Back to tiled layout</button>
+            <button className="settings-btn" onClick={() => window.dispatchEvent(new Event('guitar-roll-layout-tile'))} title="Back to the tiled layout (windows share dividers). Rearranges the windows into the built-in tiled layout.">Back to tiled layout</button>
           </div>
         </div>
         <div className="settings-section">

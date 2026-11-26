@@ -27,22 +27,40 @@ const newEmpty = () => leaf(`_e${Date.now().toString(36)}${emptyCounter++}`);
 const split = (dir, ratio, a, b) => ({ dir, ratio, a, b });
 
 // The built-in layout: a free layout (every window has its own edges), as set up by hand. Fractions of
-// the dock area. The Arrangement and the Sync editor start closed and open from the toolbar buttons.
+// the dock area. The Arrangement starts closed and opens from the toolbar button.
 export function defaultState() {
+  // the free layout: every window floats with its own edges
   return {
     v: 5,
     tree: null,
     minimized: {},
-    closed: { sync: true, arrangement: true },
+    closed: { arrangement: true },
     floating: {
-      timeline: { x: 0.261482657967033, y: 0.16125399178832117, w: 0.5568290216727717, h: 0.8630388914233577 },
-      fretboard: { x: 0, y: 0.12603358804744522, w: 0.25641025641025644, h: 0.8739664119525548 },
-      menu: { x: 0.30121527777777773, y: 0, w: 0.5170964018620269, h: 0.15162736656021894 },
-      tracks: { x: 0, y: 0, w: 0.30121527777777773, h: 0.11463560675182483 },
+      menu: { x: 0.30786401098901095, y: 0, w: 0.5026351686507935, h: 0.15162736656021894 },
+      tracks: { x: 0, y: 0, w: 0.5718983707264957, h: 0.15162736656021894 },
+      fretboard: { x: 0, y: 0.12603358804744522, w: 0.20012019230769235, h: 0.8739664119525548 },
+      timeline: { x: 0.2734351152319904, y: 0.4059755645529197, w: 0.5370640644078142, h: 0.6214109546076643 },
+      sync: { x: 0.25641025641025644, y: 0.16425496122262773, w: 0.5540889232295481, h: 0.2566719890510949 },
       synth: { x: 0.8183116796398047, y: 0, w: 0.18168832036019536, h: 0.7621592723540146 },
     },
-    order: ['fretboard', 'synth', 'timeline', 'tracks', 'menu'],
+    order: ['tracks', 'sync', 'fretboard', 'synth', 'timeline', 'menu'],
     free: true,
+  };
+}
+
+// The tiled layout: menu, tracks and synth in a row on top; fretboard, timeline and sync below. Windows
+// share edges, so resizing one moves its neighbours.
+export function tiledState() {
+  return {
+    v: 5,
+    tree: split('col', 0.15707989926739926,
+      split('row', 0.5, leaf('menu'), split('row', 0.5, leaf('tracks'), leaf('synth'))),
+      split('row', 0.31390134529147984, leaf('fretboard'), split('row', 0.5, leaf('timeline'), leaf('sync')))),
+    minimized: {},
+    closed: { arrangement: true },
+    floating: {},
+    order: [],
+    free: false,
   };
 }
 

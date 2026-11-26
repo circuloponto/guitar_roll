@@ -4,7 +4,7 @@ import { listLayoutPresets, applyLayoutBundle, getDefaultLayout } from '../utils
 import {
   PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
   loadState, saveState, clearSavedState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
-  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine, sharedKind, freeAll,
+  toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine, sharedKind, freeAll, tiledState,
 } from '../utils/dockLayout';
 
 const MIN_PX = 90;       // smallest a split side may be dragged to
@@ -130,15 +130,20 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     const el = containerRef.current;
     setSt(loadState(el?.clientWidth || window.innerWidth - 40, el?.clientHeight || window.innerHeight - 40));
   }, []);
+  // the tiled layout (windows share edges); the saved default stays what Reset layout returns to
+  const goTile = useCallback(() => {
+    const el = containerRef.current;
+    commit(tiledState(el?.clientWidth || window.innerWidth - 40, el?.clientHeight || window.innerHeight - 40));
+  }, [commit]);
   const goFree = useCallback(() => {
     const cur = stRef.current;
     commit(cur.free ? cur : freeAll(cur, panelsRef.current));
   }, [commit]);
   useEffect(() => {
     window.addEventListener('guitar-roll-layout-free', goFree);
-    window.addEventListener('guitar-roll-layout-tile', resetLayout);
-    return () => { window.removeEventListener('guitar-roll-layout-free', goFree); window.removeEventListener('guitar-roll-layout-tile', resetLayout); };
-  }, [goFree, resetLayout]);
+    window.addEventListener('guitar-roll-layout-tile', goTile);
+    return () => { window.removeEventListener('guitar-roll-layout-free', goFree); window.removeEventListener('guitar-roll-layout-tile', goTile); };
+  }, [goFree, goTile]);
   const [presetsVersion, setPresetsVersion] = useState(0);
   useEffect(() => {
     const on = () => setPresetsVersion(v => v + 1);
@@ -398,8 +403,8 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
                 <span className="dock-btns">
                   {id === 'menu' && !minimized && (
                     <button
-                      className="dock-reset" onClick={() => (st.free ? resetLayout() : goFree())}
-                      title={st.free ? 'Free layout is on: every window has its own edges. Click to go back to the tiled layout (resets the arrangement).' : 'Free layout: every window gets its own edges, nothing is shared. Windows snap to each other (hold Alt to move freely).'}
+                      className="dock-reset" onClick={() => (st.free ? goTile() : goFree())}
+                      title={st.free ? 'Free layout is on: every window has its own edges. Click for the tiled layout, where windows share edges (rearranges the windows).' : 'Free layout: every window gets its own edges, nothing is shared. Windows snap to each other (hold Alt to move freely).'}
                     >{st.free ? 'Tile' : 'Free'}</button>
                   )}
                   {id === 'menu' && !minimized && (

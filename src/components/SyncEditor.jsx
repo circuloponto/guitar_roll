@@ -13,13 +13,15 @@ const HIT = 6;          // px grab distance
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
   tracks, activeTrackId, tempoMap, timeSignature = [4, 4], barSubdivisions = [], selectedBeat, currentBeat, playing, getBuffer,
-  onSetPin, onMoveStem, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead,
+  onSetPin, onMovePin, onMoveStem, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead, onAutoSync, onClearSync, onDetectTempo,
   loop = false, loopStart = 0, loopEnd = 0, setLoop, setLoopStart, setLoopEnd,
 }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const [size, setSize] = useState({ w: 600, h: 200 });
-  const [view, setView] = useState({ t0: 0, pps: 60 }); // first visible second, pixels per second
+  // The grid is the fixed axis (like the Timeline): t0 = first visible timeline beat, pps = pixels per beat.
+  // The recording is drawn stretched or squeezed against it by the sync points.
+  const [view, setView] = useState({ t0: 0, pps: 30 });
   const [hover, setHover] = useState(null);
   const [snapOn, setSnapOn] = useState(true);
   const dragRef = useRef(null);
@@ -58,11 +60,9 @@ export default function SyncEditor({
   const pins = useMemo(() => allPins.filter(p => inSpan(p.time)), [allPins, inSpan]);
 
   const beatTime = useCallback((b) => (clip && m ? clipBeatToTime(clip, b, m) : 0), [clip, m]);
-  const [holdT, setHoldT] = useState(null); // while a sync point is dragged the playhead stays on its sound
   const timeBeatRef = useRef(null);
   const timeBeat = useCallback((t) => (clip && m ? clipTimeToBeat(clip, t, m) : 0), [clip, m]);
   timeBeatRef.current = timeBeat;
-  const holdTRef = useRef(null); holdTRef.current = holdT;
   const playingNow = useRef(playing); playingNow.current = playing;
   const onSelectBeatRef = useRef(onSelectBeat); onSelectBeatRef.current = onSelectBeat;
   const anchor = tempoMap && tempoMap.active ? tempoMap.anchor : null;
@@ -100,22 +100,24 @@ export default function SyncEditor({
   useEffect(() => {
     if (lastSpan.current === spanKey) return;
     lastSpan.current = spanKey;
-    setView(v => ({ ...v, t0: tMin }));
+    setView(v => ({ ...v, t0: Math.max(0, timeBeatRef.current ? timeBeatRef.current(tMin) : 0) }));
   }, [spanKey, tMin]);
 
-  const tx = useCallback((t) => (t - view.t0) * view.pps, [view]);
-  const xt = useCallback((x) => view.t0 + x / view.pps, [view]);
+  // file time <-> screen x, through the grid
+  const tx = useCallback((t) => (timeBeat(t) - view.t0) * view.pps, [view, timeBeat]);
+  const xt = useCallback((x) => beatTime(view.t0 + x / view.pps), [view, beatTime]);
+  const bMin = timeBeat(tMin), bMax = timeBeat(tMax);
 
   // follow the playhead while playing: page to the right when it reaches the edge
-  const followT = playing && currentBeat != null && clip && m ? clipBeatToTime(clip, currentBeat, m) : null;
+  const followB = playing && currentBeat != null ? currentBeat : null;
   useEffect(() => {
-    if (followT == null || !size.w) return;
+    if (followB == null || !size.w) return;
     setView((v) => {
-      const x = (followT - v.t0) * v.pps;
+      const x = (followB - v.t0) * v.pps;
       if (x >= 0 && x <= size.w * 0.92) return v;
-      return { ...v, t0: Math.max(tMin - 1, followT - (size.w * 0.08) / v.pps) };
+      return { ...v, t0: Math.max(0, followB - (size.w * 0.08) / v.pps) };
     });
-  }, [followT, size.w, tMin]);
+  }, [followB, size.w]);
 
   // draw
   const headBeat = playing && currentBeat != null ? currentBeat : selectedBeat;
@@ -148,9 +150,10 @@ export default function SyncEditor({
     // ruler: seconds on top, the grid (bar.beat) underneath
     g.fillStyle = col('--raise', '#15151b'); g.fillRect(0, 0, size.w, HEAD_H);
     g.strokeStyle = hair; g.beginPath(); g.moveTo(0, ROW_H + 0.5); g.lineTo(size.w, ROW_H + 0.5); g.stroke();
-    const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(s => s * view.pps >= 60) || 60;
+    const secPx = Math.max(1e-6, Math.abs(tx(tMin + 1) - tx(tMin))) ; // pixels per second near the start
+    const step = [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60].find(s => s * secPx >= 60) || 60;
     g.font = '10px monospace'; g.textBaseline = 'middle';
-    for (let rt = Math.ceil((view.t0 - tMin) / step) * step; tx(tMin + rt) < size.w; rt += step) {
+    for (let rt = Math.max(0, Math.ceil((beatTime(view.t0) - tMin) / step) * step); tx(tMin + rt) < size.w && rt <= tMax - tMin; rt += step) {
       const t = rt; const x = tx(tMin + rt);
       g.strokeStyle = hair; g.beginPath(); g.moveTo(x + 0.5, ROW_H - 5); g.lineTo(x + 0.5, ROW_H); g.stroke();
       g.fillStyle = mute; g.fillText(`${Math.floor(t / 60)}:${(t % 60).toFixed(step < 1 ? 1 : 0).padStart(step < 1 ? 4 : 2, '0')}`, x + 3, ROW_H / 2);
@@ -322,14 +325,14 @@ export default function SyncEditor({
     // playhead (red) and the time readout
     const curT = Math.max(0, beatTime(headBeat) - tMin), totT = Math.max(0, tMax - tMin);
     const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
-    const px = tx(holdT != null && !playing ? holdT : beatTime(headBeat));
+    const px = tx(beatTime(headBeat));
     if (px >= 0 && px <= size.w) { g.strokeStyle = '#ff4d4d'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(px + 0.5, 0); g.lineTo(px + 0.5, size.h); g.stroke(); g.lineWidth = 1; }
     g.font = '10px monospace'; g.textBaseline = 'middle';
     const label = `${fmt(curT)} / ${fmt(totT).replace(/\.\d+$/, '')}`;
     const lwid = g.measureText(label).width + 12;
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(4, stripBottom - 20, lwid, 15);
     g.fillStyle = fg; g.fillText(label, 10, stripBottom - 12);
-  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd, holdT, playing]);
+  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd, playing]);
 
   // hit testing
   const hitAt = (x, y) => {
@@ -339,6 +342,15 @@ export default function SyncEditor({
       const hit = pins.find(p => Math.abs(tx(pinTime(p)) - x) < 9 * hk0);
       if (hit) return { kind: 'pinx', id: hit.id };
     }
+    // the numbered circle (or its line) is the sync point's handle and wins over a stem sitting at the same spot
+    if (y != null) {
+      const sTop = HEAD_H + 4, sH = Math.max(80, size.h - 6 - sTop);
+      const cy = sTop + sH * 0.58, Rc = Math.max(13, Math.min(34, sH * 0.1));
+      if (Math.abs(y - cy) <= Rc + 4) {
+        const hitPin = pins.map(p => ({ p, d: Math.abs(tx(pinTime(p)) - x) })).filter(o => o.d <= Rc + 2).sort((a, b) => a.d - b.d)[0];
+        if (hitPin) return { kind: 'pin', id: hitPin.p.id, beat: hitPin.p.beat, time: hitPin.p.time };
+      }
+    }
     let best = null, bestD = HIT;
     stems.forEach((s) => { const d = Math.abs(tx(s.time) - x); if (d < bestD) { bestD = d; best = { kind: 'stem', beat: s.beat, time: s.time }; } });
     if (!best) pins.forEach((p) => { const d = Math.abs(tx(pinTime(p)) - x); if (d < bestD) { bestD = d; best = { kind: 'pin', id: p.id, beat: p.beat, time: p.time }; } });
@@ -346,13 +358,6 @@ export default function SyncEditor({
   };
   const localX = (e) => e.clientX - canvasRef.current.getBoundingClientRect().left;
   const localY = (e) => e.clientY - canvasRef.current.getBoundingClientRect().top;
-
-  const snapTime = (t, alt) => {
-    if (!snapOn || alt || !onsets.length) return t;
-    let best = null, bestPx = 7;
-    for (const o of onsets) { const px = Math.abs(o - t) * view.pps; if (px < bestPx) { bestPx = px; best = o; } }
-    return best != null ? best : t;
-  };
 
   const onDown = (e) => {
     if (!audio) return;
@@ -446,20 +451,17 @@ export default function SyncEditor({
         curBeat = nb; started = true;
         return;
       }
-      if (!started && !playing) setHoldT(beatTime(headBeat));
-      const t = Math.max(0, snapTime(xt(lx), ev.altKey));
-      const ok = onSetPin(audio.id, beat, t, started ? 'move' : 'start');
+      // The line follows the pointer along the grid and lands on round beats / measures (Alt = free); the
+      // sound under it stays put, so the recording stretches or squeezes against the grid.
+      const raw = view.t0 + lx / view.pps;
+      const target = Math.max(0, ev.altKey ? raw : Math.round(raw));
+      const ok = onMovePin(audio.id, hit.id, target, started ? 'move' : 'start');
       if (ok === false && !started) { cleanup(); return; } // refused: leave the playhead alone
       started = true;
     };
     const cleanup = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', cleanup);
       document.body.classList.remove('dock-resizing'); dragRef.current = null;
-      if (started && hit.kind !== 'stem') {
-        // the map changed under the playhead: put it back on the same sound
-        const held = holdTRef.current;
-        setTimeout(() => { if (held != null && !playingNow.current) onSelectBeatRef.current(Math.max(0, timeBeatRef.current(held))); setHoldT(null); }, 30);
-      }
       if (!started && !travelled) onSelectBeat(Math.max(0, hit.kind === 'stem' ? hit.beat : timeBeat(hit.time)));
     };
     dragRef.current = true;
@@ -481,13 +483,13 @@ export default function SyncEditor({
     if (e.ctrlKey || e.metaKey) {
       const f = Math.exp(-e.deltaY * 0.01);
       setView((v) => {
-        const pps = Math.min(2000, Math.max(4, v.pps * f));
-        const t = v.t0 + x / v.pps;
-        return { pps, t0: Math.max(tMin - 1, t - x / pps) };
+        const pps = Math.min(600, Math.max(0.5, v.pps * f));
+        const b = v.t0 + x / v.pps;
+        return { pps, t0: Math.max(0, b - x / pps) };
       });
     } else {
       const dx = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      setView(v => ({ ...v, t0: Math.max(tMin - 1, Math.min(tMax, v.t0 + dx / v.pps)) }));
+      setView(v => ({ ...v, t0: Math.max(0, Math.min(bMax, v.t0 + dx / v.pps)) }));
     }
   };
   // non-passive wheel so the page does not scroll
@@ -498,7 +500,7 @@ export default function SyncEditor({
     return () => cv.removeEventListener('wheel', onWheel);
   });
 
-  const fit = () => setView({ t0: tMin, pps: Math.max(4, (size.w - 8) / Math.max(0.5, tMax - tMin)) });
+  const fit = () => setView({ t0: Math.max(0, bMin), pps: Math.max(0.5, (size.w - 8) / Math.max(1, bMax - bMin)) });
 
   return (
     <div className="sync-editor">
@@ -542,11 +544,26 @@ export default function SyncEditor({
           onClick={() => audio && onAddAtPlayhead && onAddAtPlayhead(audio.id)}
           title="Add a sync point at the playhead (hotkey: I)"
         >+ Sync point <kbd className="sync-kbd">I</kbd></button>
+        <button
+          className="settings-btn-sm" disabled={!audio || !onAutoSync}
+          onClick={() => audio && onAutoSync(audio.id)}
+          title="Detect the beats in this recording and put sync points on the bar lines, so the grid follows the song (replaces existing ones; Ctrl+Z undoes)"
+        >Auto sync</button>
+        {audio && pins.length > 0 && onClearSync && (
+          <button className="settings-btn-sm" onClick={() => onClearSync(audio.id)} title="Remove all sync points from this recording">Clear sync ({allPins.length})</button>
+        )}
+        {audio && onSetAudioOptions && (
+          <button
+            className={`settings-btn-sm${audio.followTempo ? ' active' : ''}`}
+            onClick={() => onSetAudioOptions(audio.id, { followTempo: !audio.followTempo })}
+            title={audio.followTempo ? 'Matching tempo: the BPM moves the grid and the song keeps its own speed. Click to lock.' : 'Match tempo: change the BPM until the song lines up with the grid (the song keeps its own speed).'}
+          >{audio.followTempo ? 'Matching tempo' : 'Match tempo'}</button>
+        )}
+        {audio?.followTempo && onDetectTempo && (
+          <button className="settings-btn-sm" onClick={() => onDetectTempo(audio.id)} title="Detect the song's tempo and put its first beat on the grid">Detect tempo</button>
+        )}
         <button className="settings-btn-sm" onClick={onUndo} title="Undo (Ctrl+Z)" aria-label="Undo sync edit">↶ Undo</button>
         <button className="settings-btn-sm" onClick={onRedo} title="Redo (Ctrl+Y)" aria-label="Redo sync edit">↷ Redo</button>
-        <label className="ub-check" title="Pull dragged stems onto the recording's attacks (hold Alt to switch off)">
-          <input type="checkbox" checked={snapOn} onChange={(e) => setSnapOn(e.target.checked)} /> Snap to attacks
-        </label>
         <button
           className={`settings-btn-sm${loop ? ' active' : ''}`} disabled={!audio || !setLoop}
           onClick={() => setLoop && setLoop(!loop)}
@@ -565,7 +582,7 @@ export default function SyncEditor({
         />
       </div>
       <p className="sync-hint">
-        Drag a stem to nudge its notes; the + Sync point button (or I) pins the playhead. Drag on the ruler to set the loop region. Scroll to pan,
+        Drag a stem to nudge its notes; drag a numbered circle (or its line) to a measure: it snaps to the grid (Alt = free) and the recording stretches or squeezes to match; + Sync point (I) pins the playhead. Drag on the ruler to set the loop region. Scroll to pan,
         Ctrl/⌘+scroll to zoom, click to place the playhead, right-click a yellow line to remove it.
       </p>
     </div>
