@@ -586,10 +586,15 @@ export default function Timeline({
   const startScrubDrag = (e, rectEl) => {
     const rectOf = () => (rectEl || headerRef.current).getBoundingClientRect();
     const hasAudio = audioTracks.some(a => a.audioBuffer);
+    // A click snaps to the grid (unless free mode is on); once the pointer is dragged the playhead moves
+    // freely so the recording can be scrubbed smoothly.
+    let moved = false;
     const beatAt = (clientX) => {
+      if (Math.abs(clientX - e.clientX) > 3) moved = true;
       const px = clientX - rectOf().left + (bodyRef.current ? bodyRef.current.scrollLeft : 0);
       const raw = xToBeat(px, barSubdivisions, cellWidth, false);
-      const b = hasAudio || freeMode ? raw : Math.round(raw / snapUnit) * snapUnit;
+      const snapIt = !freeMode && (!hasAudio || !moved);
+      const b = snapIt ? Math.round(raw / snapUnit) * snapUnit : raw;
       return Math.max(0, Math.min(totalCols - 1, b));
     };
     if (hasAudio) scrubPrepare();
