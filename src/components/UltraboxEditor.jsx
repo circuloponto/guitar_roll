@@ -288,7 +288,6 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
   const [ready, setReady] = useState(false);
   const [rev, setRev] = useState(0);
   const [saveName, setSaveName] = useState('');
-  const [autoPreview, setAutoPreview] = useState(() => localStorage.getItem('guitar-roll-ub-autopreview') !== '0');
   const [tick, setTick] = useState(0);
   const [drum, setDrum] = useState(0);
   const instRef = useRef(null);
@@ -296,9 +295,6 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
   const selfChange = useRef(null);
   const curRef = useRef(currentInstrument);
   curRef.current = currentInstrument;
-  const previewTimer = useRef(null);
-  const autoRef = useRef(autoPreview);
-  autoRef.current = autoPreview;
 
   const id = isUltrabox(currentInstrument) ? currentInstrument : null;
 
@@ -353,9 +349,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
       setTick(x => x + 1);
     }
     setRev(r => r + 1);
-    clearTimeout(previewTimer.current);
-    if (autoRef.current) previewTimer.current = setTimeout(preview, 350);
-  }, [onInstrumentChange, preview]);
+  }, [onInstrumentChange]);
 
   const groups = useMemo(() => {
     const all = getAllInstruments();
@@ -450,11 +444,6 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
   const header = (
     <div className="ub-head">
       <button className="settings-btn" onClick={preview} disabled={!id}>Preview</button>
-      <label className="ub-check" title="Play a note after each change">
-        <input type="checkbox" checked={autoPreview}
-          onChange={(e) => { setAutoPreview(e.target.checked); try { localStorage.setItem('guitar-roll-ub-autopreview', e.target.checked ? '1' : '0'); } catch { /* ignore */ } }} />
-        Hear changes
-      </label>
       <Scope id={id} rev={rev} />
       <span className="ub-spacer" />
       <input className="settings-input ub-name" value={saveName} onChange={(e) => setSaveName(e.target.value)}
