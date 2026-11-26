@@ -531,7 +531,7 @@ function App() {
   }, []);
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   useEffect(() => { applyPianoSize(loadPianoSize()); }, []);
-  const [panelsClosed, setPanelsClosed] = useState({ tracks: true, synth: true, sync: true });
+  const [panelsClosed, setPanelsClosed] = useState({ sync: true, arrangement: true });
   useEffect(() => {
     const on = (e) => setPanelsClosed(e.detail?.closed || {});
     window.addEventListener('guitar-roll-panels', on);

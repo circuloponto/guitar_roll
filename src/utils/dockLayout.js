@@ -26,23 +26,23 @@ let emptyCounter = 0;
 const newEmpty = () => leaf(`_e${Date.now().toString(36)}${emptyCounter++}`);
 const split = (dir, ratio, a, b) => ({ dir, ratio, a, b });
 
-export function defaultState(w = 1400, h = 900) {
-  // The board's layout: the Arrangement (track list + lanes) top left, fretboard and timeline below,
-  // the menu as a narrow column on the right. The Tracks (tracks + Synth tabs) and Sync editor windows
-  // start closed and open from the toolbar buttons.
-  const menuW = clamp(300 / w, 0.14, 0.3);
-  const arrH = clamp(250 / h, 0.2, 0.45);
-  const fretW = clamp(420 / (w * (1 - menuW)), 0.2, 0.55);
+// The built-in layout: a free layout (every window has its own edges), as set up by hand. Fractions of
+// the dock area. The Arrangement and the Sync editor start closed and open from the toolbar buttons.
+export function defaultState() {
   return {
     v: 5,
-    tree: split('row', 1 - menuW,
-      split('col', arrH, leaf('arrangement'), split('row', fretW, leaf('fretboard'), leaf('timeline'))),
-      leaf('menu')),
-    minimized: {},          // { [id]: true }
-    closed: { tracks: true, synth: true, sync: true }, // closed panels are out of the layout; the toolbar buttons reopen them
-    floating: {},           // { [id]: { x, y, w, h } } as fractions of the dock area
-    order: [],              // floating windows, back to front
-    free: false,            // free layout: every window floats with its own edges
+    tree: null,
+    minimized: {},
+    closed: { sync: true, arrangement: true },
+    floating: {
+      timeline: { x: 0.261482657967033, y: 0.16125399178832117, w: 0.5568290216727717, h: 0.8630388914233577 },
+      fretboard: { x: 0, y: 0.12603358804744522, w: 0.25641025641025644, h: 0.8739664119525548 },
+      menu: { x: 0.30121527777777773, y: 0, w: 0.5170964018620269, h: 0.15162736656021894 },
+      tracks: { x: 0, y: 0, w: 0.30121527777777773, h: 0.11463560675182483 },
+      synth: { x: 0.8183116796398047, y: 0, w: 0.18168832036019536, h: 0.7621592723540146 },
+    },
+    order: ['fretboard', 'synth', 'timeline', 'tracks', 'menu'],
+    free: true,
   };
 }
 
