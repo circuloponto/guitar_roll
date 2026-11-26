@@ -581,10 +581,10 @@ export default function Arrangement({
                     {!r.track.phantomShow ? <EyeOff size={12} /> : <Eye size={12} />}
                   </button>
                   <input
-                    type="range" className="arr-vol arr-vol-op" min={5} max={100} value={Math.round((r.track.phantomOpacity ?? 0.85) * 100)}
+                    type="range" className="arr-vol arr-vol-op" min={5} max={100} value={Math.round((r.track.phantomOpacity ?? 0.5) * 100)}
                     onClick={(e) => e.stopPropagation()}
                     onChange={(e) => onSetBgOpacity(r.track.id, Number(e.target.value) / 100)}
-                    title={`Phantom notes opacity: ${Math.round((r.track.phantomOpacity ?? 0.85) * 100)}%`}
+                    title={`Phantom notes opacity: ${Math.round((r.track.phantomOpacity ?? 0.5) * 100)}%`}
                   />
                 </>
               )}

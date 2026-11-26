@@ -70,11 +70,11 @@ export function TrackControls({
             className="track-slider track-slider-ghost"
             min={5}
             max={100}
-            value={Math.round((track.phantomOpacity ?? 0.85) * 100)}
+            value={Math.round((track.phantomOpacity ?? 0.5) * 100)}
             onChange={(e) => { e.stopPropagation(); onSetBgOpacity(track.id, Number(e.target.value) / 100); }}
             onClick={(e) => e.stopPropagation()}
           />
-          <span className="track-slider-val">{Math.round((track.phantomOpacity ?? 0.85) * 100)}%</span>
+          <span className="track-slider-val">{Math.round((track.phantomOpacity ?? 0.5) * 100)}%</span>
         </div>
       )}
 

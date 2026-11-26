@@ -3984,7 +3984,7 @@ setPositionModeValue(null);
               .flatMap(t => {
                 const out = [];
                 const at = (n) => beat >= n.beat && beat < n.beat + (n.duration || 1);
-                if (t.phantomShow || t.phantomEdit) out.push(...(t.phantom || []).filter(at).map(n => ({ ...n, _phantom: true, _trackOpacity: t.phantomOpacity ?? 0.85 })));
+                if (t.phantomShow || t.phantomEdit) out.push(...(t.phantom || []).filter(at).map(n => ({ ...n, _phantom: true, _trackOpacity: t.phantomOpacity ?? 0.5 })));
                 if (t.id === activeTrackId && t.phantomEdit) out.push(...t.notes.filter(at).map(n => ({ ...n, _trackOpacity: 0.3 })));
                 return out;
               });

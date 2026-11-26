@@ -841,7 +841,7 @@ export default function Fretboard({ onNoteClick, onAdjacentClick, onMoveNote, on
             height: 12,
             borderRadius: 6,
             background: note._phantom ? '#8a8a8a' : '#fff',
-            opacity: note._trackOpacity ?? (note._phantom ? 0.85 : 0.2),
+            opacity: note._trackOpacity ?? (note._phantom ? 0.5 : 0.2),
             transform: 'translate(-50%, -50%) rotate(-50deg)',
             pointerEvents: 'none',
             zIndex: 4,
