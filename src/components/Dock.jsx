@@ -34,6 +34,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
   const mobile = useIsMobile();
   const containerRef = useRef(null);
   const [st, setSt] = useState(() => loadState(window.innerWidth - 40, window.innerHeight - 40));
+  const [moving, setMoving] = useState(null); // id of the floating window being moved
   const [drag, setDrag] = useState(null); // { id, x, y, hit }
   const [box, setBox] = useState({ w: Math.max(400, window.innerWidth - 40), h: Math.max(300, window.innerHeight - 100) });
   const stRef = useRef(st);
@@ -277,6 +278,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
     const others = otherRects(id, cr);
     const xs = [0, cr.width, ...others.flatMap(o => [o.l, o.r])];
     const ys = [0, cr.height, ...others.flatMap(o => [o.t, o.b])];
+    setMoving(id);
     const move = (ev) => {
       let px = start.x * cr.width + (ev.clientX - sx), py = start.y * cr.height + (ev.clientY - sy);
       const pw = start.w * cr.width, ph = start.h * cr.height;
@@ -296,6 +298,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       document.body.classList.remove('dock-resizing');
+      setMoving(null);
       saveState(stRef.current);
     };
     document.body.classList.add('dock-resizing');
@@ -377,7 +380,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
         return (
           <div
             key={id}
-            className={`dock-panel dock-panel-${id}${fl ? ' floating' : ''}${minimized ? ' minimized' : ''}${vertical ? ' vertical' : ''}${drag?.id === id ? ' dragging' : ''}`}
+            className={`dock-panel dock-panel-${id}${fl ? ' floating' : ''}${minimized ? ' minimized' : ''}${vertical ? ' vertical' : ''}${drag?.id === id ? ' dragging' : ''}${moving === id || drag?.id === id ? ' moving' : ''}`}
             style={style}
             onPointerDownCapture={fl ? () => { const n = raiseFloating(stRef.current, id); if (n !== stRef.current) commit(n); } : undefined}
           >

@@ -3049,6 +3049,11 @@ button:disabled { cursor: not-allowed; }
   border: none;
   border-radius: 0;
   border-right: none;
+  /* extra width is not used: the board keeps a sensible shape and sits in the middle */
+  max-width: 310px;
+  align-self: center;
+  border-left: 1px solid var(--hairline);
+  border-right: 1px solid var(--hairline);
 }
 .dock-timeline-row { display: flex; flex: 1; min-width: 0; min-height: 0; }
 .dock-body .timeline-container { border: none; border-radius: 0; min-width: 0; }
@@ -3824,3 +3829,9 @@ html[data-piano-size='hidden'] .piano-key-label { display: none; }
 .fretboard-pos-badge { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 18px; font-weight: 700; color: var(--accent-hi); pointer-events: none; white-space: nowrap; }
 .fretboard-pos-badge small { font-size: 10px; font-weight: 400; color: var(--soft); margin-right: 5px; }
 .fretboard-roman-badge { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600; color: var(--soft); opacity: 0.8; pointer-events: none; }
+
+/* a window being moved: accent border and glow */
+.dock-panel.moving .dock-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 18px 3px color-mix(in srgb, var(--accent) 55%, transparent);
+}
