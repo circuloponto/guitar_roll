@@ -13,7 +13,7 @@ const HIT = 6;          // px grab distance
 // create and align many sync points by hand. Sync points are the yellow lines (right-click removes).
 export default function SyncEditor({
   tracks, activeTrackId, tempoMap, timeSignature = [4, 4], barSubdivisions = [], selectedBeat, currentBeat, playing, getBuffer,
-  onSetPin, onMovePin, onMoveStem, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead, onAutoSync, onClearSync, onDetectTempo,
+  onSetPin, onMovePin, onMovePinTime, onMoveStem, onRemovePin, onSelectBeat, onUndo, onRedo, onSetAudioOptions, onAddAtPlayhead, onAutoSync, onClearSync, onDetectTempo,
   loop = false, loopStart = 0, loopEnd = 0, setLoop, setLoopStart, setLoopEnd,
 }) {
   const wrapRef = useRef(null);
@@ -473,6 +473,14 @@ export default function SyncEditor({
       // The line follows the pointer along the grid and lands on round beats / measures (Alt = free); the
       // sound under it stays put, so the recording stretches or squeezes against the grid.
       const raw = view.t0 + lx / view.pps;
+      if (ev.ctrlKey || ev.metaKey) {
+        // Ctrl/⌘: the pin stays on its grid beat and the recording slides under it; the sound that was
+        // under the pointer when the drag began ends up on the line (stretching its neighbours).
+        const ok2 = onMovePinTime(audio.id, hit.id, beatTime(raw), started ? 'move' : 'start');
+        if (ok2 === false && !started) { cleanup(); return; }
+        started = true;
+        return;
+      }
       const target = Math.max(0, ev.altKey ? raw : Math.round(raw));
       const ok = onMovePin(audio.id, hit.id, target, started ? 'move' : 'start');
       if (ok === false && !started) { cleanup(); return; } // refused: leave the playhead alone
@@ -601,7 +609,7 @@ export default function SyncEditor({
         />
       </div>
       <p className="sync-hint">
-        Drag a stem to nudge its notes; drag a numbered circle (or its line) to a measure: it snaps to the grid (Alt = free) and the recording stretches or squeezes to match; + Sync point (I) pins the playhead. Drag on the ruler to set the loop region. Scroll to pan,
+        Drag a stem to nudge its notes; drag a numbered circle (or its line) to a measure: it snaps to the grid (Alt = free) and the recording stretches or squeezes to match; hold Ctrl/⌘ while dragging a circle to keep it on its beat and slide the recording under it instead (drag to the transient that should land on the line); + Sync point (I) pins the playhead. Drag on the ruler to set the loop region. Scroll to pan,
         Ctrl/⌘+scroll to zoom, click to place the playhead, right-click a yellow line to remove it.
       </p>
     </div>

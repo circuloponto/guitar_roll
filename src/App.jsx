@@ -1036,6 +1036,38 @@ function App() {
     return true;
   }, [saveSnapshot, setTracksTracked]);
 
+  // Ctrl/⌘-drag in the sync editor: the pin keeps its grid beat, the audio time it pins slides.
+  const setPinTime = useCallback((trackId, pinId, toTime, phase) => {
+    const t = tracksRef.current.find(x => x.id === trackId);
+    if (!t || syncBlockedByOtherTrack(trackId)) return false;
+    const pts = getSyncPoints(t);
+    const pin = pts.find(p => p.id === pinId);
+    if (!pin) return false;
+    const spb = secPerBeat(t, bpmRef.current, timeSigRef.current[1]);
+    const sorted = [...pts].sort((a, b) => a.time - b.time);
+    const i = sorted.findIndex(p => p.id === pinId);
+    const prev = sorted[i - 1] || { time: 0, beat: 0 };
+    const next = sorted[i + 1] || null;
+    const MIN_RATE = 0.25, MAX_RATE = 4;
+    let lo = prev.time + MIN_RATE * spb * (pin.beat - prev.beat);
+    let hi = prev.time + MAX_RATE * spb * (pin.beat - prev.beat);
+    if (next) {
+      lo = Math.max(lo, next.time - MAX_RATE * spb * (next.beat - pin.beat));
+      hi = Math.min(hi, next.time - MIN_RATE * spb * (next.beat - pin.beat));
+    }
+    lo = Math.max(lo, prev.time + 0.001, 0);
+    if (hi < lo) return false;
+    const T = Math.min(hi, Math.max(lo, toTime));
+    if (phase === 'start') {
+      if (!confirmTempoMapChange()) return false;
+      saveSnapshot();
+    }
+    setTracksTracked(prev2 => prev2.map(x => (x.id !== trackId ? x : {
+      ...x, syncPoints: getSyncPoints(x).map(p => (p.id === pinId ? { ...p, time: T } : p)),
+    })));
+    return true;
+  }, [saveSnapshot, setTracksTracked]);
+
   const setPinForBeat = useCallback((trackId, beat, time, phase) => {
     const t = tracksRef.current.find(x => x.id === trackId);
     if (!t || syncBlockedByOtherTrack(trackId)) return false;
@@ -3910,6 +3942,7 @@ setPositionModeValue(null);
           onSetPin={setPinForBeat}
           onMoveStem={moveStemNotes}
           onMovePin={setPinBeat}
+          onMovePinTime={setPinTime}
           loop={loop} loopStart={loopStart} loopEnd={loopEnd}
           setLoop={setLoop} setLoopStart={setLoopStart} setLoopEnd={setLoopEnd}
           onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
