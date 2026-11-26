@@ -1774,6 +1774,8 @@ export default function Timeline({
             {/* Beat labels and bar lines */}
             {Array.from({ length: totalCols }, (_, i) => {
               const isBar = starts.includes(i);
+              // zoomed out, the beat numbers (1.2, 1.3 ...) disappear and only the bar numbers stay
+              if (!isBar && colWidth(beatToBar(i, barSubdivisions).barIndex, barSubdivisions, cellWidth) < 24) return null;
               return (
                 <div
                   key={i}
