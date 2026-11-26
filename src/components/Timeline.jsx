@@ -576,6 +576,10 @@ export default function Timeline({
     const onUp = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
+      // the click that follows this release must not drop the playhead at the pointer
+      const eat = (ce) => { ce.stopPropagation(); ce.preventDefault(); window.removeEventListener('click', eat, true); };
+      window.addEventListener('click', eat, true);
+      setTimeout(() => window.removeEventListener('click', eat, true), 0);
       // keep sounding if the keys are still down, otherwise stop
       if (!altSpaceRef.current) scrubEnd();
     };

@@ -3805,6 +3805,8 @@ setPositionModeValue(null);
           getBuffer={(id) => audioBuffersRef.current[id]}
           onSetPin={setPinForBeat}
           onMoveStem={moveStemNotes}
+          loop={loop} loopStart={loopStart} loopEnd={loopEnd}
+          setLoop={setLoop} setLoopStart={setLoopStart} setLoopEnd={setLoopEnd}
           onRemovePin={(trackId, pinId) => updateSyncPoints(trackId, pts => pts.filter(p => p.id !== pinId))}
           onSelectBeat={(b) => {
             const nb = Math.max(0, Math.min(totalBeats - 1, b));
