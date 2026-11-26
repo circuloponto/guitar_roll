@@ -57,7 +57,13 @@ export default function SyncEditor({
   const pins = useMemo(() => allPins.filter(p => inSpan(p.time)), [allPins, inSpan]);
 
   const beatTime = useCallback((b) => (clip && m ? clipBeatToTime(clip, b, m) : 0), [clip, m]);
+  const [holdT, setHoldT] = useState(null); // while a sync point is dragged the playhead stays on its sound
+  const timeBeatRef = useRef(null);
   const timeBeat = useCallback((t) => (clip && m ? clipTimeToBeat(clip, t, m) : 0), [clip, m]);
+  timeBeatRef.current = timeBeat;
+  const holdTRef = useRef(null); holdTRef.current = holdT;
+  const playingNow = useRef(playing); playingNow.current = playing;
+  const onSelectBeatRef = useRef(onSelectBeat); onSelectBeatRef.current = onSelectBeat;
   const anchor = tempoMap && tempoMap.active ? tempoMap.anchor : null;
 
   // stems: notes grouped by beat
@@ -315,14 +321,14 @@ export default function SyncEditor({
     // playhead (red) and the time readout
     const curT = Math.max(0, beatTime(headBeat) - tMin), totT = Math.max(0, tMax - tMin);
     const fmt = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
-    const px = tx(beatTime(headBeat));
+    const px = tx(holdT != null && !playing ? holdT : beatTime(headBeat));
     if (px >= 0 && px <= size.w) { g.strokeStyle = '#ff4d4d'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(px + 0.5, 0); g.lineTo(px + 0.5, size.h); g.stroke(); g.lineWidth = 1; }
     g.font = '10px monospace'; g.textBaseline = 'middle';
     const label = `${fmt(curT)} / ${fmt(totT).replace(/\.\d+$/, '')}`;
     const lwid = g.measureText(label).width + 12;
     g.fillStyle = 'rgba(0,0,0,0.7)'; g.fillRect(4, stripBottom - 20, lwid, 15);
     g.fillStyle = fg; g.fillText(label, 10, stripBottom - 12);
-  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd]);
+  }, [size, view, audio, buffer, stems, pins, onsets, hover, headBeat, beatTime, tx, xt, pinTime, loop, loopStart, loopEnd, holdT, playing]);
 
   // hit testing
   const hitAt = (x, y) => {
@@ -415,6 +421,7 @@ export default function SyncEditor({
         curBeat = nb; started = true;
         return;
       }
+      if (!started && !playing) setHoldT(beatTime(headBeat));
       const t = Math.max(0, snapTime(xt(lx), ev.altKey));
       const ok = onSetPin(audio.id, beat, t, started ? 'move' : 'start');
       if (ok === false && !started) { cleanup(); return; } // refused: leave the playhead alone
@@ -423,6 +430,11 @@ export default function SyncEditor({
     const cleanup = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', cleanup);
       document.body.classList.remove('dock-resizing'); dragRef.current = null;
+      if (started && hit.kind !== 'stem') {
+        // the map changed under the playhead: put it back on the same sound
+        const held = holdTRef.current;
+        setTimeout(() => { if (held != null && !playingNow.current) onSelectBeatRef.current(Math.max(0, timeBeatRef.current(held))); setHoldT(null); }, 30);
+      }
       if (!started && !travelled) onSelectBeat(Math.max(0, hit.kind === 'stem' ? hit.beat : timeBeat(hit.time)));
     };
     dragRef.current = true;
