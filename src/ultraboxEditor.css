@@ -114,3 +114,14 @@
 .ubxe .hint { color: var(--mute); font-size: 11px; margin: 2px 0; }
 .ubxe .ctlwrap > .instrument-bar { flex: 1; min-width: 0; }
 .ubxe .barrow .ctlwrap { height: 100%; }
+
+/* A narrow window shows one column that scrolls; a wide one flows the same column into several, so the
+   rows further down (Feedback, Chords, Filter Cut, Reverb ...) are not hidden below the fold. */
+.ub-body { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: scroll; align-items: flex-start; container-type: inline-size; }
+.ub-body::-webkit-scrollbar { width: 10px; }
+.ubxe .selectRow, .ubxe .instrumentCopyPasteRow, .ubxe .oprow, .ubxe .envelope-row, .ubxe .ophead, .ubxe .effectlist, .ubxe .ubxe-title, .ubxe .ubx-custom, .ubxe .hint { break-inside: avoid; }
+@container (min-width: 580px) {
+  .ub-body { overflow-y: hidden; overflow-x: auto; align-items: stretch; }
+  .ubxe.editor-controls { display: block; width: 100%; flex: 1 1 auto; height: 100%; column-width: 258px; column-gap: 20px; column-fill: auto; }
+}
+.ub-head .ub-scope { width: 150px; height: 30px; border-radius: 6px; }

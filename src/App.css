@@ -3569,7 +3569,7 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .dock-body:has(> .panel-tabs[data-tab='tracks']) > .synth-pane { display: none; }
 .synth-pane { flex: 1; min-height: 0; display: flex; }
 /* native instrument editor (Synth tab) */
-.ub-editor { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow: auto; }
+.ub-editor { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px 12px; overflow: hidden; }
 .ub-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
 .ub-picker { min-width: 220px; max-width: 320px; }
 .ub-spacer { flex: 1; }

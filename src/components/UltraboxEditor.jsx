@@ -455,6 +455,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
           onChange={(e) => { setAutoPreview(e.target.checked); try { localStorage.setItem('guitar-roll-ub-autopreview', e.target.checked ? '1' : '0'); } catch { /* ignore */ } }} />
         Hear changes
       </label>
+      <Scope id={id} rev={rev} />
       <span className="ub-spacer" />
       <input className="settings-input ub-name" value={saveName} onChange={(e) => setSaveName(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') saveAs(); }} placeholder="Save a copy as…" />
@@ -893,12 +894,6 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
               <button className="delete-envelope" title="Remove this envelope" aria-label="Remove this envelope" onClick={() => update(() => { inst.envelopes.splice(i, 1); inst.envelopeCount--; })} />
             </div>
           ))}
-        </div>
-        <div className="ub-sidecard">
-          <h4>Output</h4>
-          <Scope id={id} rev={rev} />
-          <p className="ub-note">The rendered note (about half a second, middle C-ish).</p>
-          {fm6 === false && type === 1 && <p className="ub-note">Carrier operators have light sliders; the others modulate them.</p>}
         </div>
       </div>
     </div>

@@ -114,7 +114,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
       if (!par || par.node.dir !== 'col') return;
       const g = computeRects(s.tree, { w: el.clientWidth, h: el.clientHeight }, s.minimized).gutters.find(x => x.path === par.path);
       if (!g) return;
-      const want = Math.min(0.8, e.detail?.share || 0.6);
+      const want = Math.min(0.9, e.detail?.share || 0.6);
       const own = par.isA ? par.node.ratio : 1 - par.node.ratio;
       if (own >= want) return;
       commit(setRatioAt(s, par.path, par.isA ? want : 1 - want));

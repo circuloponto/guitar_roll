@@ -534,7 +534,7 @@ function App() {
   const chooseTracksTab = (t) => {
     setTracksTab(t);
     if (t === 'synth') setSynthOpened(true);
-    window.dispatchEvent(new CustomEvent(t === 'synth' ? 'guitar-roll-tracks-height' : 'guitar-roll-fit-tracks', { detail: { share: 0.62 } }));
+    window.dispatchEvent(new CustomEvent(t === 'synth' ? 'guitar-roll-tracks-height' : 'guitar-roll-fit-tracks', { detail: { share: 0.85 } }));
   };
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   useEffect(() => { applyPianoSize(loadPianoSize()); }, []);
