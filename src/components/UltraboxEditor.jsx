@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import '../ultraboxEditor.css';
 import { getAllInstruments, playNote } from '../utils/audio';
 import { getNoteBuffer } from '../utils/ultrabox';
 import {
@@ -15,52 +16,56 @@ const CLIP_KEY = 'guitar-roll-ub-clipboard';
 const B = () => window.beepbox;
 const names = (list) => list.map((o, i) => [i, typeof o === 'string' ? o : o.name]);
 
-// ---- the UltraBox instrument column: label on the left, control on the right ----
-function Row({ label, children, className = '' }) {
+// ---- the UltraBox instrument column: its markup, classes and sizes, in our colours ----
+function Row({ label, children, className = '', tipExtra = null }) {
   return (
-    <div className={`ubx-row ${className}`}>
-      <span className="ubx-label">{label}</span>
-      <div className="ubx-ctl">{children}</div>
+    <div className={`selectRow ${className}`}>
+      <span className={`tip${tipExtra ? ' tipwithbtn' : ''}`}>{label}{tipExtra}</span>
+      <div className="ctlwrap">{children}</div>
     </div>
   );
 }
-function Slide({ value, min, max, step = 1, onChange, title, carrier }) {
+function Slide({ value, min, max, step = 1, onChange, title, carrier, mid }) {
   return (
-    <input
-      type="range" className={`ubx-slider${carrier ? ' carrier' : ''}`} min={min} max={max} step={step} value={value} title={title ?? String(value)}
-      onChange={(e) => onChange(Number(e.target.value))}
-    />
+    <span className={`rngwrap${mid ? ' midTick' : ''}${carrier ? ' carrier' : ''}`}>
+      <input type="range" min={min} max={max} step={step} value={value} title={title ?? String(value)} onChange={(e) => onChange(Number(e.target.value))} />
+    </span>
   );
 }
 function Sel({ value, options, onChange, groups, className = '' }) {
   return (
-    <select className={`ubx-select ${className}`} value={value} onChange={(e) => onChange(e.target.value)}>
-      {groups
-        ? groups.map(([g, list]) => (<optgroup key={g} label={g}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>))
-        : options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-    </select>
+    <div className={`selectContainer ${className}`}>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {groups
+          ? groups.map(([g, list]) => (<optgroup key={g} label={g}>{list.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</optgroup>))
+          : options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </div>
   );
 }
 function Seg({ options, value, onChange }) {
   return (
-    <div className="ubx-seg">
-      {options.map(([v, l]) => <button key={String(v)} className={value === v ? 'on' : ''} onClick={() => onChange(v)}>{l}</button>)}
+    <div className="instrument-bar">
+      {options.map(([v, l]) => <button key={String(v)} className={value === v ? '' : 'deactivated'} onClick={() => onChange(v)}>{l}</button>)}
     </div>
   );
 }
-function Tick({ label, value, onChange, title }) {
+function Tick({ value, onChange, title }) {
   return (
-    <label className="ubx-tick" title={title}>
+    <div className="tickwrap" title={title}>
       <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
-      <span>{label}</span>
-    </label>
+    </div>
   );
 }
 function Pill({ children, onClick, title, on }) {
-  return <button className={`ubx-pill${on ? ' on' : ''}`} onClick={onClick} title={title}>{children}</button>;
+  return <button className={`plusbtn${on ? ' on' : ''}`} onClick={onClick} title={title}>{children}</button>;
 }
+// header with a centred title and its buttons on the right (Effects, Envelopes)
 function SecHead({ title, children }) {
-  return <div className="ubx-sechead"><span>{title}</span><div>{children}</div></div>;
+  return <div className="selectRow sechead"><span>{title}</span><div className="secbtns">{children}</div></div>;
+}
+function SecBtn({ kind, small, onClick, title }) {
+  return <button className={`b-${kind}${small ? ' b-small' : ''}`} onClick={onClick} title={title} aria-label={title} />;
 }
 
 function Bars({ values, max, onChange, label }) {
@@ -159,12 +164,11 @@ function responsePath(inst, C, kind, W, H) {
 
 // The EQ / note filter graph: the curve, with a draggable dot for every filter point.
 // Drag a dot to move it, double-click empty space to add one, right-click a dot to remove it.
-function FilterGraph({ inst, C, kind, update }) {
+function FilterGraph({ inst, C, kind, update, sel, setSel }) {
   const note = kind === 'note';
   const f = note ? inst.noteFilter : inst.eqFilter;
   const ref = useRef(null);
-  const [sel, setSel] = useState(null);
-  const W = 240, H = 72;
+  const W = 160, H = 26;
   const simple = note ? inst.noteFilterType : inst.eqFilterType;
   let path = '';
   try { path = responsePath(inst, C, kind, W, H); } catch { /* the curve is optional */ }
@@ -200,21 +204,14 @@ function FilterGraph({ inst, C, kind, update }) {
     setSel(f.controlPointCount - 1);
   };
   const colours = ['var(--accent-hi)', 'var(--amber)', 'var(--fg)'];
-  const cur = sel != null && !simple && sel < f.controlPointCount ? f.controlPoints[sel] : null;
   return (
-    <div className="ubx-graphwrap">
-      <svg ref={ref} className="ubx-graph" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+    <div className="filterEditor">
+      <svg ref={ref} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         onPointerDown={down} onDoubleClick={dbl} onContextMenu={(e) => e.preventDefault()}>
         <line x1="0" x2={W} y1={H / 3} y2={H / 3} className="ubx-graph-zero" />
         <path d={path} className="ubx-graph-line" />
-        {points.map(({ i, p }) => { const q = px(p); return <circle key={i} cx={q.x} cy={q.y} r={sel === i ? 5 : 4} fill={colours[p.type]} stroke="#000" strokeWidth="1" vectorEffect="non-scaling-stroke" />; })}
+        {points.map(({ i, p }) => { const q = px(p); return <circle key={i} cx={q.x} cy={q.y} r={sel === i ? 4 : 3} fill={colours[p.type]} stroke="#000" strokeWidth="1" vectorEffect="non-scaling-stroke" />; })}
       </svg>
-      {cur && (
-        <div className="ubx-pointbar">
-          <Sel value={cur.type} options={FILTER_TYPES} onChange={(v) => update(() => { cur.type = Number(v); })} />
-          <Pill onClick={() => { update(() => { f.controlPoints.splice(sel, 1); f.controlPointCount--; }); setSel(null); }} title="Remove this point">×</Pill>
-        </div>
-      )}
     </div>
   );
 }
@@ -222,7 +219,7 @@ function FilterGraph({ inst, C, kind, update }) {
 // the fade in / fade out shape: drag the two markers
 function FadeEditor({ inst, C, update }) {
   const ref = useRef(null);
-  const W = 240, H = 40;
+  const W = 160, H = 26;
   const nOut = C.fadeOutTicks ? C.fadeOutTicks.length : 11;
   const inX = (inst.fadeIn / (C.fadeInRange - 1)) * W * 0.4;
   const outX = W * 0.5 + (inst.fadeOut / (nOut - 1)) * W * 0.5;
@@ -240,7 +237,7 @@ function FadeEditor({ inst, C, update }) {
   };
   const ticks = C.fadeOutTicks ? C.fadeOutTicks[inst.fadeOut] : inst.fadeOut;
   return (
-    <svg ref={ref} className="ubx-graph ubx-fade" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+    <svg ref={ref} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
       <path d={`M0,${H - 3} L${inX},4 L${outX},4 L${W - 4},${H - 3} Z`} className="ubx-fade-fill" />
       <line x1={noteEnd} x2={noteEnd} y1="0" y2={H} className="ubx-graph-zero" strokeDasharray="3 3" />
       <rect x={inX - 3} y="0" width="6" height={H} className="ubx-handle" onPointerDown={drag('in')}>
@@ -447,6 +444,8 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
   const [openPan, setOpenPan] = useState(false);
   const [openEnv, setOpenEnv] = useState(false);
   const [openUnison, setOpenUnison] = useState(false);
+  const [eqSel, setEqSel] = useState(null);
+  const [noteSel, setNoteSel] = useState(null);
 
   const header = (
     <div className="ub-head">
@@ -471,7 +470,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
     return (
       <div className="ub-editor" onKeyDown={(e) => e.stopPropagation()}>
         {header}
-        <div className="ubx">
+        <div className="ubxe editor-controls">
           <Row label="Type:">
             <Sel
               value={id || ''}
@@ -531,10 +530,11 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
     <div className="ub-editor" onKeyDown={(e) => e.stopPropagation()}>
       {header}
       <div className="ub-body">
-        <div className="ubx">
-          <div className="ubx-copypaste">
-            <button className="ubx-bigbtn" onClick={copyInstrument}>{clipMsg === 'Copied' ? 'Copied' : 'Copy'}</button>
-            <button className="ubx-bigbtn" onClick={pasteInstrument}>{clipMsg === 'Pasted' || clipMsg === 'Nothing to paste' ? clipMsg : 'Paste'}</button>
+        <div className="ubxe editor-controls">
+          <div className="ubxe-title">Instrument Settings</div>
+          <div className="instrumentCopyPasteRow">
+            <button className="copy-instrument" onClick={copyInstrument}>{clipMsg === 'Copied' ? 'Copied' : 'Copy'}</button>
+            <button className="paste-instrument" onClick={pasteInstrument}>{clipMsg === 'Pasted' || clipMsg === 'Nothing to paste' ? clipMsg : 'Paste'}</button>
           </div>
 
           <Row label="Type:">
@@ -542,22 +542,30 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
               onChange={(v) => { if (v.startsWith('type:')) setType(Number(v.slice(5))); else if (v) onInstrumentChange(v); }} />
           </Row>
 
-          <Row label="Volume:" className="ubx-numrow">
-            <input className="ubx-num" type="number" min={-C.volumeRange / 2} max={C.volumeRange / 2} value={inst.volume}
-              onChange={(e) => { const v = Math.max(-C.volumeRange / 2, Math.min(C.volumeRange / 2, Math.round(Number(e.target.value) || 0))); update(() => { inst.volume = v; }); }} />
-            <Slide min={-C.volumeRange / 2} max={C.volumeRange / 2} value={inst.volume} onChange={set('volume')} title={`Volume ${inst.volume}`} />
-          </Row>
-          <Row label="Pan:" className="ubx-numrow">
-            <input className="ubx-num" type="number" min={0} max={C.panMax} value={inst.pan}
-              onChange={(e) => { const v = Math.max(0, Math.min(C.panMax, Math.round(Number(e.target.value) || 0))); update(() => { inst.pan = v; inst.effects |= effBit('panning'); }); }} />
-            <Pill onClick={() => setOpenPan(o => !o)} title="Pan delay">▾</Pill>
-            <Slide min={0} max={C.panMax} value={inst.pan} onChange={(v) => update(() => { inst.pan = v; inst.effects |= effBit('panning'); })} title={panOn ? `Pan ${inst.pan}` : 'Move to turn panning on'} />
-          </Row>
+          <div className="selectRow">
+            <div className="numcell">
+              <span className="tip">Volume:</span>
+              <input type="number" min={-C.volumeRange / 2} max={C.volumeRange / 2} step={1} value={inst.volume}
+                onChange={(e) => { const v = Math.max(-C.volumeRange / 2, Math.min(C.volumeRange / 2, Math.round(Number(e.target.value) || 0))); update(() => { inst.volume = v; }); }} />
+            </div>
+            <Slide mid min={-C.volumeRange / 2} max={C.volumeRange / 2} value={inst.volume} onChange={set('volume')} title={`Volume ${inst.volume}`} />
+          </div>
+          <div className="selectRow">
+            <div className="numcell" style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+              <div>
+                <span className="tip">Pan:</span>
+                <input type="number" min={0} max={C.panMax} step={1} value={inst.pan}
+                  onChange={(e) => { const v = Math.max(0, Math.min(C.panMax, Math.round(Number(e.target.value) || 0))); update(() => { inst.pan = v; inst.effects |= effBit('panning'); }); }} />
+              </div>
+              <button className="pan-toggle" onClick={() => setOpenPan(o => !o)} title="Pan delay">▾</button>
+            </div>
+            <Slide mid min={0} max={C.panMax} value={inst.pan} onChange={(v) => update(() => { inst.pan = v; inst.effects |= effBit('panning'); })} title={panOn ? `Pan ${inst.pan}` : 'Move to turn panning on'} />
+          </div>
           {openPan && (
             <Row label="Pan Delay:"><Slide min={0} max={20} value={inst.panDelay} onChange={(v) => update(() => { inst.panDelay = v; inst.effects |= effBit('panning'); })} /></Row>
           )}
 
-          <Row label="EQ Filt.Type:">
+          <Row label="EQ Filt.Type:" className="barrow">
             <Seg value={simpleEq ? 'simple' : 'advanced'} options={[['simple', 'simple'], ['advanced', 'advanced']]} onChange={(v) => update(() => { inst.eqFilterType = v === 'simple'; })} />
           </Row>
           {simpleEq ? (
@@ -566,13 +574,26 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
               <Row label="Filter Peak:"><Slide min={0} max={C.filterSimplePeakRange - 1} value={inst.eqFilterSimplePeak} onChange={set('eqFilterSimplePeak')} /></Row>
             </>
           ) : (
-            <Row label="EQ Filt:" className="ubx-graphrow">
-              <Pill title="Add a filter point" onClick={() => { if (inst.eqFilter.controlPointCount < C.filterMaxPoints) update(() => { inst.eqFilter.addPoint(0, Math.round(C.filterFreqRange / 2), C.filterGainCenter); }); }}>+</Pill>
-              <FilterGraph inst={inst} C={C} kind="eq" update={update} />
-            </Row>
+            <>
+              <div className="selectRow">
+                <span className="tip tipwithbtn">EQ Filt:
+                  <button className="plusbtn" title="Add a filter point" onClick={() => { if (inst.eqFilter.controlPointCount < C.filterMaxPoints) update(() => { inst.eqFilter.addPoint(0, Math.round(C.filterFreqRange / 2), C.filterGainCenter); }); }}>+</button>
+                </span>
+                <FilterGraph inst={inst} C={C} kind="eq" update={update} sel={eqSel} setSel={setEqSel} />
+              </div>
+              {eqSel != null && eqSel < inst.eqFilter.controlPointCount && (
+                <Row label="Point:">
+                  <Sel value={inst.eqFilter.controlPoints[eqSel].type} options={FILTER_TYPES} onChange={(v) => update(() => { inst.eqFilter.controlPoints[eqSel].type = Number(v); })} />
+                  <button className="plusbtn" title="Remove this point" onClick={() => { update(() => { inst.eqFilter.controlPoints.splice(eqSel, 1); inst.eqFilter.controlPointCount--; }); setEqSel(null); }}>×</button>
+                </Row>
+              )}
+            </>
           )}
 
-          <Row label="Fade:" className="ubx-graphrow"><FadeEditor inst={inst} C={C} update={update} /></Row>
+          <div className="selectRow">
+            <span className="tip">Fade:</span>
+            <div className="fadeInOut"><FadeEditor inst={inst} C={C} update={update} /></div>
+          </div>
 
           {/* what this instrument type is made of */}
           {type === 0 && (
@@ -583,14 +604,14 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
                 const len = raw && raw.samples ? raw.samples.length : 0;
                 return (
                   <>
-                    <Row label="Loop Controls:"><Tick label="" value={inst.isUsingAdvancedLoopControls} onChange={(v) => update(() => { inst.isUsingAdvancedLoopControls = v; })} /></Row>
+                    <Row label="Loop Controls:"><Tick value={inst.isUsingAdvancedLoopControls} onChange={(v) => update(() => { inst.isUsingAdvancedLoopControls = v; })} /></Row>
                     {inst.isUsingAdvancedLoopControls && len > 0 && (
                       <>
                         <Row label="Loop Mode:"><Sel value={inst.chipWaveLoopMode} options={[[0, 'loop'], [1, 'ping-pong'], [2, 'play once'], [3, 'play loop once']]} onChange={setN('chipWaveLoopMode')} /></Row>
                         <Row label="Loop Start:"><Slide min={0} max={len} value={Math.min(inst.chipWaveLoopStart, len)} onChange={set('chipWaveLoopStart')} /></Row>
                         <Row label="Loop End:"><Slide min={0} max={len} value={Math.min(inst.chipWaveLoopEnd, len)} onChange={set('chipWaveLoopEnd')} /></Row>
                         <Row label="Offset:"><Slide min={0} max={len} value={Math.min(inst.chipWaveStartOffset, len)} onChange={set('chipWaveStartOffset')} /></Row>
-                        <Row label="Backwards:"><Tick label="" value={inst.chipWavePlayBackwards} onChange={set('chipWavePlayBackwards')} /></Row>
+                        <Row label="Backwards:"><Tick value={inst.chipWavePlayBackwards} onChange={set('chipWavePlayBackwards')} /></Row>
                       </>
                     )}
                   </>
@@ -600,18 +621,18 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
           )}
           {type === 2 && <Row label="Noise:"><Sel value={inst.chipNoise} options={names(C.chipNoises)} onChange={setN('chipNoise')} /></Row>}
           {type === 9 && (
-            <Row label="Wave:" className="ubx-graphrow">
+            <Row label="Wave:" className="graphtall">
               <WaveDraw values={Array.from(inst.customChipWave)} onChange={(i, v) => update(() => { inst.customChipWave[i] = v; })} />
             </Row>
           )}
           {type === 3 && (
-            <Row label="Spectrum:" className="ubx-graphrow">
+            <Row label="Spectrum:" className="graphtall">
               <Bars values={Array.from(inst.spectrumWave.spectrum).slice(0, C.spectrumControlPoints)} max={C.spectrumMax}
                 onChange={(i, v) => update(() => { inst.spectrumWave.spectrum[i] = v; })} />
             </Row>
           )}
           {(type === 5 || type === 7) && (
-            <Row label="Harmonics:" className="ubx-graphrow">
+            <Row label="Harmonics:" className="graphtall">
               <Bars values={Array.from(inst.harmonicsWave.harmonics).slice(0, C.harmonicsControlPoints)} max={C.harmonicsMax}
                 onChange={(i, v) => update(() => { inst.harmonicsWave.harmonics[i] = v; })} />
             </Row>
@@ -640,9 +661,9 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
             return (
               <>
                 <Row label="Drum:">
-                  <div className="ubx-drums">{Array.from({ length: 12 }, (_, i) => <Pill key={i} on={i === dr} onClick={() => setDrum(i)}>{i + 1}</Pill>)}</div>
+                  <div className="drumsrow">{Array.from({ length: 12 }, (_, i) => <button key={i} className={i === dr ? 'on' : ''} onClick={() => setDrum(i)}>{i + 1}</button>)}</div>
                 </Row>
-                <Row label="Spectrum:" className="ubx-graphrow">
+                <Row label="Spectrum:" className="graphtall">
                   <Bars values={Array.from(inst.drumsetSpectrumWaves[dr].spectrum).slice(0, C.spectrumControlPoints)} max={C.spectrumMax}
                     onChange={(i, v) => update(() => { inst.drumsetSpectrumWaves[dr].spectrum[i] = v; })} />
                 </Row>
@@ -650,7 +671,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
               </>
             );
           })()}
-          {[0, 2, 9].includes(type) && <Row label="Aliasing:"><Tick label="" value={inst.aliases} onChange={set('aliases')} /></Row>}
+          {[0, 2, 9].includes(type) && <Row label="Aliasing:"><Tick value={inst.aliases} onChange={set('aliases')} /></Row>}
           {showUnison && (
             <>
               <Row label="Unison:">
@@ -676,20 +697,20 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
                   ? <Sel value={inst.algorithm6Op} options={names(C.algorithms6Op)} onChange={setN('algorithm6Op')} />
                   : <Sel value={inst.algorithm} options={names(C.algorithms)} onChange={setN('algorithm')} />}
               </Row>
-              <div className="ubx-optable">
-                <div className="ubx-ophead"><span>Freq:</span><span>Volume:</span></div>
-                {Array.from({ length: nOps }, (_, i) => {
-                  const op = inst.operators[i];
-                  return (
-                    <div key={i} className="ubx-op">
-                      <span className="ubx-opn">{i + 1}</span>
-                      <Sel value={op.frequency} options={names(C.operatorFrequencies)} onChange={(v) => update(() => { op.frequency = Number(v); })} className="ubx-opfreq" />
-                      {fm6 && <Sel value={op.waveform} options={names(C.operatorWaves)} onChange={(v) => update(() => { op.waveform = Number(v); })} className="ubx-opwave" />}
-                      <Slide min={0} max={C.operatorAmplitudeMax} value={op.amplitude} carrier={i < carriers} onChange={(v) => update(() => { op.amplitude = v; })} title={`Volume ${op.amplitude}`} />
+              <div className="ophead"><span>Freq:</span><span>Volume:</span></div>
+              {Array.from({ length: nOps }, (_, i) => {
+                const op = inst.operators[i];
+                return (
+                  <div key={i} className="oprow">
+                    <div className="opmeta">
+                      <span className="opn">{i + 1}</span>
+                      <Sel value={op.frequency} options={names(C.operatorFrequencies)} onChange={(v) => update(() => { op.frequency = Number(v); })} />
+                      {fm6 && <Sel className="opwave" value={op.waveform} options={names(C.operatorWaves)} onChange={(v) => update(() => { op.waveform = Number(v); })} />}
                     </div>
-                  );
-                })}
-              </div>
+                    <Slide min={0} max={C.operatorAmplitudeMax} value={op.amplitude} carrier={i < carriers} onChange={(v) => update(() => { op.amplitude = v; })} title={`Volume ${op.amplitude}`} />
+                  </div>
+                );
+              })}
               <Row label="Feedback:">
                 {fm6
                   ? <Sel value={inst.feedbackType6Op} options={names(C.feedbacks6Op)} onChange={setN('feedbackType6Op')} />
@@ -754,20 +775,20 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
 
           {/* effects: the header opens a list; the ones that are on show their controls below */}
           <SecHead title="Effects">
-            <Pill onClick={() => setOpenEffects(o => !o)} title="Choose effects" on={openEffects}>▾</Pill>
+            <SecBtn kind="menu" onClick={() => setOpenEffects(o => !o)} title="Choose effects" />
           </SecHead>
           {openEffects && (
-            <div className="ubx-effectlist">
+            <div className="effectlist">
               {C.effectOrder.map((i) => {
                 const n = C.effectNames[i];
-                return <Tick key={n} label={n} value={effectOn(n)} onChange={() => toggleEffect(n)} />;
+                return <label key={n}><input type="checkbox" checked={effectOn(n)} onChange={() => toggleEffect(n)} />{n}</label>;
               })}
             </div>
           )}
           {effectOn('transition type') && (
             <>
               <Row label="Transition:"><Sel value={inst.transition} options={names(C.transitions)} onChange={setN('transition')} /></Row>
-              <Row label="Clickless:"><Tick label="" value={inst.clicklessTransition} onChange={set('clicklessTransition')} title="Avoid clicks when a note starts" /></Row>
+              <Row label="Clickless:"><Tick value={inst.clicklessTransition} onChange={set('clicklessTransition')} title="Avoid clicks when a note starts" /></Row>
             </>
           )}
           {effectOn('chord type') && (
@@ -776,7 +797,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
               {inst.chord === 2 && (
                 <>
                   <Row label="Arp Speed:"><Slide min={0} max={50} value={inst.arpeggioSpeed} onChange={set('arpeggioSpeed')} /></Row>
-                  <Row label="Fast 2-note:"><Tick label="" value={inst.fastTwoNoteArp} onChange={set('fastTwoNoteArp')} /></Row>
+                  <Row label="Fast 2-note:"><Tick value={inst.fastTwoNoteArp} onChange={set('fastTwoNoteArp')} /></Row>
                 </>
               )}
             </>
@@ -805,7 +826,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
           )}
           {effectOn('note filter') && (
             <>
-              <Row label="Note Filt.Type:">
+              <Row label="Note Filt.Type:" className="barrow">
                 <Seg value={simpleNote ? 'simple' : 'advanced'} options={[['simple', 'simple'], ['advanced', 'advanced']]} onChange={(v) => update(() => { inst.noteFilterType = v === 'simple'; })} />
               </Row>
               {simpleNote ? (
@@ -814,10 +835,20 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
                   <Row label="Filter Peak:"><Slide min={0} max={C.filterSimplePeakRange - 1} value={inst.noteFilterSimplePeak} onChange={set('noteFilterSimplePeak')} /></Row>
                 </>
               ) : (
-                <Row label="Note Filt:" className="ubx-graphrow">
-                  <Pill title="Add a filter point" onClick={() => { if (inst.noteFilter.controlPointCount < C.filterMaxPoints) update(() => { inst.noteFilter.addPoint(0, Math.round(C.filterFreqRange / 2), C.filterGainCenter); }); }}>+</Pill>
-                  <FilterGraph inst={inst} C={C} kind="note" update={update} />
-                </Row>
+                <>
+                  <div className="selectRow">
+                    <span className="tip tipwithbtn">Note Filt:
+                      <button className="plusbtn" title="Add a filter point" onClick={() => { if (inst.noteFilter.controlPointCount < C.filterMaxPoints) update(() => { inst.noteFilter.addPoint(0, Math.round(C.filterFreqRange / 2), C.filterGainCenter); }); }}>+</button>
+                    </span>
+                    <FilterGraph inst={inst} C={C} kind="note" update={update} sel={noteSel} setSel={setNoteSel} />
+                  </div>
+                  {noteSel != null && noteSel < inst.noteFilter.controlPointCount && (
+                    <Row label="Point:">
+                      <Sel value={inst.noteFilter.controlPoints[noteSel].type} options={FILTER_TYPES} onChange={(v) => update(() => { inst.noteFilter.controlPoints[noteSel].type = Number(v); })} />
+                      <button className="plusbtn" title="Remove this point" onClick={() => { update(() => { inst.noteFilter.controlPoints.splice(noteSel, 1); inst.noteFilter.controlPointCount--; }); setNoteSel(null); }}>×</button>
+                    </Row>
+                  )}
+                </>
               )}
             </>
           )}
@@ -831,24 +862,24 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
           {effectOn('reverb') && <Row label="Reverb:"><Slide min={0} max={C.reverbRange - 1} value={inst.reverb} onChange={set('reverb')} /></Row>}
 
           <SecHead title="Envelopes">
-            <Pill onClick={() => setOpenEnv(o => !o)} title="Envelope speed and stepping" on={openEnv}>▾</Pill>
-            <Pill title="Add an envelope" onClick={() => {
+            <SecBtn kind="menu" small onClick={() => setOpenEnv(o => !o)} title="Envelope speed and stepping" />
+            <SecBtn kind="add" title="Add an envelope" onClick={() => {
               if (inst.envelopeCount >= C.maxEnvelopeCount) return;
               update(() => {
                 const vol = C.instrumentAutomationTargets.findIndex(t => t.name === 'noteVolume');
                 const punch = C.envelopes.findIndex(x => x.name === 'punch');
                 inst.addEnvelope(vol, 0, punch < 0 ? 1 : punch);
               });
-            }}>+</Pill>
+            }} />
           </SecHead>
           {openEnv && (
             <>
               <Row label="Env Speed:"><Slide min={0} max={50} value={inst.envelopeSpeed} onChange={set('envelopeSpeed')} /></Row>
-              <Row label="Discrete:"><Tick label="" value={inst.discreteEnvelope} onChange={set('discreteEnvelope')} title="Step the envelopes instead of gliding" /></Row>
+              <Row label="Discrete:"><Tick value={inst.discreteEnvelope} onChange={set('discreteEnvelope')} title="Step the envelopes instead of gliding" /></Row>
             </>
           )}
           {envs.map((e, i) => (
-            <div key={i} className="ubx-env">
+            <div key={i} className="envelope-row">
               <Sel
                 value={`${e.target}:${e.index}`}
                 options={(() => {
@@ -859,7 +890,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
                 onChange={(v) => { const [t, k] = v.split(':').map(Number); update(() => { e.target = t; e.index = k; }); }}
               />
               <Sel value={e.envelope} options={names(C.envelopes)} onChange={(v) => update(() => { e.envelope = Number(v); })} />
-              <Pill title="Remove this envelope" onClick={() => update(() => { inst.envelopes.splice(i, 1); inst.envelopeCount--; })}>×</Pill>
+              <button className="delete-envelope" title="Remove this envelope" aria-label="Remove this envelope" onClick={() => update(() => { inst.envelopes.splice(i, 1); inst.envelopeCount--; })} />
             </div>
           ))}
         </div>

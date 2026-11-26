@@ -3610,9 +3610,6 @@ body.altspace-held .timeline-container * { cursor: grab !important; }
 .ub-chip.on { background: var(--accent-soft); color: var(--accent-hi); border-color: var(--accent); }
 .ub-env { display: grid; grid-template-columns: 1fr 1fr 22px; gap: 6px; align-items: center; }
 .ub-note { color: var(--mute); font-size: 11px; line-height: 1.4; margin: 2px 0; }
-.ub-editor select { background: var(--off); color: var(--fg); border: 1px solid var(--hairline); border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 6px; min-width: 0; width: 100%; height: 26px; }
-.ub-editor select:focus { outline: none; border-color: var(--accent); }
-.ub-editor .ub-picker { width: auto; height: 32px; font-size: 13px; }
 .ub-op select { width: 100%; }
 .ub-op { grid-template-columns: 16px 70px 1fr; }
 .ub-op:has(select + select) { grid-template-columns: 16px 70px 90px 1fr; }
