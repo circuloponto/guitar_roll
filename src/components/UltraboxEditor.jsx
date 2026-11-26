@@ -284,6 +284,15 @@ function Scope({ id, rev }) {
   return <canvas ref={ref} className="ub-scope" width={300} height={70} />;
 }
 
+// The synth editor keeps typing keys to itself, but Space still plays/stops from sliders, buttons and lists.
+const keepKeys = (e) => {
+  const t = e.target;
+  const typing = t.tagName === 'TEXTAREA' || t.isContentEditable
+    || (t.tagName === 'INPUT' && /^(text|number|search|email|url|password|tel)$/.test(t.type || 'text'));
+  if (e.code === 'Space' && !typing && !e.altKey && !e.ctrlKey && !e.metaKey) return;
+  e.stopPropagation();
+};
+
 export default function UltraboxEditor({ currentInstrument, onInstrumentChange }) {
   const [ready, setReady] = useState(false);
   const [rev, setRev] = useState(0);
@@ -458,7 +467,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
 
   if (!ready || !inst || !C) {
     return (
-      <div className="ub-editor" onKeyDown={(e) => e.stopPropagation()}>
+      <div className="ub-editor" onKeyDown={keepKeys}>
         {header}
         <div className="ubxe editor-controls">
           <Row label="Type:">
@@ -517,7 +526,7 @@ export default function UltraboxEditor({ currentInstrument, onInstrumentChange }
   const typeValue = isUltrabox(id) ? id : '';
 
   return (
-    <div className="ub-editor" onKeyDown={(e) => e.stopPropagation()}>
+    <div className="ub-editor" onKeyDown={keepKeys}>
       {header}
       <div className="ub-body">
         <div className="ubxe editor-controls">

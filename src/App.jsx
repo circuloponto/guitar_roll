@@ -1324,7 +1324,26 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      const tg = e.target;
+      if (tg.tagName === 'INPUT') {
+        // Typing fields keep their keys. Sliders, checkboxes and the like do not need Space, so it plays/stops
+        // from there too (and the control is let go so Space does not also toggle it).
+        const textual = /^(text|number|search|email|url|password|tel|date|time)$/.test(tg.type || 'text');
+        if (!textual && e.code === 'Space' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          e.preventDefault();
+          tg.blur?.();
+          if (!e.repeat) handlePlayRef.current();
+        }
+        return;
+      }
+      if (tg.tagName === 'TEXTAREA' || tg.isContentEditable) return;
+      // Space plays/stops whichever panel has the pointer's attention, including a focused button or list
+      if ((tg.tagName === 'BUTTON' || tg.tagName === 'SELECT') && e.code === 'Space' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        tg.blur?.();
+        if (!e.repeat) handlePlayRef.current();
+        return;
+      }
       const hk = hotkeysRef.current;
 
       // Position selection mode: number keys accumulate position value
