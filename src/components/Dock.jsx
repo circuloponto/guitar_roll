@@ -3,7 +3,7 @@ import { Minus, Square, ExternalLink, LayoutPanelLeft, X } from 'lucide-react';
 import { listLayoutPresets, applyLayoutBundle, getDefaultLayout } from '../utils/layoutPresets';
 import {
   PANEL_TITLES, CLOSABLE, closePanel, openPanel, STRIP_PX, FLOAT_MIN_W, FLOAT_MIN_H,
-  loadState, saveState, clearSavedState, computeRects, setRatioAt, findParent, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
+  loadState, saveState, clearSavedState, computeRects, setRatioAt, findParent, colAncestor, dropTarget, isEmptyId, shrinkFromEdge, pruneEmpty,
   toggleMinimized, undock, dockBack, raiseFloating, setFloatRect, canSwapShared, swapSharedLine, sharedKind, freeAll, tiledState,
 } from '../utils/dockLayout';
 
@@ -61,24 +61,75 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
 
   const commit = useCallback((t) => { setSt(t); saveState(t); }, []);
 
+  // After the Tracks window opens or is restored, let it render, then size it to its contents (other windows shrink).
+  const fitTracksSoon = () => setTimeout(() => window.dispatchEvent(new CustomEvent('guitar-roll-fit-tracks', { detail: { push: true } })), 80);
+
   // The Tracks panel grows or shrinks to fit its content when the track list is expanded/collapsed.
   useEffect(() => {
-    const fit = () => requestAnimationFrame(() => {
+    const fit = (ev) => requestAnimationFrame(() => {
       const el = containerRef.current;
       const body = el?.querySelector('.dock-panel-tracks .dock-body');
       const s = stRef.current;
-      if (!el || !body || s.floating.tracks || s.minimized.tracks) return;
+      if (!el || !body || s.minimized.tracks) return;
+      if (s.floating.tracks) {
+        // Floating (free layout): the window is sized to its tracks. Windows
+        // sitting under it (or overlapped by it) are pushed down / shortened, keeping their bottom edges.
+        const old = s.floating.tracks;
+        const nat = [...body.children].reduce((sum, c) => sum + c.getBoundingClientRect().height, 0);
+        const base = old;
+        const H = Math.min(0.85 - base.y, (nat + 26) / el.clientHeight);
+        if (!ev?.detail?.push && Math.abs(H - old.h) < 0.004) return;
+        const oldBottom = old.y + old.h, B = base.y + H;
+        const floating = { ...s.floating, tracks: { ...base, h: H } };
+        const same = (p, q) => ['x', 'y', 'w', 'h'].every((f) => Math.abs(p[f] - q[f]) < 0.004);
+        const stash = { ...(s.pushed || {}) };
+        Object.keys(floating).forEach((k) => {
+          if (k === 'tracks') return;
+          let r = floating[k];
+          if (stash[k] && same(stash[k].pushed, r)) r = stash[k].orig; // still where we left it: work from its original place
+          else delete stash[k]; // the user moved it since
+          if (r.x >= base.x + base.w - 0.005 || r.x + r.w <= base.x + 0.005) { delete stash[k]; return; } // beside it, not under it
+          const under = stash[k] ? r.y < B : r.y >= oldBottom - 0.012 && r.y < B; // only what sits below it; same-level windows stay
+          if (!under) { if (stash[k]) { floating[k] = r; delete stash[k]; } return; } // back to its original place
+          // Make room smartly: a window that reaches past the Tracks window's side keeps its height and gives up
+          // width (it slides beside it); one that sits under it entirely is pushed down and shortened instead.
+          const GAP = 0.007, tr = base.x + base.w;
+          const right = r.x + r.w;
+          const roomR = right - (tr + GAP), roomL = (base.x - GAP) - r.x;
+          const minW = Math.max(0.2, r.w * 0.4);
+          let pushed;
+          if (roomR >= minW && roomR >= roomL) pushed = { ...r, x: tr + GAP, w: roomR };
+          else if (roomL >= minW) pushed = { ...r, w: roomL };
+          else {
+            const bottom = Math.min(r.y + r.h, 1);
+            pushed = { ...r, y: B, h: Math.min(Math.max(bottom - B, 0.12), 1 - B) };
+          }
+          stash[k] = { orig: stash[k]?.orig || r, pushed };
+          floating[k] = pushed;
+        });
+        commit({ ...s, floating, pushed: stash });
+        return;
+      }
       // The content's own height (scrollHeight can't go below the panel's current height, so it
       // would never let the panel shrink after collapsing).
       const natural = [...body.children].reduce((sum, c) => sum + c.getBoundingClientRect().height, 0);
       const need = natural + 16 /* handle */ + 10 /* border + padding */;
-      const par = findParent(s.tree, 'tracks');
+      const par = colAncestor(s.tree, 'tracks');
       if (!par || par.node.dir !== 'col') return;
       const g = computeRects(s.tree, { w: el.clientWidth, h: el.clientHeight }, s.minimized).gutters.find(x => x.path === par.path);
       if (!g) return;
-      const share = Math.max(0.06, Math.min(0.6, need / (g.rect.h * el.clientHeight)));
-      const t = par.isA ? share : 1 - share;
-      if (Math.abs(t - par.node.ratio) > 0.004) commit(setRatioAt(s, par.path, t));
+      const share = Math.max(0.06, Math.min(0.8, need / (g.rect.h * el.clientHeight)));
+      let t = par.isA ? share : 1 - share;
+      // remember the ratio the user had, and go back to it when the tracks shrink again (if it still fits them)
+      const ro = s.ratioOrig;
+      const mine = ro && ro.path === par.path && Math.abs(ro.set - par.node.ratio) < 0.004;
+      const orig = mine ? ro.orig : par.node.ratio;
+      const origShare = par.isA ? orig : 1 - orig;
+      let next = null;
+      if (origShare >= share - 0.002) t = orig; // the tracks fit in the original size: keep it
+      else next = { path: par.path, orig, set: t };
+      if (Math.abs(t - par.node.ratio) > 0.004) commit({ ...setRatioAt(s, par.path, t), ratioOrig: next || undefined });
+      else if (!next && s.ratioOrig) commit({ ...s, ratioOrig: undefined });
     });
     window.addEventListener('guitar-roll-fit-tracks', fit);
     return () => window.removeEventListener('guitar-roll-fit-tracks', fit);
@@ -92,7 +143,9 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
       if (!CLOSABLE.includes(id)) return;
       const el = containerRef.current;
       const size = { w: el?.clientWidth || 1400, h: el?.clientHeight || 900 };
-      commit(s.closed[id] ? openPanel(s, id, panelsRef.current, size) : closePanel(s, id));
+      const opening = !!s.closed[id];
+      commit(opening ? openPanel(s, id, panelsRef.current, size) : closePanel(s, id));
+      if (opening && id === 'tracks') fitTracksSoon();
     };
     window.addEventListener('guitar-roll-panel-toggle', on);
     return () => window.removeEventListener('guitar-roll-panel-toggle', on);
@@ -113,7 +166,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
       const el = containerRef.current;
       const s = stRef.current;
       if (!el || s.floating.tracks || s.minimized.tracks) return;
-      const par = findParent(s.tree, 'tracks');
+      const par = colAncestor(s.tree, 'tracks');
       if (!par || par.node.dir !== 'col') return;
       const g = computeRects(s.tree, { w: el.clientWidth, h: el.clientHeight }, s.minimized).gutters.find(x => x.path === par.path);
       if (!g) return;
@@ -383,7 +436,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
             if (vertical) { style.width = STRIP_PX; } else { style.height = STRIP_PX; }
           }
         }
-        const onDouble = (e) => { if (!e.target.closest('button')) commit(toggleMinimized(stRef.current, id)); };
+        const onDouble = (e) => { if (!e.target.closest('button')) { commit(toggleMinimized(stRef.current, id)); if (minimized && id === 'tracks') fitTracksSoon(); } };
         return (
           <div
             key={id}
@@ -394,7 +447,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
               // First click on a window that is not the focused one only focuses it: no note is placed, no
               // button pressed. (The title bar and edges work straight away, so windows can be moved.)
               const grab = e.target.closest?.('.dock-handle, .dock-edge');
-              const swallow = activeRef.current != null && activeRef.current !== id && !grab && e.button === 0;
+              const swallow = id === 'timeline' && activeRef.current != null && activeRef.current !== id && !grab && e.button === 0;
               swallowRef.current = swallow;
               activeRef.current = id;
               if (swallow) { e.preventDefault(); e.stopPropagation(); }
@@ -443,7 +496,7 @@ export default function Dock({ menu, tracks, fretboard, timeline, sync, arrangem
                   )}
                   <button
                     className="dock-btn"
-                    onClick={() => commit(toggleMinimized(stRef.current, id))}
+                    onClick={() => { commit(toggleMinimized(stRef.current, id)); if (minimized && id === 'tracks') fitTracksSoon(); }}
                     title={minimized ? 'Restore' : 'Minimise'}
                     aria-label={minimized ? 'Restore' : 'Minimise'}
                   >

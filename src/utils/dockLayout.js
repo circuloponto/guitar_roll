@@ -34,16 +34,17 @@ export function defaultState() {
     v: 5,
     tree: null,
     minimized: {},
-    closed: { arrangement: true, templates: true },
+    closed: { arrangement: true },
     floating: {
-      menu: { x: 0.30786401098901095, y: 0, w: 0.5026351686507935, h: 0.15162736656021894 },
-      tracks: { x: 0, y: 0, w: 0.5718983707264957, h: 0.15162736656021894 },
-      fretboard: { x: 0, y: 0.12603358804744522, w: 0.20012019230769235, h: 0.8739664119525548 },
-      timeline: { x: 0.2734351152319904, y: 0.4059755645529197, w: 0.5370640644078142, h: 0.6214109546076643 },
-      sync: { x: 0.25641025641025644, y: 0.16425496122262773, w: 0.5540889232295481, h: 0.2566719890510949 },
-      synth: { x: 0.8183116796398047, y: 0, w: 0.18168832036019536, h: 0.7621592723540146 },
+      menu: { x: 0.30786401098901095, y: 0, w: 0.5026351686507935, h: 0.10073260073260074 },
+      tracks: { x: 0, y: 0, w: 0.301529929368471, h: 0.056776556776556776 },
+      fretboard: { x: 0, y: 0.06675323374542125, w: 0.20012019230769235, h: 0.9332467662545788 },
+      timeline: { x: 0.20527599715099717, y: 0.43201365406757175, w: 0.6052231824888076, h: 0.5953728650930122 },
+      sync: { x: 0.20527599715099717, y: 0.11093463827838827, w: 0.6052231824888076, h: 0.30999231199533434 },
+      synth: { x: 0.8183116796398047, y: 0, w: 0.18168832036019528, h: 0.4209269502737226 },
+      templates: { x: 0.8183116796398047, y: 0.43201365406757175, w: 0.18168832036019528, h: 0.6 },
     },
-    order: ['tracks', 'sync', 'fretboard', 'synth', 'timeline', 'menu'],
+    order: ['timeline', 'tracks', 'fretboard', 'sync', 'synth', 'templates', 'menu'],
     free: true,
   };
 }
@@ -100,7 +101,11 @@ function finish(s0, tree0) {
   const expected = PANEL_IDS.filter(id => !floating[id] && !closed[id]);
   const ok = ids.length === new Set(ids).size && ids.length === expected.length && expected.every(id => ids.includes(id));
   if (!ok) return null;
-  return { v: 5, free: !!s.free, tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
+  const keep = {};
+  if (s.pushed && typeof s.pushed === 'object') keep.pushed = s.pushed;
+  if (s.ratioOrig && typeof s.ratioOrig === 'object') keep.ratioOrig = s.ratioOrig;
+  if (s.lastFloat && typeof s.lastFloat === 'object') keep.lastFloat = s.lastFloat;
+  return { ...keep, v: 5, free: !!s.free, tree, minimized, closed, floating, order: (Array.isArray(s.order) ? s.order : []).filter(id => floating[id]) };
 }
 
 // the old fixed arrangement (v2/v3) as a tree
@@ -417,6 +422,7 @@ export function dockBack(st, id, panels = {}, size = { w: 1400, h: 900 }) {
   const emptySlot = all.find(isEmptyId);
   if (emptySlot) tree = replaceLeaf(st.tree, emptySlot, id);
   else if (!st.tree || !ids.length) tree = leaf(id);
+  else if (id === 'tracks') tree = split('col', 0.2, leaf(id), st.tree); // full-width strip on top; the rest is pushed down
   else {
     const area = (pid) => { const r = panels[pid]; return r ? r.w * size.w * r.h * size.h : 0; };
     const big = ids.filter(p => !st.minimized[p]).sort((a, b) => area(b) - area(a))[0] || ids[0];
@@ -440,11 +446,12 @@ export function setFloatRect(st, id, rect) {
 export function closePanel(st, id) {
   if (!CLOSABLE.includes(id)) return st;
   const floating = { ...st.floating };
+  const lastFloat = floating[id] ? { ...(st.lastFloat || {}), [id]: floating[id] } : st.lastFloat;
   delete floating[id];
   const minimized = { ...st.minimized };
   delete minimized[id];
   return {
-    ...st, tree: removeLeaf(st.tree, id), floating, minimized, closed: { ...st.closed, [id]: true },
+    ...st, lastFloat, tree: removeLeaf(st.tree, id), floating, minimized, closed: { ...st.closed, [id]: true },
     order: st.order.filter(x => x !== id),
   };
 }
@@ -456,7 +463,7 @@ export function openPanel(st, id, panels, size) {
     // free layout: the window appears on its own, a little offset from the last one
     const n = Object.keys(st.floating).length;
     const off = (n % 6) * 0.03;
-    const rect = { x: 0.2 + off, y: 0.12 + off, w: 0.5, h: 0.6 };
+    const rect = st.lastFloat?.[id] ? st.lastFloat[id] : id === 'tracks' ? { x: 0, y: 0, w: 0.6, h: 0.2 } : { x: 0.2 + off, y: 0.12 + off, w: 0.5, h: 0.6 };
     return { ...st, closed, floating: { ...st.floating, [id]: rect }, order: [...st.order.filter(x => x !== id), id] };
   }
   return dockBack({ ...st, closed }, id, panels, size);
@@ -487,4 +494,16 @@ export function freeAll(st, panels) {
     };
   });
   return { ...s, free: true };
+}
+
+// The nearest enclosing top/bottom split of a panel (it may sit in a row of windows inside it).
+export function colAncestor(tree, id) {
+  const path = findPath(tree, id);
+  if (!path) return null;
+  let best = null, n = tree;
+  for (let i = 0; i < path.length; i++) {
+    if (n.dir === 'col') best = { path: path.slice(0, i), node: n, isA: path[i] === 'a' };
+    n = path[i] === 'a' ? n.a : n.b;
+  }
+  return best;
 }
