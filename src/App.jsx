@@ -2458,8 +2458,10 @@ setPositionModeValue(null);
         // Metronome clicks every subdivision; downbeat on bar starts
         if (metronomeRef.current) {
           const bStarts = barStartBeats(bs);
-          const isDownbeat = bStarts.includes(beat);
-          playClickAtTime(nextBeatTime, isDownbeat);
+          // Clicks sit on the beat lines even when playback starts between them: this step covers
+          // [beat, beat + 1), so click at the whole-number beat inside it (if any).
+          const k = Math.ceil(beat - 1e-6);
+          if (k < beat + 1 - 1e-6) playClickAtTime(nextBeatTime + (k - beat) * colDur, bStarts.includes(k));
         }
 
         nextBeatIndex++;
