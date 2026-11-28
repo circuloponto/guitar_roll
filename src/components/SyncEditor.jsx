@@ -22,6 +22,14 @@ export default function SyncEditor({
   // The grid is the fixed axis (like the Timeline): t0 = first visible timeline beat, pps = pixels per beat.
   // The recording is drawn stretched or squeezed against it by the sync points.
   const [view, setView] = useState({ t0: 0, pps: 30 });
+  const spaceHeld = useRef(false); // Space is down (Alt + Space + drag pans the timeline under the playhead)
+  useEffect(() => {
+    const dn = (e) => { if (e.code === 'Space') spaceHeld.current = true; };
+    const up = (e) => { if (e.code === 'Space') spaceHeld.current = false; };
+    const off = () => { spaceHeld.current = false; };
+    window.addEventListener('keydown', dn); window.addEventListener('keyup', up); window.addEventListener('blur', off);
+    return () => { window.removeEventListener('keydown', dn); window.removeEventListener('keyup', up); window.removeEventListener('blur', off); };
+  }, []);
   const [hover, setHover] = useState(null);
   const [snapOn, setSnapOn] = useState(true);
   const dragRef = useRef(null);
@@ -388,6 +396,36 @@ export default function SyncEditor({
       return;
     }
     if (e.button !== 0) return;
+    // Alt + Space + drag (as in the piano roll): the playhead keeps its place on screen and the timeline pans
+    // under it; the recording is heard at the playhead the whole time.
+    if (e.altKey && spaceHeld.current && !playing) {
+      e.preventDefault();
+      if (buffer) prepareScrub(buffer);
+      const maxT0 = Math.max(0, bMax - 1);
+      let t0 = view.t0;
+      let hx = (headBeat - t0) * view.pps;
+      if (hx < 8 || hx > size.w - 8) { t0 = Math.max(0, headBeat - (size.w / 2) / view.pps); hx = (headBeat - t0) * view.pps; }
+      const startT0 = t0, startX = e.clientX;
+      const go = (cx) => {
+        const nt0 = Math.max(0, Math.min(maxT0, startT0 - (cx - startX) / view.pps));
+        const beat = Math.max(0, nt0 + hx / view.pps);
+        setView((v) => ({ ...v, t0: nt0 }));
+        onSelectBeat(beat);
+        if (buffer) {
+          const t = beatTime(beat);
+          scrubTarget(buffer, t >= tMin && t <= tMax ? t : null, audio.volume ?? 1);
+        }
+      };
+      go(e.clientX);
+      const mv = (ev) => go(ev.clientX);
+      const up = () => {
+        window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
+        if (buffer) { scrubHold(buffer, false); scrubStop(buffer); }
+      };
+      window.addEventListener('pointermove', mv);
+      window.addEventListener('pointerup', up);
+      return;
+    }
     // The ruler sets the loop region: drag an edge, or drag across empty ruler to draw a new one
     // (grid-snapped; Alt for free). A plain click there places the playhead.
     if (localY(e) < HEAD_H && setLoopStart && setLoopEnd) {

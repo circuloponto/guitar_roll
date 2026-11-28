@@ -1,3 +1,4 @@
+import { startTicker } from './utils/ticker';
 import { useState, useCallback, useRef, useEffect, useMemo, Fragment } from 'react';
 import Fretboard from './components/Fretboard';
 import Timeline from './components/Timeline';
@@ -600,6 +601,8 @@ function App() {
   const loopEndRef = useRef(totalColumns(defaultBarSubdivisions()));
   const selectedBeatRef = useRef(selectedBeat);
   const animFrameRef = useRef(null);
+  const playGenRef = useRef(0);
+  const tickStopRef = useRef(null);
 
   const [position, setPosition] = useState(() => 0);
   const positionRef = useRef(position);
@@ -1369,19 +1372,20 @@ function App() {
         // Typing fields keep their keys. Sliders, checkboxes and the like do not need Space, so it plays/stops
         // from there too (and the control is let go so Space does not also toggle it).
         const textual = /^(text|number|search|email|url|password|tel|date|time)$/.test(tg.type || 'text');
-        if (!textual && e.code === 'Space' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (!textual && e.code === 'Space' && !e.altKey && !e.ctrlKey && !e.metaKey) {
           e.preventDefault();
           tg.blur?.();
-          if (!e.repeat) handlePlayRef.current();
+          if (!e.repeat) (e.shiftKey ? playFromPointerRef.current : handlePlayRef.current)?.();
         }
         return;
       }
       if (tg.tagName === 'TEXTAREA' || tg.isContentEditable) return;
       // Space plays/stops whichever panel has the pointer's attention, including a focused button or list
-      if ((tg.tagName === 'BUTTON' || tg.tagName === 'SELECT') && e.code === 'Space' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // (the control is let go, otherwise releasing Space would click it: e.g. the focused Play button would stop playback)
+      if ((tg.tagName === 'BUTTON' || tg.tagName === 'SELECT') && e.code === 'Space' && !e.altKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         tg.blur?.();
-        if (!e.repeat) handlePlayRef.current();
+        if (!e.repeat) (e.shiftKey ? playFromPointerRef.current : handlePlayRef.current)?.();
         return;
       }
       const hk = hotkeysRef.current;
@@ -2236,6 +2240,9 @@ setPositionModeValue(null);
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
     }
+    playGenRef.current++;
+    tickStopRef.current?.();
+    tickStopRef.current = null;
     // Stop audio file sources and tear down any rubberband worklet nodes.
     stopAudioChains();
   }, [stopAudioChains]);
@@ -2338,7 +2345,7 @@ setPositionModeValue(null);
 
     // Schedule audio file tracks
     scheduleAudioPass(playable, fromBeat, startTime, ctx, regionEnd);
-    const lookahead = 0.1;
+    const lookahead = 0.15;
     let nextBeatIndex = 0;
     let nextBeatTime = startTime;
     let prevRStart = initialStart;
@@ -2459,10 +2466,21 @@ setPositionModeValue(null);
         nextBeatTime += colDur;
       }
 
-      animFrameRef.current = requestAnimationFrame(animate);
     };
 
-    animFrameRef.current = requestAnimationFrame(animate);
+    // The scheduler is driven by a worker timer as well as the animation frame: a background tab pauses
+    // requestAnimationFrame (notes would stop) and throttles page timers (the metronome would stutter).
+    // Running it twice is harmless: it works from the audio clock.
+    const gen = ++playGenRef.current;
+    const run = () => { if (gen === playGenRef.current) animate(); };
+    const raf = () => {
+      if (gen !== playGenRef.current || !playingRef.current) return;
+      run();
+      animFrameRef.current = requestAnimationFrame(raf);
+    };
+    animFrameRef.current = requestAnimationFrame(raf);
+    tickStopRef.current?.();
+    tickStopRef.current = startTicker(run, 25);
   }, [stopPlayback, scheduleAudioPass, prepareAudioChains]);
   startPlaybackRef.current = startPlayback;
 
